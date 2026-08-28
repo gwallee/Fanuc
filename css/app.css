@@ -732,6 +732,10 @@ tr:last-child td { border-bottom: none; }
 .cg-msg { max-width: 90ch; }
 .cg-refs { margin-top: 3px; }
 
+/* ---------- collapsible section headers ---------- */
+h3.sec-toggle { cursor: pointer; user-select: none; }
+h3.sec-toggle:hover { color: var(--accent); }
+
 /* ---------- flow collapse ---------- */
 .seq-caret {
   display: inline-block;

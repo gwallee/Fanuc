@@ -1082,8 +1082,30 @@
     // -- call order --
     var rootNames = A.roots(g);
     if (!rootNames.length) rootNames = Object.keys(state.programs);
+    if (!state.flowSections) state.flowSections = {};
+    function sectionHead(title, key) {
+      var open = !state.flowSections[key];
+      var el = h('h3', { class: 'sec-toggle' }, [
+        h('span', { class: 'xi-caret', text: open ? '▾' : '▸' }),
+        document.createTextNode(' ' + title)
+      ]);
+      el.addEventListener('click', function () {
+        state.flowSections[key] = open;
+        render();
+      });
+      return { el: el, open: open };
+    }
+
     var flowWrap = h('div', { class: 'graph' });
-    flowWrap.appendChild(h('h3', { text: 'Call order — the sequence programs run in' }));
+    var secCall = sectionHead('Call order — the sequence programs run in', 'callorder');
+    flowWrap.appendChild(secCall.el);
+    if (!secCall.open) {
+      pane.appendChild(flowWrap);
+      var secCfg0 = sectionHead('Control flow inside ' + p.parsed.name, 'cfg');
+      pane.appendChild(secCfg0.el);
+      if (secCfg0.open) renderCfg(pane, p);
+      return;
+    }
     flowWrap.appendChild(h('p', { class: 'muted', text: 'Read top to bottom: each row is a CALL in the order it appears. Indent = call depth. Sections inside loops repeat every cycle. Click a program to open it, ▸ to collapse a branch.' }));
 
     if (!state.flowCollapse) state.flowCollapse = {};
@@ -1195,7 +1217,12 @@
     pane.appendChild(flowWrap);
 
     // -- control-flow graph of the selected program --
-    pane.appendChild(h('h3', { text: 'Control flow inside ' + p.parsed.name }));
+    var secCfg = sectionHead('Control flow inside ' + p.parsed.name, 'cfg');
+    pane.appendChild(secCfg.el);
+    if (secCfg.open) renderCfg(pane, p);
+  }
+
+  function renderCfg(pane, p) {
     pane.appendChild(h('p', { class: 'muted', text: 'Blocks run top to bottom. Curved arrows are jumps: amber going up = loop, blue going down = skip ahead; dashed = conditional (IF / timeout / skip).' }));
 
     var flow = FL.buildFlow(p.parsed);
