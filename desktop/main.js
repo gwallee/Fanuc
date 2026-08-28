@@ -1,39 +1,138 @@
-/* What the Wether V13 — Electron main process.
-   Loads the exact same static web app from the parent folder. */
+/* ============================================================
+   What the Wether — Electron main process.
 
-const { app, BrowserWindow, shell } = require('electron');
+   The desktop app is the same static web app, loaded from the
+   packaged resources. No API keys, no bundled server, no build
+   step for the web side.
+   ============================================================ */
+
+const { app, BrowserWindow, Menu, shell, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs');
+
+// In development the app sits one level up; once packaged it is
+// copied into the resources directory as "app".
+function appRoot() {
+  const packaged = path.join(process.resourcesPath || '', 'app');
+  if (process.resourcesPath && fs.existsSync(path.join(packaged, 'index.html'))) {
+    return packaged;
+  }
+  return path.join(__dirname, '..');
+}
+
+let mainWindow = null;
 
 function createWindow() {
-  const win = new BrowserWindow({
-    width: 1200,
-    height: 820,
+  mainWindow = new BrowserWindow({
+    width: 1280,
+    height: 900,
     minWidth: 360,
-    minHeight: 600,
+    minHeight: 560,
     backgroundColor: '#0a0e17',
     autoHideMenuBar: true,
-    icon: path.join(__dirname, '..', 'icons', 'icon-512.png'),
+    show: false,
+    icon: path.join(__dirname, 'build', 'icon.png'),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
 
-  win.loadFile(path.join(__dirname, '..', 'index.html'));
+  // Avoid a white flash before the dark UI paints.
+  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.loadFile(path.join(appRoot(), 'index.html'));
 
-  // External links open in the system browser, not inside the app.
-  win.webContents.setWindowOpenHandler(({ url }) => {
+  // External links open in the real browser, never in the app frame.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
   });
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('file://')) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+
+  mainWindow.on('closed', () => { mainWindow = null; });
 }
 
-app.whenReady().then(() => {
-  createWindow();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+function buildMenu() {
+  const isMac = process.platform === 'darwin';
+  const template = [
+    ...(isMac ? [{ role: 'appMenu' }] : []),
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Refresh Weather',
+          accelerator: 'CmdOrCtrl+R',
+          click: () => mainWindow && mainWindow.reload(),
+        },
+        {
+          label: 'Toggle Fullscreen',
+          accelerator: isMac ? 'Ctrl+Cmd+F' : 'F11',
+          click: () => mainWindow && mainWindow.setFullScreen(!mainWindow.isFullScreen()),
+        },
+        { type: 'separator' },
+        isMac ? { role: 'close' } : { role: 'quit' },
+      ],
+    },
+    { role: 'editMenu' },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
+        { type: 'separator' }, { role: 'toggleDevTools' },
+      ],
+    },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'About What the Wether',
+          click: () => dialog.showMessageBox(mainWindow, {
+            type: 'info',
+            title: 'What the Wether',
+            message: `What the Wether ${app.getVersion()}`,
+            detail: 'Neon weather with a real-map radar, a 48-hour outlook, and a\n' +
+                    'local AI that roasts the forecast.\n\n' +
+                    'No API keys. Weather from the National Weather Service,\n' +
+                    'MET Norway and Open-Meteo; radar from RainViewer and NOAA.',
+            buttons: ['OK'],
+          }),
+        },
+        {
+          label: 'Weather Data Sources',
+          click: () => shell.openExternal('https://open-meteo.com/'),
+        },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// A second launch should focus the existing window, not open another.
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
   });
-});
+
+  app.whenReady().then(() => {
+    buildMenu();
+    createWindow();
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

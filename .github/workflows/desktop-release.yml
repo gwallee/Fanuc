@@ -1,0 +1,100 @@
+name: Build desktop apps
+
+# Windows and macOS installers must be built on their own runners:
+# stamping a .exe icon needs Windows tooling (or Wine), and a .dmg
+# needs macOS. This builds all three natively and attaches them to a
+# release.
+on:
+  workflow_dispatch:        # "Run workflow" button in the Actions tab
+  push:
+    tags: ['v*']            # or push a tag like v13.0.0
+
+permissions:
+  contents: write           # needed to create the release
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows (.exe)
+            target: --win
+            artifacts: |
+              desktop/dist/*.exe
+          - os: macos-latest
+            name: macOS (.dmg)
+            target: --mac
+            artifacts: |
+              desktop/dist/*.dmg
+              desktop/dist/*.zip
+          - os: ubuntu-latest
+            name: Linux (AppImage, deb, rpm)
+            target: --linux
+            artifacts: |
+              desktop/dist/*.AppImage
+              desktop/dist/*.deb
+              desktop/dist/*.rpm
+              desktop/dist/*.tar.gz
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install build dependencies
+        working-directory: desktop
+        run: npm ci
+
+      # rpm packaging needs the rpm tooling present on the runner.
+      - name: Install rpm tooling
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Build
+        working-directory: desktop
+        env:
+          # Unsigned builds: no certificates are stored in this repo.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-builder ${{ matrix.target }} --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}
+          path: ${{ matrix.artifacts }}
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Attach to release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+          body: |
+            Desktop builds of What the Wether.
+
+            | Platform | File |
+            | --- | --- |
+            | Windows | `WhatTheWether-Setup-*.exe` (installer) or `WhatTheWether-Portable-*.exe` |
+            | macOS | `WhatTheWether-*.dmg` |
+            | Linux | `WhatTheWether-*.AppImage`, `.deb`, or `.rpm` |
+
+            These builds are **unsigned**, so Windows SmartScreen and macOS
+            Gatekeeper will warn on first launch. See the README for how to
+            proceed past that, or build locally with `npm run dist`.

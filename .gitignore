@@ -16,3 +16,8 @@ out/
 # Playwright
 test-results/
 playwright-report/
+
+# Desktop build output
+desktop/dist/
+desktop/node_modules/
+squashfs-root/

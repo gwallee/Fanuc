@@ -324,10 +324,13 @@ WhatTheWether-V13/
 ├── tests/          # Browser test suite + runner (npm test)
 ├── package.json    # Test scripts only — the app itself has no build
 ├── assets/         # Extra static assets
-└── desktop/        # Desktop packaging scaffold (Electron-ready)
+├── .github/
+│   └── workflows/  # Desktop builds (all platforms) + test CI
+└── desktop/        # Electron desktop app
     ├── README.txt
-    ├── package.json
-    └── main.js
+    ├── package.json  # Electron manifest + electron-builder config
+    ├── main.js       # Main process
+    └── build/        # icon.ico (Windows) and icon.png (macOS/Linux)
 ```
 
 Script load order matters and is already correct in `index.html`:
@@ -395,12 +398,43 @@ place, so downgrading loses nothing.
 There is intentionally **no `.env.example`** — the app needs zero environment
 variables and zero secrets.
 
-## Desktop version
+## Desktop apps
 
-The `desktop/` folder contains an Electron-ready scaffold so the exact same
-app can be packaged as a desktop application later. See
-[`desktop/README.txt`](desktop/README.txt). The desktop version also requires
-no API keys.
+The same app installs as a real desktop application on Windows, macOS and
+Linux — still no API keys.
+
+**Get a build without building anything:** push a tag (or click *Run workflow*
+on the **Build desktop apps** action) and GitHub builds all three platforms
+natively and attaches them to a release:
+
+```bash
+git tag v13.0.0 && git push origin v13.0.0
+```
+
+| Platform | Files |
+| --- | --- |
+| **Windows** | `WhatTheWether-Setup-*.exe` — installer with Start Menu and desktop shortcuts, or `WhatTheWether-Portable-*.exe` (single file, no install) |
+| **macOS** | `WhatTheWether-*-x64.dmg` (Intel) and `-arm64.dmg` (Apple Silicon) |
+| **Linux** | `.AppImage` (chmod +x and run), `.deb`, `.rpm`, `.tar.gz` |
+
+**Building locally** (Node 18+):
+
+```bash
+cd desktop
+npm install
+npm start        # run without packaging
+npm run dist     # build for the platform you're on
+```
+
+Build each platform *on* that platform. A Windows `.exe` cross-built from
+Linux needs Wine — both 64- and 32-bit, since the icon stamper is a 32-bit
+tool — and a macOS `.dmg` can't be produced off macOS at all. The workflow
+exists so you never have to deal with that.
+
+These builds are **unsigned** (certificates cost money and none are in this
+repo), so Windows SmartScreen and macOS Gatekeeper warn on first launch —
+[`desktop/README.txt`](desktop/README.txt) explains how to proceed and how to
+add your own certificate.
 
 ## Credits
 
