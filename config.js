@@ -47,6 +47,13 @@ const WTW_CONFIG = {
     // the stylized simulation.
   },
 
+  // Guards that keep displayed conditions representative of the
+  // searched point rather than of a distant or offline station.
+  nwsQuality: {
+    maxStationKm: 40,      // reject stations farther than this
+    maxObsAgeMinutes: 90,  // reject readings older than this
+  },
+
   weather: {
     forecastDays: 7,
     temperatureUnit: 'fahrenheit',

@@ -28,6 +28,23 @@ const NWS = (() => {
 
   /* ---- Unit conversion (NWS observations are always SI) ---- */
 
+  function quality() {
+    return (window.WTW_CONFIG && WTW_CONFIG.nwsQuality) ||
+           { maxStationKm: 40, maxObsAgeMinutes: 90 };
+  }
+
+  // Great-circle distance, used to reject stations too far away to
+  // represent the searched point.
+  function haversineKm(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const toRad = (d) => (d * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+
   function cToF(c) {
     return (c === null || c === undefined) ? null : (c * 9) / 5 + 32;
   }
@@ -63,25 +80,58 @@ const NWS = (() => {
   }
 
   /* ------------------------------------------------------------
-     Latest observation from the nearest reporting station.
-     Stations are tried in order because the closest one is not
-     always reporting a full set of values.
+     Latest observation from the nearest usable reporting station.
+
+     Accuracy rules, in order:
+       1. Sort candidate stations by true distance from the searched
+          point and discard any beyond `maxStationKm` — a reading
+          from 80 km away is not this location's weather.
+       2. Skip stations with no temperature (some report only wind
+          or pressure).
+       3. Skip readings older than `maxObsAgeMinutes`. NWS keeps
+          serving the last observation indefinitely, so an offline
+          station will happily hand back this morning's temperature.
+     Returning null when nothing qualifies is deliberate: app.js
+     then falls back to Open-Meteo rather than showing a stale or
+     unrepresentative number.
      ------------------------------------------------------------ */
-  async function getCurrentObservation(point) {
+  async function getCurrentObservation(point, lat, lon) {
     if (!point || !point.stationsUrl) return null;
+    const q = quality();
     try {
       const list = await getJSON(point.stationsUrl);
-      const stations = (list.features || [])
-        .map((f) => f.properties && f.properties.stationIdentifier)
-        .filter(Boolean)
-        .slice(0, 3);
+      const haveOrigin = typeof lat === 'number' && typeof lon === 'number';
 
-      for (const id of stations) {
+      let stations = (list.features || []).map((f) => {
+        const props = f.properties || {};
+        const coords = (f.geometry && f.geometry.coordinates) || [];
+        const distanceKm = (haveOrigin && coords.length === 2)
+          ? haversineKm(lat, lon, coords[1], coords[0])
+          : null;
+        return { id: props.stationIdentifier, name: props.name || '', distanceKm };
+      }).filter((st) => st.id);
+
+      // Nearest first, then drop anything unrepresentative.
+      stations.sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
+      stations = stations
+        .filter((st) => st.distanceKm === null || st.distanceKm <= q.maxStationKm)
+        .slice(0, 4);
+
+      for (const st of stations) {
         try {
-          const obs = await getJSON(`${base()}/stations/${id}/observations/latest`);
+          const obs = await getJSON(`${base()}/stations/${st.id}/observations/latest`);
           const p = obs.properties || {};
           const tempC = p.temperature && p.temperature.value;
-          if (tempC === null || tempC === undefined) continue; // try next station
+          if (tempC === null || tempC === undefined) continue;
+
+          const observedAt = p.timestamp ? new Date(p.timestamp) : null;
+          const ageMinutes = observedAt && !isNaN(observedAt)
+            ? (Date.now() - observedAt.getTime()) / 60000
+            : null;
+          if (ageMinutes !== null && ageMinutes > q.maxObsAgeMinutes) {
+            console.info(`[nws] skipping ${st.id}: observation is ${Math.round(ageMinutes)} min old`);
+            continue;
+          }
 
           const feelsC =
             (p.heatIndex && p.heatIndex.value) ??
@@ -92,16 +142,22 @@ const NWS = (() => {
             tempF: cToF(tempC),
             feelsLikeF: cToF(feelsC),
             humidity: p.relativeHumidity ? p.relativeHumidity.value : null,
-            windMph: kmhToMph(p.windSpeed ? p.windSpeed.value : null) ?? 0,
+            // Left null when absent — the UI shows "--" rather than
+            // implying dead calm.
+            windMph: kmhToMph(p.windSpeed ? p.windSpeed.value : null),
             windDirDeg: p.windDirection ? p.windDirection.value : null,
             description: p.textDescription || '',
-            station: id,
-            timestamp: p.timestamp || null,
+            station: st.id,
+            stationName: st.name,
+            distanceKm: st.distanceKm,
+            observedAt,
+            ageMinutes,
           };
         } catch (_) {
           // Station unavailable — fall through to the next one.
         }
       }
+      console.info('[nws] no nearby station with a fresh reading');
       return null;
     } catch (err) {
       console.warn('[nws] observations failed', err.message);

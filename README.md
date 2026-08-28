@@ -22,8 +22,35 @@ themes, and a built-in **local AI** that roasts the weather (and you) —
     nearest reporting station plus official watches and warnings.
   - [**Open-Meteo**](https://open-meteo.com/) covers the rest of the world and
     takes over automatically if NWS is unreachable or returns incomplete data.
-- The active source is shown under the current conditions, e.g.
-  *"Updated 1:39 AM · National Weather Service · KAUS"*
+- The active source is always shown under the current conditions, so
+  you can see exactly where a number came from
+
+### ✅ Accuracy safeguards
+
+Weather is only as good as the reading behind it, so the NWS path
+enforces a few rules before anything reaches the screen:
+
+- **Station distance.** Candidate stations are sorted by true
+  great-circle distance from the searched point, and any beyond
+  `nwsQuality.maxStationKm` (default 40 km) are rejected — a reading
+  from 80 km away is not your weather.
+- **Staleness.** NWS keeps serving a station's last observation
+  indefinitely, so an offline station will happily return this
+  morning's temperature. Readings older than
+  `nwsQuality.maxObsAgeMinutes` (default 90) are skipped.
+- **Honest gaps.** A missing wind speed or precipitation chance
+  renders as `--`, never as `0` — "unknown" and "calm" are not the
+  same claim.
+- **Observation time.** The card shows when the reading was actually
+  taken, plus how far away the station is, e.g.
+  *"Updated 1:43 AM · National Weather Service · KAUS (7 km away) ·
+  observed 1:15 AM"*.
+- **Same-day high/low.** Load the app in the evening and NWS no
+  longer has a daytime period for today, so today's high would be
+  blank. Those two numbers are backfilled from Open-Meteo, which
+  reports the full calendar day.
+- If no station qualifies, the app falls back to Open-Meteo rather
+  than showing a stale or unrepresentative number.
 
 ### ⚠️ Severe weather alerts
 - Active NWS watches, warnings, and advisories for the current location

@@ -167,10 +167,26 @@
       const point = await NWS.getPoint(location.lat, location.lon);
       if (point) {
         const [obs, daily] = await Promise.all([
-          NWS.getCurrentObservation(point),
+          NWS.getCurrentObservation(point, location.lat, location.lon),
           NWS.getForecast(point),
         ]);
         if (obs && daily && daily.length) {
+          // Loaded in the evening, today's daytime period is already
+          // gone, so NWS can no longer supply today's high. Backfill
+          // just those two numbers from Open-Meteo (which reports the
+          // full calendar day) instead of showing blanks.
+          if (daily[0].highF === null || daily[0].lowF === null) {
+            try {
+              const om = await fetchWeather(location);
+              const omToday = om.daily && om.daily[0];
+              if (omToday) {
+                if (daily[0].highF === null) daily[0].highF = omToday.highF;
+                if (daily[0].lowF === null) daily[0].lowF = omToday.lowF;
+              }
+            } catch (err) {
+              console.warn('[app] could not backfill today\'s high/low', err);
+            }
+          }
           const today = daily[0] || {};
           return {
             source: 'nws',
@@ -179,12 +195,14 @@
               tempF: obs.tempF,
               feelsLikeF: obs.feelsLikeF,
               humidity: obs.humidity,
-              windMph: obs.windMph ?? 0,
+              windMph: obs.windMph,
               windDirDeg: obs.windDirDeg,
               weatherCode: NWS.textToCode(obs.description),
               conditionText: obs.description,
               station: obs.station,
-              precipProb: today.precipProb ?? 0,
+              stationKm: obs.distanceKm,
+              observedAt: obs.observedAt,
+              precipProb: today.precipProb,
               highF: today.highF,
               lowF: today.lowF,
             },
@@ -218,14 +236,20 @@
     $('wxCondition').textContent = w.conditionText || label;
     $('wxFeels').textContent = fmtTemp(w.feelsLikeF);
     $('wxHumidity').textContent = (w.humidity ?? '--') + '%';
-    $('wxWind').textContent = `${Math.round(w.windMph ?? 0)} mph`;
+    $('wxWind').textContent = w.windMph == null ? '--' : `${Math.round(w.windMph)} mph`;
     $('wxHiLo').textContent = `${fmtTemp(w.highF)} / ${fmtTemp(w.lowF)}`;
-    $('wxRain').textContent = `${Math.round(w.precipProb ?? 0)}%`;
-    const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    const src = state.source === 'nws'
-      ? `National Weather Service${w.station ? ' · ' + w.station : ''}`
-      : 'Open-Meteo';
-    $('wxUpdated').textContent = `Updated ${time} · ${src}`;
+    $('wxRain').textContent = w.precipProb == null ? '--' : `${Math.round(w.precipProb)}%`;
+    const clock = (d) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    let line = `Updated ${clock(new Date())} · `;
+    if (state.source === 'nws') {
+      line += `National Weather Service${w.station ? ' · ' + w.station : ''}`;
+      if (w.stationKm != null) line += ` (${Math.round(w.stationKm)} km away)`;
+      // The observation time is what the numbers actually describe.
+      if (w.observedAt) line += ` · observed ${clock(w.observedAt)}`;
+    } else {
+      line += 'Open-Meteo';
+    }
+    $('wxUpdated').textContent = line;
 
     $('currentCard').classList.remove('empty');
     $('welcomePanel').hidden = true;
@@ -247,7 +271,7 @@
         <div class="fc-day">${dayName}</div>
         <div class="fc-icon" title="${label}">${icon}</div>
         <div class="fc-temps"><span class="fc-hi">${fmtTemp(day.highF)}</span><span class="fc-lo">${fmtTemp(day.lowF)}</span></div>
-        <div class="fc-rain">💧 ${day.precipProb ?? 0}%</div>
+        <div class="fc-rain">💧 ${day.precipProb == null ? '--' : day.precipProb + '%'}</div>
       `;
       wrap.appendChild(card);
     });
