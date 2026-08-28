@@ -47,7 +47,14 @@ function json(res, code, obj) {
   res.end(body);
 }
 
-function fail(res, code, message) { json(res, code, { error: message }); }
+function fail(res, code, message) {
+  console.error('[api ' + code + '] ' + message);
+  json(res, code, { error: message });
+}
+
+/* A robot that misbehaves must never take the bridge down mid-shift. */
+process.on('uncaughtException', (e) => console.error('[bridge] uncaught exception (recovered):', e && e.stack || e));
+process.on('unhandledRejection', (e) => console.error('[bridge] unhandled rejection (recovered):', e && e.message || e));
 
 /* Fetch a file from the robot's MD: device over HTTP.
  * Deliberately plain http.request with no proxy: robots live on the LAN. */
@@ -184,7 +191,7 @@ async function handleApi(req, res, u) {
     const result = { ok: false, name: name.toUpperCase(), snapshot: null, restored: false };
     let ftp;
     try {
-      ftp = await Ftp.connect(t.host, t.port, user, pass);
+      ftp = await ftpConnect(t, user, pass);
       // 1. snapshot what's on the robot now
       let prev = null;
       try { prev = await ftp.retr(result.name); } catch (e) { /* program not on robot yet */ }
@@ -255,7 +262,7 @@ async function handleApi(req, res, u) {
     }
     const folder = path.join(destRoot, base + '_' + String(nn).padStart(2, '0') + (mode === 'quick' ? '_quick' : ''));
     try {
-      const ftp = await Ftp.connect(t.host, t.port, user, pass, 20000);
+      const ftp = await ftpConnect(t, user, pass, 20000);
       const files = await ftp.nlst();
       fs.mkdirSync(folder, { recursive: true });
       let saved = 0, bytes = 0;
@@ -291,8 +298,17 @@ function target(q) {
   return parseTarget(ip);
 }
 
+/* Connect and enter the md: device — FANUC roots its FTP server at the
+ * device list (fr:, mc:, md:, ...); programs and variable files live in md:.
+ * Controllers that root directly at md: refuse the CWD, which is fine. */
+async function ftpConnect(t, user, pass, timeout) {
+  const ftp = await Ftp.connect(t.host, t.port, user, pass, timeout);
+  try { await ftp.cwd('md:'); } catch (e) { /* already at md: on this controller */ }
+  return ftp;
+}
+
 async function withFtp(t, q, fn) {
-  const ftp = await Ftp.connect(t.host, t.port, q.get('user') || undefined, q.get('pass') || undefined);
+  const ftp = await ftpConnect(t, q.get('user') || undefined, q.get('pass') || undefined);
   try {
     return await fn(ftp);
   } finally {

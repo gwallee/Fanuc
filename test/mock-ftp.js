@@ -1,15 +1,21 @@
 /* In-memory mock FTP server that imitates FANUC controller behavior:
- * STOR of a .LS whose content contains "BADSYNTAX" reports success but
- * DELETES the file — exactly what a failed LS→TP translation does.
+ * - STOR of a .LS whose content contains "BADSYNTAX" reports success but
+ *   DELETES the file — exactly what a failed LS→TP translation does.
+ * - opts.deviceRoot: root the server at the device list (fr:, mc:, md:, ...)
+ *   like a real controller — files are reachable only after CWD md:.
  */
 'use strict';
 const net = require('net');
 
-function startMockFtp(port, files) {
+const DEVICES = ['fr:', 'mc:', 'md:', 'mdb:', 'rd:', 'ud1:', 'ut1:'];
+
+function startMockFtp(port, files, opts) {
+  opts = opts || {};
   const server = net.createServer((sock) => {
     let buf = '';
     let pasvServer = null;
     let pasvConn = null; // promise of the data socket
+    let cwd = opts.deviceRoot ? '/' : 'md:';
 
     const send = (s) => sock.write(s + '\r\n');
     send('220 MOCK-FANUC FTP');
@@ -34,15 +40,21 @@ function startMockFtp(port, files) {
         case 'PASS': send('230 logged in'); break;
         case 'TYPE': send('200 type set'); break;
         case 'PASV': openPasv(); break;
+        case 'CWD': {
+          if (opts.deviceRoot && /^\/?md:?\/?$/i.test(arg)) { cwd = 'md:'; send('250 directory changed'); }
+          else send('550 no such directory');
+          break;
+        }
         case 'NLST': {
           send('150 opening data connection');
           const ds = await pasvConn;
-          ds.end(Object.keys(files).join('\r\n') + '\r\n');
+          const names = cwd === 'md:' ? Object.keys(files) : DEVICES;
+          ds.end(names.join('\r\n') + '\r\n');
           send('226 transfer complete');
           break;
         }
         case 'RETR': {
-          if (!(arg in files)) { send('550 file not found'); break; }
+          if (cwd !== 'md:' || !(arg in files)) { send('550 file not found'); break; }
           send('150 opening data connection');
           const ds = await pasvConn;
           ds.end(files[arg]);
@@ -50,6 +62,7 @@ function startMockFtp(port, files) {
           break;
         }
         case 'STOR': {
+          if (cwd !== 'md:') { send('550 cannot write here'); break; }
           send('150 opening data connection');
           const ds = await pasvConn;
           const chunks = [];

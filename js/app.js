@@ -179,6 +179,8 @@
         if (!r.ok) throw new Error(body.error || ('HTTP ' + r.status));
         return body;
       });
+    }, function () {
+      throw new Error('The bridge did not answer — check that the "Start FANUC Studio" window is still open, then try again.');
     });
   }
 

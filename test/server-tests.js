@@ -80,6 +80,19 @@ async function post(route, body) {
     const b2 = await post('/api/robot/backup', { ip: ROBOT, dest });
     check(path.basename(b2.folder).endsWith('_02'), 'second backup today increments to _02: ' + path.basename(b2.folder));
 
+    console.log('\n-- device-root controller (real FANUC layout: fr:/mc:/md:...) --');
+    const drFiles = { 'MAIN.LS': '/PROG MAIN\n/MN\n   1:  R[1]=7 ;\n/END\n', 'NUMREG.VA': "[1] = 7  'x'\n" };
+    const drServer = await startMockFtp(FTP_PORT + 1, drFiles, { deviceRoot: true });
+    const DR = '127.0.0.1:' + (FTP_PORT + 1);
+    let dr = await fetch(BASE + '/api/robot/list?ip=' + DR).then((x) => x.json());
+    check(dr.via === 'ftp' && dr.files.includes('MAIN.LS'), 'listing enters md: automatically: ' + dr.files.join(', '));
+    check(!dr.files.some((f) => /^(FR|MC|RD|UD1|UT1):/.test(f)), 'device names not mistaken for files');
+    dr = await fetch(BASE + '/api/robot/file?ip=' + DR + '&name=MAIN.LS').then((x) => x.json());
+    check(dr.content && dr.content.includes('R[1]=7'), 'RETR works behind md:');
+    dr = await post('/api/robot/upload', { ip: DR, name: 'MAIN.LS', content: '/PROG MAIN\n/MN\n   1:  R[1]=8 ;\n/END\n' });
+    check(dr.ok === true && drFiles['MAIN.LS'].includes('R[1]=8'), 'safe upload works behind md:');
+    drServer.close();
+
     console.log('\n-- quick backup (.LS + .VA only) --');
     files['SYSMAST.SV'] = 'binary-ish system file';
     files['MAIN.TP'] = 'binary tp';
