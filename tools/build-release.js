@@ -13,7 +13,7 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const NODE_VERSION = 'v22.14.0';
+const NODE_VERSION = 'v20.18.3';
 const NODE_ZIP = `node-${NODE_VERSION}-win-x64.zip`;
 const NODE_URL = `https://nodejs.org/dist/${NODE_VERSION}/${NODE_ZIP}`;
 
