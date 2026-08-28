@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FANUC TP Program Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div class="app">
+  <header class="header">
+    <div class="brand">
+      <span class="mark">FANUC TP</span>
+      <h1>Program Studio</h1>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn primary" id="btn-import">Import .LS files</button>
+    <button class="btn" id="btn-samples">Load sample cell</button>
+    <input type="file" id="file-input" accept=".ls,.LS,.txt" multiple hidden>
+  </header>
+
+  <aside class="sidebar">
+    <div class="section-head">
+      <span class="eyebrow">Program library</span>
+      <span class="muted" id="lib-count"></span>
+    </div>
+    <div class="prog-list" id="prog-list"></div>
+    <div class="footer">
+      <button class="btn subtle" id="btn-clear">Clear library</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <nav class="tabs" id="tabs"></nav>
+    <div class="pane" id="pane"></div>
+  </main>
+</div>
+
+<script src="js/parser.js"></script>
+<script src="js/analyzer.js"></script>
+<script src="js/explain.js"></script>
+<script src="js/samples.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
