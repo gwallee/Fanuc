@@ -63,7 +63,7 @@
       b.lines.forEach(function (l) {
         if (l.comment !== null) return;
         lastActive = l;
-        var cm = l.text.match(/\b(?:CALL|RUN)\s+([A-Z_][A-Z0-9_]*)/i);
+        var cm = l.text.replace(/\[[^\]]*\]/g, '[]').match(/\b(?:CALL|RUN)\s+([A-Z_][A-Z0-9_]*)/);
         if (cm) b.calls.push(cm[1].toUpperCase());
       });
       b.lastActive = lastActive;

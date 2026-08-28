@@ -78,7 +78,8 @@
   function rebuildDerived() {
     state.graph = A.buildCallGraph(state.programs);
     state.xref = A.buildGlobalXref(state.programs);
-    state.findings = L.lint(state.programs, state.graph, state.xref, buildExtern(), { passThroughCalls: state.flowIgnore });
+    state.extern = buildExtern();
+    state.findings = L.lint(state.programs, state.graph, state.xref, state.extern, { passThroughCalls: state.flowIgnore });
   }
 
   // Controllers export logs (ERRALL.LS, HIST.LS, LOGBOOK.LS…) with a .ls
@@ -1344,12 +1345,31 @@
       });
     }
 
+    // Registers section: when controller data is loaded (robot or backup
+    // folder), list EVERY register — value, comment, and usage — not just
+    // the ones the programs touch.
+    function registerEntries() {
+      var byNum = {};
+      Object.keys(x.registers).forEach(function (n) {
+        byNum[n] = { key: 'R[' + n + ']', label: x.registers[n].label, refs: x.registers[n].refs, value: undefined };
+      });
+      if (state.extern && state.extern.registers) {
+        state.extern.registers.forEach(function (r) {
+          if (!byNum[r.index]) byNum[r.index] = { key: 'R[' + r.index + ']', label: null, refs: [], value: undefined };
+          byNum[r.index].value = r.value;
+          if (!byNum[r.index].label && r.comment) byNum[r.index].label = r.comment;
+        });
+      }
+      return Object.keys(byNum).map(Number).sort(function (a, b) { return a - b; }).map(function (n) { return byNum[n]; });
+    }
+
     function draw() {
       state.xrefFilter = fIn.value;
       var q = fIn.value.trim().toLowerCase();
       wrap.innerHTML = '';
+      var haveValues = !!(state.extern && state.extern.registers && state.extern.registers.length);
       var sections = [
-        ['Registers R[n]', entriesOf(x.registers, function (n) { return 'R[' + n + ']'; })],
+        ['Registers R[n]' + (haveValues ? ' — all controller registers, with values' : ''), registerEntries()],
         ['Position registers PR[n]', entriesOf(x.posRegs, function (n) { return 'PR[' + n + ']'; })],
         ['I/O points', Object.keys(x.io).sort(function (a, b) {
           var ta = x.io[a], tb = x.io[b];
@@ -1360,7 +1380,9 @@
       sections.forEach(function (sec) {
         var entries = sec[1].filter(function (e) {
           if (!q) return true;
-          return e.key.toLowerCase().indexOf(q) !== -1 || (e.label || '').toLowerCase().indexOf(q) !== -1;
+          return e.key.toLowerCase().indexOf(q) !== -1 ||
+            (e.label || '').toLowerCase().indexOf(q) !== -1 ||
+            (e.value !== undefined && String(e.value).indexOf(q) !== -1);
         });
         if (!entries.length) return;
         wrap.appendChild(h('h3', { text: sec[0] + ' (' + entries.length + ')' }));
@@ -1372,8 +1394,10 @@
           var head = h('button', { class: 'xi-head' }, [
             h('span', { class: 'xi-caret', text: open ? '▾' : '▸' }),
             h('span', { class: 'xi-key mono', text: e.key }),
+            e.value !== undefined ? h('span', { class: 'xi-value mono', text: '= ' + e.value }) : null,
             h('span', { class: 'xi-label', text: e.label || '' }),
             h('span', { style: 'flex:1' }),
+            (!e.refs.length) ? h('span', { class: 'muted', text: 'unused' }) : null,
             reads ? h('span', { class: 'chip read', text: reads + ' read' + (reads > 1 ? 's' : '') }) : null,
             writes ? h('span', { class: 'chip write', text: writes + ' write' + (writes > 1 ? 's' : '') }) : null
           ]);

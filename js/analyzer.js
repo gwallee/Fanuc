@@ -41,10 +41,13 @@
         a.labels[tn].jumps.push(line.num);
       }
 
-      // Calls
-      var callRe = /\b(CALL|RUN)\s+([A-Z_][A-Z0-9_]*)/gi;
-      while ((j = callRe.exec(text)) !== null) {
-        a.calls.push({ target: j[2].toUpperCase(), line: line.num, kind: j[1].toUpperCase() });
+      // Calls — scan with bracket contents blanked so comments like
+      // DI[5:Run Task] are never read as a RUN instruction; keywords are
+      // uppercase in TP, so match case-sensitively.
+      var noBrackets = text.replace(/\[[^\]]*\]/g, '[]');
+      var callRe = /\b(CALL|RUN)\s+([A-Z_][A-Z0-9_]*)/g;
+      while ((j = callRe.exec(noBrackets)) !== null) {
+        a.calls.push({ target: j[2].toUpperCase(), line: line.num, kind: j[1] });
       }
 
       // Registers R[n]  (avoid PR[n] / SR[n] / AR[n] / GO[..] etc. via char class before R)

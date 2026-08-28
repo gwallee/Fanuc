@@ -208,6 +208,26 @@ const rbLib = { RB: { parsed: rbParsed, analysis: rbA, source: rbSrc } };
 const rbFind = L.lint(rbLib, A.buildCallGraph(rbLib), A.buildGlobalXref(rbLib));
 check(!rbFind.some(f => f.rule === 'unreachable-code'), 'blank line + LBL after JMP not flagged unreachable');
 
+console.log('\n-- comments must never read as instructions --');
+const cmSrc = `/PROG CM
+/MN
+   1:  WAIT DI[5:OFF:Run Task]=OFF ;
+   2:  IF ((DI[5:OFF:Run Task] AND GI[1:0:Manual Task ID]>0) OR DI[4:OFF:Request to Enter]),JMP LBL[150] ;
+   3:  DO[6:call the operator]=ON ;
+   4:  LBL[150] ;
+   5:  IF (R[2:Manual Task ID]=10),CALL _RECOVER ;
+   6:  RUN _BGLOGIC ;
+/END
+`;
+const cmParsed = P.parseLS(cmSrc, 'CM.LS');
+const cmA = A.analyzeProgram(cmParsed);
+check(cmA.calls.length === 2, 'only the real CALL and RUN found (got ' + cmA.calls.map(c => c.kind + ' ' + c.target).join(', ') + ')');
+check(!cmA.calls.some(c => c.target === 'TASK'), '"Run Task" I/O comment not read as RUN TASK');
+check(!cmA.calls.some(c => c.target === 'THE'), '"call the operator" comment not read as CALL');
+check(cmA.calls.some(c => c.target === '_RECOVER') && cmA.calls.some(c => c.target === '_BGLOGIC'), 'real targets kept');
+const cmFlow = FL.buildFlow(cmParsed);
+check(!cmFlow.blocks.some(b => b.calls.includes('TASK')), 'flow blocks also ignore comment text');
+
 console.log('\n-- IOSTATE.DG parser --');
 const ios = VA.parseIOState('IO STATUS::\n\nDIN[   1]  ON  Auto Mode\nDIN[   2] OFF  Start\nDOUT[ 104] OFF  \nFLG[   8] OFF  Task Rdy                  FLG[ 520] OFF                          \nGIN[   1]  0  Task ID\n');
 check(ios.length === 6, '6 points parsed (got ' + ios.length + ')');

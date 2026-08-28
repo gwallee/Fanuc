@@ -349,7 +349,11 @@ function serveStatic(res, pathname) {
   if (!full.startsWith(ROOT)) return fail(res, 403, 'forbidden');
   fs.readFile(full, (err, data) => {
     if (err) return fail(res, 404, 'not found: ' + pathname);
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(full).toLowerCase()] || 'application/octet-stream' });
+    res.writeHead(200, {
+      'Content-Type': MIME[path.extname(full).toLowerCase()] || 'application/octet-stream',
+      // always revalidate so a git pull takes effect on the next reload
+      'Cache-Control': 'no-cache'
+    });
     res.end(data);
   });
 }
