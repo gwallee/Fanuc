@@ -206,6 +206,7 @@ body.loading { cursor: progress; }
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
   grid-template-areas:
+    "alerts  alerts"
     "current radar"
     "roast   radar"
     "forecast forecast"
@@ -400,6 +401,47 @@ input[type="range"]::-moz-range-thumb {
 }
 .radar-controls .btn { flex: 1 1 auto; min-width: 96px; }
 
+/* ---------------- Alerts ---------------- */
+
+.alerts-panel {
+  grid-area: alerts;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.alert-item {
+  border-radius: 12px;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid;
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+.alert-title { font-weight: 800; font-size: 0.92rem; }
+.alert-body { font-size: 0.82rem; color: var(--text-dim); margin-top: 0.15rem; }
+.alert-severe {
+  border-color: var(--danger);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--danger) 18%, transparent), var(--card));
+}
+.alert-severe .alert-title { color: var(--danger); }
+.alert-moderate { border-color: #f5a623; }
+.alert-moderate .alert-title { color: #f5a623; }
+.alert-minor { border-color: var(--btn-border); }
+
+/* Radar source badge */
+.radar-source {
+  font-size: 0.62rem;
+  letter-spacing: 1px;
+  border: 1px solid var(--btn-border);
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+  color: var(--text-dim);
+}
+.radar-source.live-source {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: var(--glow);
+}
+
 /* ---------------- Forecast ---------------- */
 
 .forecast-row {
@@ -582,6 +624,7 @@ input[type="range"]::-moz-range-thumb {
   .app-main {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
+      "alerts"
       "current"
       "radar"
       "roast"

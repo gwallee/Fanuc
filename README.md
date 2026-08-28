@@ -15,17 +15,45 @@ themes, and a built-in **local AI** that roasts the weather (and you) —
 - 7-day forecast with icons, highs/lows, and rain chance
 - Browser geolocation ("My Location")
 - Refresh button
-- Powered by [Open-Meteo](https://open-meteo.com/) — a free public weather API
-  with **no API key**
+- **Two key-less sources, chosen automatically:**
+  - [**National Weather Service**](https://www.weather.gov/documentation/services-web-api)
+    (`api.weather.gov`) is used wherever it has coverage (US + territories).
+    It's the authoritative US source, and it supplies observations from the
+    nearest reporting station plus official watches and warnings.
+  - [**Open-Meteo**](https://open-meteo.com/) covers the rest of the world and
+    takes over automatically if NWS is unreachable or returns incomplete data.
+- The active source is shown under the current conditions, e.g.
+  *"Updated 1:39 AM · National Weather Service · KAUS"*
+
+### ⚠️ Severe weather alerts
+- Active NWS watches, warnings, and advisories for the current location
+- Colour-coded by severity (extreme/severe, moderate, minor)
+- Hidden entirely when there's nothing active
 
 ### 📡 Radar
-- Animated canvas radar with rotating sweep beam and fading glow
-- Breathing range rings, bearing ticks, and expanding ping
-- Multi-blob storm cells seeded from the *real* current weather
-  (precipitation probability, weather code, wind speed and direction)
-- Classic intensity color scale (green → yellow → orange → red → magenta)
-- Cells light up as the sweep passes over them
-- Wind-driven cell drift with a scrubbable 60-minute timeline
+
+The radar has two modes and always tells you which one you're looking at,
+via the badge next to the status light.
+
+**`NWS LIVE` — real radar (US).** Georeferenced base-reflectivity imagery
+from [NOAA's public GeoServer](https://opengeo.ncep.noaa.gov/) (the
+`conus_bref_qcd` mosaic — free, no key). The app requests a bounding box
+exactly `rangeKm` in every direction around your location, so the imagery
+maps 1:1 onto the scope, and pulls six timestamped frames 10 minutes apart
+to build a genuine radar loop. The timeline slider scrubs through those
+frames and shows each one's clock time.
+
+**`SIMULATED` — stylized fallback.** Outside NWS coverage, or if the imagery
+service is unreachable, the scope falls back to the V8 simulation: multi-blob
+storm cells seeded from the real current weather (precipitation probability,
+weather code, wind speed and direction), with wind-driven drift across a
+60-minute timeline. Never a blank box.
+
+Both modes share the same instrument styling:
+- Rotating sweep beam with fading glow and a bright leading edge
+- Breathing range rings, bearing ticks, and an expanding ping
+- Classic intensity colour scale (green → yellow → orange → red → magenta)
+- Pulsing centre location marker
 - Play / Pause, Stop, Refresh, and My Location controls
 - Live status indicator, crisp on retina screens, resizes for mobile
 
@@ -81,6 +109,7 @@ WhatTheWether-V8/
 ├── app.js          # Main app: search, weather, favorites, settings
 ├── radar.js        # Animated canvas radar engine
 ├── local-ai.js     # Local AI 2.0 roast generator (offline)
+├── nws.js          # National Weather Service client (obs, forecast, alerts)
 ├── config.js       # Central configuration + defaults
 ├── storage.js      # Safe localStorage wrapper
 ├── themes.js       # Theme switching
@@ -95,15 +124,28 @@ WhatTheWether-V8/
 ```
 
 Script load order matters and is already correct in `index.html`:
-`config.js → storage.js → themes.js → local-ai.js → radar.js → app.js`.
+`config.js → storage.js → themes.js → nws.js → local-ai.js → radar.js → app.js`.
 
 ## APIs used (all free, all key-less)
 
 | Service | Purpose | Key required |
 | --- | --- | --- |
-| [Open-Meteo Forecast](https://open-meteo.com/) | Current weather + 7-day forecast | **No** |
+| [NWS API](https://www.weather.gov/documentation/services-web-api) (`api.weather.gov`) | US observations, forecast, alerts | **No** |
+| [NOAA GeoServer](https://opengeo.ncep.noaa.gov/) (`conus_bref_qcd`) | Live radar reflectivity imagery | **No** |
+| [Open-Meteo Forecast](https://open-meteo.com/) | Worldwide weather fallback | **No** |
 | [Open-Meteo Geocoding](https://open-meteo.com/en/docs/geocoding-api) | City/place search | **No** |
 | [Zippopotam.us](https://api.zippopotam.us/) | US ZIP code lookup | **No** |
+
+The NWS API asks clients to send an identifying User-Agent. Browsers set
+their own and don't allow scripts to override it, so nothing is needed here —
+but if you ever port this to a server or desktop runtime, set a contact
+User-Agent there.
+
+Radar imagery is drawn to the canvas but never read back (no `getImageData`
+or `toDataURL`), so the cross-origin images work without CORS headers.
+
+To turn live imagery off and always use the simulation, set
+`radarImagery.enabled = false` in `config.js`.
 
 There is intentionally **no `.env.example`** — the app needs zero environment
 variables and zero secrets.
@@ -117,6 +159,8 @@ no API keys.
 
 ## Credits
 
-- Weather data: [Open-Meteo](https://open-meteo.com/) (CC BY 4.0)
+- US weather, alerts and radar: [NOAA / National Weather Service](https://www.weather.gov/)
+  (public domain)
+- Worldwide weather fallback: [Open-Meteo](https://open-meteo.com/) (CC BY 4.0)
 - ZIP lookup: [Zippopotam.us](https://api.zippopotam.us/)
 - Roasts: generated locally by Wether Bot, who is very sorry (it is not)

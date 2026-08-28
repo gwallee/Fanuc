@@ -1,8 +1,9 @@
 /* ============================================================
    What the Wether V8 — app.js
-   Main application: search, weather fetch (Open-Meteo, no key),
-   geolocation, favorites, settings, username, roast wiring,
-   and state restore. Every button gets a real event handler.
+   Main application: search, weather fetch (National Weather
+   Service first, Open-Meteo fallback — neither needs a key),
+   NWS alerts, geolocation, favorites, settings, username, roast
+   wiring, and state restore. Every button has a real handler.
    ============================================================ */
 
 (() => {
@@ -14,6 +15,8 @@
     location: null,   // { name, lat, lon }
     weather: null,    // normalized current weather
     daily: [],        // normalized 7-day forecast
+    source: null,     // 'nws' | 'open-meteo'
+    alerts: [],       // active NWS watches/warnings
     loading: false,
   };
 
@@ -150,6 +153,54 @@
     return { weather, daily };
   }
 
+  /* ------------------------------------------------------------
+     Source selection.
+     The National Weather Service is preferred where it has
+     coverage (US + territories): it is the authoritative source
+     and carries watches/warnings. Everywhere else — and any time
+     NWS is incomplete or down — Open-Meteo takes over, so the app
+     still works worldwide. Neither needs an API key.
+     ------------------------------------------------------------ */
+
+  async function fetchWeatherBest(location) {
+    try {
+      const point = await NWS.getPoint(location.lat, location.lon);
+      if (point) {
+        const [obs, daily] = await Promise.all([
+          NWS.getCurrentObservation(point),
+          NWS.getForecast(point),
+        ]);
+        if (obs && daily && daily.length) {
+          const today = daily[0] || {};
+          return {
+            source: 'nws',
+            weather: {
+              city: location.name,
+              tempF: obs.tempF,
+              feelsLikeF: obs.feelsLikeF,
+              humidity: obs.humidity,
+              windMph: obs.windMph ?? 0,
+              windDirDeg: obs.windDirDeg,
+              weatherCode: NWS.textToCode(obs.description),
+              conditionText: obs.description,
+              station: obs.station,
+              precipProb: today.precipProb ?? 0,
+              highF: today.highF,
+              lowF: today.lowF,
+            },
+            daily,
+          };
+        }
+        console.info('[app] NWS reachable but incomplete — using Open-Meteo');
+      }
+    } catch (err) {
+      console.warn('[app] NWS unavailable, using Open-Meteo', err);
+    }
+
+    const om = await fetchWeather(location);
+    return { source: 'open-meteo', weather: om.weather, daily: om.daily };
+  }
+
   /* ---------------- Rendering ---------------- */
 
   function fmtTemp(v) {
@@ -164,13 +215,17 @@
     $('wxCity').textContent = w.city;
     $('wxIcon').textContent = icon;
     $('wxTemp').textContent = fmtTemp(w.tempF);
-    $('wxCondition').textContent = label;
+    $('wxCondition').textContent = w.conditionText || label;
     $('wxFeels').textContent = fmtTemp(w.feelsLikeF);
     $('wxHumidity').textContent = (w.humidity ?? '--') + '%';
     $('wxWind').textContent = `${Math.round(w.windMph ?? 0)} mph`;
     $('wxHiLo').textContent = `${fmtTemp(w.highF)} / ${fmtTemp(w.lowF)}`;
     $('wxRain').textContent = `${Math.round(w.precipProb ?? 0)}%`;
-    $('wxUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const src = state.source === 'nws'
+      ? `National Weather Service${w.station ? ' · ' + w.station : ''}`
+      : 'Open-Meteo';
+    $('wxUpdated').textContent = `Updated ${time} · ${src}`;
 
     $('currentCard').classList.remove('empty');
     $('welcomePanel').hidden = true;
@@ -207,6 +262,48 @@
     if (input && document.activeElement !== input) input.value = username;
   }
 
+  /* ---------------- NWS alerts ---------------- */
+
+  function severityClass(sev) {
+    const s = String(sev).toLowerCase();
+    if (s === 'extreme' || s === 'severe') return 'alert-severe';
+    if (s === 'moderate') return 'alert-moderate';
+    return 'alert-minor';
+  }
+
+  function renderAlerts() {
+    const wrap = $('alertsPanel');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    if (!state.alerts.length) {
+      wrap.hidden = true;
+      return;
+    }
+    wrap.hidden = false;
+    state.alerts.slice(0, 4).forEach((a) => {
+      const div = document.createElement('div');
+      div.className = `alert-item ${severityClass(a.severity)}`;
+      const title = document.createElement('div');
+      title.className = 'alert-title';
+      title.textContent = `⚠️ ${a.event}`;
+      const body = document.createElement('div');
+      body.className = 'alert-body';
+      body.textContent = a.headline || a.areaDesc || '';
+      div.appendChild(title);
+      div.appendChild(body);
+      wrap.appendChild(div);
+    });
+  }
+
+  async function loadAlerts(location) {
+    try {
+      state.alerts = await NWS.getAlerts(location.lat, location.lon);
+    } catch (_) {
+      state.alerts = [];
+    }
+    renderAlerts();
+  }
+
   /* ---------------- Roasts ---------------- */
 
   function doRoast() {
@@ -232,14 +329,19 @@
     state.loading = true;
     setLoading(true);
     try {
-      const { weather, daily } = await fetchWeather(location);
+      const result = await fetchWeatherBest(location);
       state.location = location;
-      state.weather = weather;
-      state.daily = daily;
+      state.source = result.source;
+      state.weather = result.weather;
+      state.daily = result.daily;
 
       renderCurrent();
       renderForecast();
-      WTWRadar.setLocation(location.name, weather);
+      WTWRadar.setLocation(location.name, result.weather, {
+        lat: location.lat,
+        lon: location.lon,
+      });
+      loadAlerts(location); // non-blocking
       WTWStorage.saveLastLocation(location);
       updateSaveButton();
 

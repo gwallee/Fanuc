@@ -50,6 +50,9 @@
   <!-- ================= Main content ================= -->
   <main class="app-main" id="weatherPanels" hidden>
 
+    <!-- Active NWS watches / warnings -->
+    <section class="alerts-panel" id="alertsPanel" aria-label="Active weather alerts" hidden></section>
+
     <!-- Current weather -->
     <section class="card current-card empty" id="currentCard" aria-label="Current weather">
       <div class="card-head">
@@ -96,6 +99,7 @@
         <div class="radar-status">
           <span class="status-dot" id="radarStatusDot"></span>
           <span id="radarStatusText">STANDBY</span>
+          <span class="radar-source" id="radarSource" title="Radar data source">SIMULATED</span>
         </div>
       </div>
 
@@ -175,13 +179,17 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <footer class="app-footer">
-    <span>What the Wether <span id="appVersionFooter">V8</span> ⚡🌩️ — weather data by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (no API key needed)</span>
+    <span>What the Wether <span id="appVersionFooter">V8</span> ⚡🌩️ — data from the
+      <a href="https://www.weather.gov/documentation/services-web-api" target="_blank" rel="noopener">National Weather Service</a>
+      and <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, radar from
+      <a href="https://opengeo.ncep.noaa.gov/" target="_blank" rel="noopener">NOAA</a> — no API keys needed</span>
   </footer>
 
   <!-- Load order matters: config → storage → themes → AI → radar → app -->
   <script src="config.js"></script>
   <script src="storage.js"></script>
   <script src="themes.js"></script>
+  <script src="nws.js"></script>
   <script src="local-ai.js"></script>
   <script src="radar.js"></script>
   <script src="app.js"></script>

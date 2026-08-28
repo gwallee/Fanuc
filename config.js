@@ -27,6 +27,24 @@ const WTW_CONFIG = {
     geocoding: 'https://geocoding-api.open-meteo.com/v1/search',
     // Zippopotam: free US ZIP lookup, no key required.
     zip: 'https://api.zippopotam.us/us/',
+    // National Weather Service: free, no key, US coverage only.
+    nws: 'https://api.weather.gov',
+  },
+
+  // Real radar imagery. NOAA's public GeoServer serves the CONUS
+  // reflectivity mosaic as georeferenced WMS images — no key, and
+  // it accepts a TIME parameter so we can build an actual loop.
+  // US only; outside coverage the radar falls back to simulation.
+  radarImagery: {
+    enabled: true,
+    wmsBase: 'https://opengeo.ncep.noaa.gov/geoserver/conus/conus_bref_qcd/ows',
+    layer: 'conus_bref_qcd',
+    rangeKm: 150,      // scope radius on the ground
+    imageSize: 512,    // px requested per frame
+    frameCount: 6,     // frames in the loop
+    frameStepMin: 10,  // minutes between frames
+    // Set to false to skip live imagery entirely and always use
+    // the stylized simulation.
   },
 
   weather: {
@@ -39,6 +57,7 @@ const WTW_CONFIG = {
     frameMinutes: 60,     // timeline spans the last 60 minutes
     sweepSecondsPerRev: 4,
     maxStormCells: 7,
+    framePlaybackMs: 750, // real-imagery loop speed
   },
 
   personalities: ['friendly', 'sassy', 'rude', 'brutal'],

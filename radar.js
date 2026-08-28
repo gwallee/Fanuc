@@ -32,7 +32,104 @@ const WTWRadar = (() => {
     locationLabel: 'No location',
     weatherSeed: null,        // last weather used to seed the cells
     onStatusChange: null,
+
+    // Real NWS/NOAA radar imagery
+    source: 'sim',            // 'sim' | 'nws'
+    frames: [],               // [{ time: Date, img: Image }]
+    frameIndex: 0,
+    frameAccum: 0,            // ms accumulated toward the next frame
+    coords: null,             // { lat, lon } for imagery requests
+    loadToken: 0,             // guards against stale async loads
   };
+
+  /* ---------------- Real radar imagery (NOAA WMS) ----------------
+     NOAA's public GeoServer returns georeferenced reflectivity
+     PNGs for an arbitrary bounding box and timestamp — no API key.
+     We request a square box `rangeKm` in every direction around the
+     location, so the image maps exactly onto the scope circle.
+     Note: we only ever draw these images, never read pixels back,
+     so a tainted canvas is not a problem and CORS is not required.
+     ---------------------------------------------------------------- */
+
+  function imgCfg() {
+    return (window.WTW_CONFIG && WTW_CONFIG.radarImagery) || { enabled: false };
+  }
+
+  function wmsUrl(lat, lon, when) {
+    const c = imgCfg();
+    const latDelta = c.rangeKm / 111.32;
+    const lonDelta = c.rangeKm / (111.32 * Math.cos((lat * Math.PI) / 180));
+    const params = new URLSearchParams({
+      service: 'WMS',
+      version: '1.1.1',
+      request: 'GetMap',
+      layers: c.layer,
+      styles: '',
+      format: 'image/png',
+      transparent: 'true',
+      // WMS 1.1.1 + EPSG:4326 uses lon,lat order (1.3.0 flips it,
+      // which is a classic source of upside-down radar).
+      srs: 'EPSG:4326',
+      bbox: [lon - lonDelta, lat - latDelta, lon + lonDelta, lat + latDelta].join(','),
+      width: String(c.imageSize),
+      height: String(c.imageSize),
+    });
+    if (when) params.set('time', when.toISOString().replace('.000Z', 'Z'));
+    return `${c.wmsBase}?${params.toString()}`;
+  }
+
+  function loadImage(url, timeoutMs = 9000) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      let settled = false;
+      const finish = (ok) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(ok ? img : null);
+      };
+      const timer = setTimeout(() => finish(false), timeoutMs);
+      img.onload = () => finish(img.width > 0);
+      img.onerror = () => finish(false);
+      img.src = url;
+    });
+  }
+
+  // Fetch the loop. Resolves true when at least one frame loaded.
+  async function loadRealFrames(lat, lon) {
+    const c = imgCfg();
+    if (!c.enabled || typeof lat !== 'number' || typeof lon !== 'number') return false;
+
+    const token = ++state.loadToken;
+    setStatus('FETCHING', false);
+
+    const stepMs = (c.frameStepMin || 10) * 60000;
+    const latest = Math.floor(Date.now() / stepMs) * stepMs;
+    const times = [];
+    for (let i = (c.frameCount || 6) - 1; i >= 0; i--) {
+      times.push(new Date(latest - i * stepMs));
+    }
+
+    const images = await Promise.all(times.map((t) => loadImage(wmsUrl(lat, lon, t))));
+    if (token !== state.loadToken) return false; // a newer load superseded us
+
+    const frames = [];
+    times.forEach((t, i) => {
+      if (images[i]) frames.push({ time: t, img: images[i] });
+    });
+
+    if (!frames.length) {
+      state.source = 'sim';
+      state.frames = [];
+      return false;
+    }
+
+    state.source = 'nws';
+    state.frames = frames;
+    state.frameIndex = frames.length - 1;
+    state.frameAccum = 0;
+    return true;
+  }
 
   /* ---------------- Storm cell generation ---------------- */
 
@@ -195,11 +292,27 @@ const WTWRadar = (() => {
       ctx.stroke();
     }
 
-    // Storm cells (clipped to the scope circle)
+    // Precipitation layer (clipped to the scope circle)
     ctx.save();
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.clip();
+
+    if (state.source === 'nws' && state.frames.length) {
+      // Real reflectivity imagery. The requested bounding box is
+      // exactly 2 x rangeKm across, so it maps onto the scope's
+      // bounding square 1:1.
+      const frame = state.frames[Math.min(state.frameIndex, state.frames.length - 1)];
+      if (frame && frame.img) {
+        ctx.globalAlpha = 0.92;
+        ctx.drawImage(frame.img, cx - radius, cy - radius, radius * 2, radius * 2);
+        ctx.globalAlpha = 1;
+      }
+      drawSweep(ctx, cx, cy, radius, accent);
+      ctx.restore();
+      drawMarkerAndBezel(ctx, cx, cy, radius, accent, t);
+      return;
+    }
 
     const minutesBack = (cfg().frameMinutes || 60) - state.timelineMinute;
     for (const cell of state.cells) {
@@ -227,6 +340,14 @@ const WTWRadar = (() => {
       cell.glow *= 0.985;
     }
 
+    drawSweep(ctx, cx, cy, radius, accent);
+
+    ctx.restore();
+
+    drawMarkerAndBezel(ctx, cx, cy, radius, accent, t);
+  }
+
+  function drawSweep(ctx, cx, cy, radius, accent) {
     // Sweep beam (only spins while playing; frozen when paused)
     const sweep = state.sweepAngle;
     const beamWidth = Math.PI / 5;
@@ -266,9 +387,9 @@ const WTWRadar = (() => {
     ctx.stroke();
     ctx.shadowBlur = 0;
     ctx.lineWidth = 1;
+  }
 
-    ctx.restore();
-
+  function drawMarkerAndBezel(ctx, cx, cy, radius, accent, t) {
     // Center location marker (pulsing)
     const markerPulse = 4 + Math.sin(t * 3) * 1.5;
     ctx.beginPath();
@@ -319,22 +440,35 @@ const WTWRadar = (() => {
       const prev = state.sweepAngle;
       state.sweepAngle = (state.sweepAngle + (Math.PI * 2 / secsPerRev) * dt) % (Math.PI * 2);
 
-      // Light up cells the sweep just passed over.
-      const minutesBack = (cfg().frameMinutes || 60) - state.timelineMinute;
-      for (const cell of state.cells) {
-        const px = cell.x - cell.driftX * minutesBack;
-        const py = cell.y - cell.driftY * minutesBack;
-        let cellAngle = Math.atan2(py, px);
-        if (cellAngle < 0) cellAngle += Math.PI * 2;
-        if (angleBetween(prev, state.sweepAngle, cellAngle)) {
-          cell.glow = 1;
+      if (state.source === 'nws' && state.frames.length > 1) {
+        // Real imagery: step through the loop on a fixed cadence.
+        if (!state.scrubbing) {
+          state.frameAccum += dt * 1000;
+          const stepMs = cfg().framePlaybackMs || 750;
+          if (state.frameAccum >= stepMs) {
+            state.frameAccum = 0;
+            state.frameIndex = (state.frameIndex + 1) % state.frames.length;
+            syncTimelineUI();
+          }
         }
-      }
+      } else {
+        // Simulated cells: light up the ones the sweep just crossed.
+        const minutesBack = (cfg().frameMinutes || 60) - state.timelineMinute;
+        for (const cell of state.cells) {
+          const px = cell.x - cell.driftX * minutesBack;
+          const py = cell.y - cell.driftY * minutesBack;
+          let cellAngle = Math.atan2(py, px);
+          if (cellAngle < 0) cellAngle += Math.PI * 2;
+          if (angleBetween(prev, state.sweepAngle, cellAngle)) {
+            cell.glow = 1;
+          }
+        }
 
-      // Auto-advance the timeline back to "now" while playing.
-      if (!state.scrubbing && state.timelineMinute < (cfg().frameMinutes || 60)) {
-        state.timelineMinute = Math.min(cfg().frameMinutes || 60, state.timelineMinute + dt * 6);
-        syncTimelineUI();
+        // Auto-advance the timeline back to "now" while playing.
+        if (!state.scrubbing && state.timelineMinute < (cfg().frameMinutes || 60)) {
+          state.timelineMinute = Math.min(cfg().frameMinutes || 60, state.timelineMinute + dt * 6);
+          syncTimelineUI();
+        }
       }
     }
 
@@ -377,17 +511,70 @@ const WTWRadar = (() => {
     const dot = document.getElementById('radarStatusDot');
     if (el) el.textContent = text;
     if (dot) dot.classList.toggle('live', !!live);
+    updateSourceBadge();
     if (typeof state.onStatusChange === 'function') state.onStatusChange(text);
+  }
+
+  // Says plainly whether you are looking at real NWS reflectivity
+  // or the stylized fallback, so the display is never misleading.
+  function updateSourceBadge() {
+    const badge = document.getElementById('radarSource');
+    if (!badge) return;
+    const live = state.source === 'nws' && state.frames.length > 0;
+    badge.textContent = live ? 'NWS LIVE' : 'SIMULATED';
+    badge.classList.toggle('live-source', live);
+    badge.title = live
+      ? 'Real NOAA/NWS base reflectivity imagery'
+      : 'No live NWS radar for this location — showing a simulation based on current conditions';
+  }
+
+  function timelineLabelText() {
+    if (state.source === 'nws' && state.frames.length) {
+      const i = Math.min(state.frameIndex, state.frames.length - 1);
+      if (i === state.frames.length - 1) return 'NOW';
+      return state.frames[i].time.toLocaleTimeString([], {
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+    }
+    const back = (cfg().frameMinutes || 60) - Math.round(state.timelineMinute);
+    return back <= 0 ? 'NOW' : `-${back} min`;
+  }
+
+  // The slider means different things per source, so re-range it
+  // whenever the source changes.
+  function configureTimeline() {
+    const slider = document.getElementById('radarTimeline');
+    const caption = document.querySelector('.timeline-caption');
+    if (!slider) return;
+    if (state.source === 'nws' && state.frames.length) {
+      slider.min = '0';
+      slider.max = String(state.frames.length - 1);
+      slider.step = '1';
+      slider.value = String(state.frameIndex);
+      if (caption) {
+        const first = state.frames[0].time;
+        caption.textContent = first.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      }
+    } else {
+      slider.min = '0';
+      slider.max = String(cfg().frameMinutes || 60);
+      slider.step = '1';
+      slider.value = String(Math.round(state.timelineMinute));
+      if (caption) caption.textContent = `-${cfg().frameMinutes || 60} min`;
+    }
+    syncTimelineUI();
   }
 
   function syncTimelineUI() {
     const slider = document.getElementById('radarTimeline');
     const label = document.getElementById('radarTimeLabel');
-    if (slider && !state.scrubbing) slider.value = String(Math.round(state.timelineMinute));
-    if (label) {
-      const back = (cfg().frameMinutes || 60) - Math.round(state.timelineMinute);
-      label.textContent = back <= 0 ? 'NOW' : `-${back} min`;
+    if (slider && !state.scrubbing) {
+      slider.value = state.source === 'nws' && state.frames.length
+        ? String(state.frameIndex)
+        : String(Math.round(state.timelineMinute));
     }
+    if (label) label.textContent = timelineLabelText();
   }
 
   /* ---------------- Public controls ---------------- */
@@ -410,19 +597,39 @@ const WTWRadar = (() => {
     state.playing ? stop() : play();
   }
 
-  function refresh(weather) {
+  // Always regenerates the simulated cells first so a fallback is
+  // ready, then tries to replace them with real NWS imagery.
+  async function refresh(weather) {
     generateCells(weather || state.weatherSeed || {});
     state.timelineMinute = cfg().frameMinutes || 60;
-    syncTimelineUI();
+
+    let live = false;
+    if (state.coords) {
+      try {
+        live = await loadRealFrames(state.coords.lat, state.coords.lon);
+      } catch (err) {
+        console.warn('[radar] live imagery failed, using simulation', err);
+      }
+    }
+    if (!live) {
+      state.source = 'sim';
+      state.frames = [];
+    }
+
+    configureTimeline();
     setStatus(state.playing ? 'SCANNING' : 'REFRESHED', state.playing);
     draw();
+    return live;
   }
 
-  function setLocation(label, weather) {
+  function setLocation(label, weather, coords) {
     state.locationLabel = label || 'Unknown';
     const el = document.getElementById('radarLocationLabel');
     if (el) el.textContent = state.locationLabel;
-    refresh(weather);
+    if (coords && typeof coords.lat === 'number' && typeof coords.lon === 'number') {
+      state.coords = { lat: coords.lat, lon: coords.lon };
+    }
+    return refresh(weather);
   }
 
   function updatePlayButton() {
@@ -454,12 +661,13 @@ const WTWRadar = (() => {
       slider.value = String(cfg().frameMinutes || 60);
       slider.addEventListener('input', () => {
         state.scrubbing = true;
-        state.timelineMinute = Number(slider.value);
-        const label = document.getElementById('radarTimeLabel');
-        if (label) {
-          const back = (cfg().frameMinutes || 60) - Math.round(state.timelineMinute);
-          label.textContent = back <= 0 ? 'NOW' : `-${back} min`;
+        if (state.source === 'nws' && state.frames.length) {
+          state.frameIndex = Math.max(0, Math.min(state.frames.length - 1, Number(slider.value)));
+        } else {
+          state.timelineMinute = Number(slider.value);
         }
+        const label = document.getElementById('radarTimeLabel');
+        if (label) label.textContent = timelineLabelText();
         draw();
       });
       const endScrub = () => { state.scrubbing = false; };
@@ -469,7 +677,7 @@ const WTWRadar = (() => {
     }
 
     generateCells({});
-    syncTimelineUI();
+    configureTimeline();
     setStatus('STANDBY', false);
     updatePlayButton();
     state.rafId = requestAnimationFrame(frame);
