@@ -9,7 +9,7 @@ const BROWSER = process.env.PLAYWRIGHT_CHROMIUM || undefined;
   // Deny every external host by default; the stubs below are registered
   // afterwards and so take precedence. Anything unstubbed fails closed
   // rather than reaching the real internet on a CI runner.
-  await page.route('https://**', (r) => r.abort());
+  await page.route((u) => u.protocol === 'https:', (r) => r.abort());
   const errors = [];
   page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|ERR_TUNNEL|ERR_FAILED|net::/.test(m.text())) errors.push('CONSOLE: ' + m.text()); });

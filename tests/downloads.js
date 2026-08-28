@@ -52,9 +52,9 @@ function omBody() {
     const page = await ctx.newPage();
     // Deny every external host by default. Routes registered after this one
     // win, so each suite still stubs what it needs - but anything a suite
-    // forgot fails closed instead of quietly reaching the real internet,
-    // which is what made these suites pass locally and fail in CI.
-    await page.route('https://**', (r) => r.abort());
+    // forgot fails closed instead of quietly reaching the real internet.
+    // A predicate, not a glob: 'https://**' matches nothing at all.
+    await page.route((u) => u.protocol === 'https:', (r) => r.abort());
     await page.route('https://api.github.com/**', (r) => releaseResponse(r));
     await page.route('https://geocoding-api.open-meteo.com/**', r => r.fulfill({contentType:'application/json',
       body: JSON.stringify({results:[{name:'Austin',admin1:'Texas',country:'United States',latitude:30.2672,longitude:-97.7431}]})}));
@@ -185,9 +185,9 @@ function omBody() {
     const dpage = await dctx.newPage();
     // Deny every external host by default. Routes registered after this one
     // win, so each suite still stubs what it needs - but anything a suite
-    // forgot fails closed instead of quietly reaching the real internet,
-    // which is what made these suites pass locally and fail in CI.
-    await dpage.route('https://**', (r) => r.abort());
+    // forgot fails closed instead of quietly reaching the real internet.
+    // A predicate, not a glob: 'https://**' matches nothing at all.
+    await dpage.route((u) => u.protocol === 'https:', (r) => r.abort());
     await dpage.route('https://api.github.com/**', r => r.fulfill({contentType:'application/json', body: JSON.stringify(RELEASE)}));
     await dpage.route('https://geocoding-api.open-meteo.com/**', r => r.fulfill({contentType:'application/json',
       body: JSON.stringify({results:[{name:'Austin',admin1:'Texas',country:'United States',latitude:30.2672,longitude:-97.7431}]})}));
