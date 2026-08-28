@@ -288,6 +288,19 @@
   }
 
   function exportProgram(p) {
+    // Hosted (claude.ai artifact) viewers save through the downloads capability;
+    // the local app uses a plain blob link.
+    if (window.claude && typeof window.claude.use === 'function') {
+      window.claude.use('downloads').then(function (dl) {
+        if (dl) return dl.save({ filename: p.parsed.name + '.LS.txt', data: p.source });
+        blobDownload(p);
+      }).catch(function () { /* viewer declined — nothing to do */ });
+      return;
+    }
+    blobDownload(p);
+  }
+
+  function blobDownload(p) {
     var blob = new Blob([p.source], { type: 'text/plain' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
