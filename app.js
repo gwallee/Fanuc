@@ -235,7 +235,7 @@
     $('wxTemp').textContent = fmtTemp(w.tempF);
     $('wxCondition').textContent = w.conditionText || label;
     $('wxFeels').textContent = fmtTemp(w.feelsLikeF);
-    $('wxHumidity').textContent = (w.humidity ?? '--') + '%';
+    $('wxHumidity').textContent = w.humidity == null ? '--' : `${Math.round(w.humidity)}%`;
     $('wxWind').textContent = w.windMph == null ? '--' : `${Math.round(w.windMph)} mph`;
     $('wxHiLo').textContent = `${fmtTemp(w.highF)} / ${fmtTemp(w.lowF)}`;
     $('wxRain').textContent = w.precipProb == null ? '--' : `${Math.round(w.precipProb)}%`;
@@ -271,7 +271,7 @@
         <div class="fc-day">${dayName}</div>
         <div class="fc-icon" title="${label}">${icon}</div>
         <div class="fc-temps"><span class="fc-hi">${fmtTemp(day.highF)}</span><span class="fc-lo">${fmtTemp(day.lowF)}</span></div>
-        <div class="fc-rain">💧 ${day.precipProb == null ? '--' : day.precipProb + '%'}</div>
+        <div class="fc-rain">💧 ${day.precipProb == null ? '--' : Math.round(day.precipProb) + '%'}</div>
       `;
       wrap.appendChild(card);
     });
