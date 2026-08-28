@@ -454,6 +454,82 @@
     return s;
   }
 
+  /* ================= occurrence highlighting =================
+   * Notepad++-style: select text in the code view and every other instance
+   * lights up. Selecting inside a register/PR/IO token highlights every
+   * reference to that ITEM (labeled or not) — e.g. select PR[6] and
+   * PR[6:pallet base] lights up too. */
+
+  var occLast = null;
+
+  function clearOccurrences() {
+    occLast = null;
+    if (window.CSS && CSS.highlights) CSS.highlights.delete('tp-occ');
+  }
+
+  function updateOccurrences() {
+    if (!(window.Highlight && window.CSS && CSS.highlights)) return; // older browser — feature off
+    var sel = window.getSelection();
+    var text = sel ? String(sel).trim() : '';
+    var itemRe = null;
+    if (text && text.length >= 2 && text.length <= 60 && text.indexOf('\n') === -1) {
+      var node = sel.anchorNode;
+      var el = node && (node.nodeType === 3 ? node.parentElement : node);
+      var tokEl = el && el.closest ? el.closest('.tok-reg, .tok-io, .tok-lbl') : null;
+      if (tokEl) {
+        var m = tokEl.textContent.match(/^(R|PR|AR|SR|DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|AI|AO|F|M|TIMER|LBL)\[(\d+)/);
+        // component references (PR[20,1]) count as uses of the same item
+        if (m) itemRe = new RegExp('\\b' + m[1] + '\\[' + m[2] + '(?:\\s*,\\s*\\d+)?(?::[^\\]]*)?\\]', 'g');
+      }
+    } else {
+      text = '';
+    }
+    var key = itemRe ? 'item:' + itemRe.source : (text ? 'text:' + text : null);
+    if (key === occLast) return;
+    occLast = key;
+    CSS.highlights.delete('tp-occ');
+    if (!key) return;
+
+    var ranges = [];
+    document.querySelectorAll('#pane .codebox .src').forEach(function (srcEl) {
+      var walker = document.createTreeWalker(srcEl, NodeFilter.SHOW_TEXT);
+      var tn;
+      while ((tn = walker.nextNode()) && ranges.length < 2000) {
+        var t = tn.nodeValue;
+        if (itemRe) {
+          itemRe.lastIndex = 0;
+          var mm;
+          while ((mm = itemRe.exec(t)) !== null) {
+            var r = new Range();
+            r.setStart(tn, mm.index);
+            r.setEnd(tn, mm.index + mm[0].length);
+            ranges.push(r);
+          }
+        } else {
+          var from = 0, idx;
+          while ((idx = t.indexOf(text, from)) !== -1) {
+            var r2 = new Range();
+            r2.setStart(tn, idx);
+            r2.setEnd(tn, idx + text.length);
+            ranges.push(r2);
+            from = idx + text.length;
+          }
+        }
+      }
+    });
+    if (ranges.length) {
+      var hl = new Highlight();
+      ranges.forEach(function (r) { hl.add(r); });
+      CSS.highlights.set('tp-occ', hl);
+    }
+  }
+
+  var occTimer = null;
+  document.addEventListener('selectionchange', function () {
+    clearTimeout(occTimer);
+    occTimer = setTimeout(updateOccurrences, 120);
+  });
+
   /* ================= browser-history navigation =================
    * Every view change (tab / program / split) becomes a history entry,
    * so the mouse back/forward buttons walk the view trail —
@@ -501,6 +577,7 @@
 
   function render() {
     recordNav();
+    clearOccurrences(); // the DOM is rebuilt — stale highlight ranges go with it
     renderSidebar();
     renderConnect();
     renderTabs();

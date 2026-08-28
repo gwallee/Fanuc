@@ -31,6 +31,7 @@
   --off: #b4472e;
   --diff-add-bg: #e4f2e7;
   --diff-del-bg: #f6e3dd;
+  --occ-bg: #f2df9c;
   --shadow: 0 1px 3px rgba(28, 30, 33, 0.07);
 }
 
@@ -71,6 +72,7 @@
     --off: #f08a6e;
     --diff-add-bg: #1e3325;
     --diff-del-bg: #40251d;
+    --occ-bg: #56490f;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   }
 }
@@ -107,6 +109,7 @@
   --off: #f08a6e;
   --diff-add-bg: #1e3325;
   --diff-del-bg: #40251d;
+  --occ-bg: #56490f;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 
@@ -626,6 +629,11 @@ tr:last-child td { border-bottom: none; }
 .prog-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
 @media (max-width: 1000px) {
   .split-wrap { grid-template-columns: 1fr; }
+}
+
+/* ---------- occurrence highlighting (select text → all instances light up) */
+::highlight(tp-occ) {
+  background-color: var(--occ-bg);
 }
 
 /* ---------- toast ---------- */
