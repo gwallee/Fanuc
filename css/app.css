@@ -260,7 +260,13 @@ button { font: inherit; }
   border-bottom: 1px solid var(--line);
   background: var(--bg);
   overflow-x: auto;
+  /* scrollable when narrow, but never show a scrollbar (Windows draws one always) */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+.tabs::-webkit-scrollbar { display: none; }
+
+.prog-list { scrollbar-width: thin; }
 
 .tab {
   border: 1px solid transparent;

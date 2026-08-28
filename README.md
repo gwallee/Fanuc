@@ -14,6 +14,8 @@ Import `.LS` files, drag-and-drop, or **Open folder** to import a whole backup d
 
 **Bridge mode (live robot + local directories by path):**
 
+Windows: double-click **`Start FANUC Studio.bat`** — it starts the bridge and opens the app (needs Node.js LTS from nodejs.org installed once). macOS/Linux: `./start.sh`. Or by hand:
+
 ```
 node server.js           # zero dependencies; then open http://localhost:8642
 ```
