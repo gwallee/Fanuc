@@ -419,6 +419,21 @@
     });
   }
 
+  /* Collapsible section header (h3). Collapse state is per-session. */
+  function secHead(title, key, defaultOpen) {
+    if (!state.secOpen) state.secOpen = {};
+    var open = (key in state.secOpen) ? state.secOpen[key] : (defaultOpen !== false);
+    var el = h('h3', { class: 'sec-toggle' }, [
+      h('span', { class: 'xi-caret', text: open ? '▾' : '▸' }),
+      document.createTextNode(' ' + title)
+    ]);
+    el.addEventListener('click', function () {
+      state.secOpen[key] = !open;
+      render();
+    });
+    return { el: el, open: open };
+  }
+
   function chip(ref, cls) {
     return h('span', {
       class: 'chip ' + cls,
@@ -1082,26 +1097,12 @@
     // -- call order --
     var rootNames = A.roots(g);
     if (!rootNames.length) rootNames = Object.keys(state.programs);
-    if (!state.flowSections) state.flowSections = {};
-    function sectionHead(title, key) {
-      var open = !state.flowSections[key];
-      var el = h('h3', { class: 'sec-toggle' }, [
-        h('span', { class: 'xi-caret', text: open ? '▾' : '▸' }),
-        document.createTextNode(' ' + title)
-      ]);
-      el.addEventListener('click', function () {
-        state.flowSections[key] = open;
-        render();
-      });
-      return { el: el, open: open };
-    }
-
     var flowWrap = h('div', { class: 'graph' });
-    var secCall = sectionHead('Call order — the sequence programs run in', 'callorder');
+    var secCall = secHead('Call order — the sequence programs run in', 'flow-callorder');
     flowWrap.appendChild(secCall.el);
     if (!secCall.open) {
       pane.appendChild(flowWrap);
-      var secCfg0 = sectionHead('Control flow inside ' + p.parsed.name, 'cfg');
+      var secCfg0 = secHead('Control flow inside ' + p.parsed.name, 'flow-cfg');
       pane.appendChild(secCfg0.el);
       if (secCfg0.open) renderCfg(pane, p);
       return;
@@ -1217,7 +1218,7 @@
     pane.appendChild(flowWrap);
 
     // -- control-flow graph of the selected program --
-    var secCfg = sectionHead('Control flow inside ' + p.parsed.name, 'cfg');
+    var secCfg = secHead('Control flow inside ' + p.parsed.name, 'flow-cfg');
     pane.appendChild(secCfg.el);
     if (secCfg.open) renderCfg(pane, p);
   }
@@ -1930,8 +1931,9 @@
 
     // program files
     var lsFiles = state.robot.files.filter(function (f) { return /\.LS$/i.test(f); });
-    pane.appendChild(h('h3', { text: 'Programs on ' + state.robot.ip + ' (' + lsFiles.length + ')' }));
-    if (lsFiles.length) {
+    var secProgs = secHead('Programs on ' + state.robot.ip + ' (' + lsFiles.length + ')', 'robot-programs');
+    pane.appendChild(secProgs.el);
+    if (!secProgs.open) { /* collapsed */ } else if (lsFiles.length) {
       var actions = h('p', {}, [
         h('button', {
           class: 'btn', text: 'Import all ' + lsFiles.length + ' programs',
@@ -1962,9 +1964,11 @@
     }
 
     // backup
-    pane.appendChild(h('h3', { text: 'Backups' }));
+    var secBk = secHead('Backups', 'robot-backups');
+    pane.appendChild(secBk.el);
     var bk = state.robot.backup;
     var today = new Date().toISOString().slice(0, 10);
+    if (secBk.open) {
     pane.appendChild(h('p', { class: 'muted', text: 'Saved to backups/<robot-name-or-ip>_' + today + '_NN on the bridge PC — NN increments automatically for multiple backups on the same day, and quick backups get a _quick suffix. The robot name is read from the controller when it answers over HTTP.' }));
     pane.appendChild(h('p', {}, [
       h('button', {
@@ -1989,13 +1993,14 @@
       if (bk.failed && bk.failed.length) pane.appendChild(h('p', { class: 'muted', text: 'Could not read: ' + bk.failed.join(', ') }));
       pane.appendChild(h('p', { class: 'muted', text: 'To diff a robot against this backup later: Compare tab → load this folder as the baseline.' }));
     }
+    } // end backups section
 
     // registers
-    pane.appendChild(h('h3', {}, [
-      document.createTextNode('Registers (NUMREG.VA) '),
-      h('button', { class: 'btn subtle', text: 'Refresh', onclick: loadRobotRegisters })
-    ]));
     var regs = state.robot.registers;
+    var secRegs = secHead('Registers (NUMREG.VA)' + (regs && !regs.error ? ' — ' + regs.length : ''), 'robot-regs');
+    pane.appendChild(secRegs.el);
+    if (!secRegs.open) { /* collapsed */ } else {
+    pane.appendChild(h('p', {}, [h('button', { class: 'btn subtle', text: 'Refresh from robot', onclick: loadRobotRegisters })]));
     if (!regs) {
       pane.appendChild(h('p', { class: 'muted', text: 'Reading…' }));
     } else if (regs.error) {
@@ -2033,42 +2038,93 @@
       fIn.addEventListener('input', drawRegs);
       drawRegs();
     }
+    } // end registers section
 
-    // I/O — live state table from IOSTATE.DG
-    pane.appendChild(h('h3', {}, [
-      document.createTextNode('Live I/O (IOSTATE.DG) '),
-      h('button', { class: 'btn subtle', text: (state.robot.ioState || state.robot.rawIO) ? 'Refresh' : 'Read from robot', onclick: loadRobotIO })
+    // I/O — live state from IOSTATE.DG, grouped by type
+    var secIO = secHead('Live I/O (IOSTATE.DG)' + (state.robot.ioState ? ' — ' + state.robot.ioState.length + ' points' : ''), 'robot-io');
+    pane.appendChild(secIO.el);
+    if (!secIO.open) return;
+    pane.appendChild(h('p', {}, [
+      h('button', { class: 'btn subtle', text: (state.robot.ioState || state.robot.rawIO) ? 'Refresh from robot' : 'Read from robot', onclick: loadRobotIO })
     ]));
     if (state.robot.ioState) {
       var ioBar2 = h('div', { class: 'search-bar' });
-      var ioIn2 = h('input', { type: 'search', placeholder: 'Filter I/O… e.g. DI[1], DO, gripper, ON' });
+      var ioIn2 = h('input', { type: 'search', placeholder: 'Filter I/O… e.g. DI[1], DO, gripper, ON — or expand a type below' });
       ioBar2.appendChild(ioIn2);
       pane.appendChild(ioBar2);
-      var ioWrap = h('div', { class: 'table-wrap' });
+      var ioWrap = h('div');
       pane.appendChild(ioWrap);
+
+      function ioRow(tbl, p) {
+        var key = p.type + '[' + p.index + ']';
+        var used = h('td');
+        var x = state.xref.io[key];
+        if (x) x.refs.slice(0, 6).forEach(function (ref) { used.appendChild(chip(ref, ref.write ? 'write' : 'read')); });
+        tbl.appendChild(h('tr', {}, [
+          h('td', { class: 'n', text: key }),
+          h('td', {}, [h('span', { class: p.state === 'ON' ? 'tok-on mono' : (p.state === 'OFF' ? 'tok-off mono' : 'mono'), text: p.state })]),
+          h('td', { text: p.comment }),
+          used
+        ]));
+      }
+
+      function ioTable() {
+        var tbl = h('table', { class: 'xref-table' });
+        tbl.appendChild(h('tr', {}, [h('th', { text: 'Point' }), h('th', { text: 'Live state' }), h('th', { text: 'Comment' }), h('th', { text: 'Used at' })]));
+        return tbl;
+      }
+
       var drawIOTable = function () {
         var q = ioIn2.value.trim().toLowerCase();
         ioWrap.innerHTML = '';
-        var tbl = h('table', { class: 'xref-table' });
-        tbl.appendChild(h('tr', {}, [h('th', { text: 'Point' }), h('th', { text: 'Live state' }), h('th', { text: 'Comment' }), h('th', { text: 'Used at' })]));
-        var shown = 0;
+        if (q) {
+          // filtering: one flat table of matches across every type
+          var tbl = ioTable();
+          var shown = 0;
+          state.robot.ioState.forEach(function (p) {
+            var key = p.type + '[' + p.index + ']';
+            if ((key + ' ' + p.state + ' ' + p.comment).toLowerCase().indexOf(q) === -1) return;
+            if (++shown > 300) return;
+            ioRow(tbl, p);
+          });
+          var tw = h('div', { class: 'table-wrap' });
+          tw.appendChild(tbl);
+          ioWrap.appendChild(tw);
+          if (!shown) ioWrap.appendChild(h('p', { class: 'muted', text: 'No I/O points match.' }));
+          return;
+        }
+        // no filter: collapsible group per I/O type
+        var groups = {}, order = [];
         state.robot.ioState.forEach(function (p) {
-          var key = p.type + '[' + p.index + ']';
-          var hay = (key + ' ' + p.state + ' ' + p.comment).toLowerCase();
-          if (q && hay.indexOf(q) === -1) return;
-          if (++shown > 300) return;
-          var used = h('td');
-          var x = state.xref.io[key];
-          if (x) x.refs.slice(0, 6).forEach(function (ref) { used.appendChild(chip(ref, ref.write ? 'write' : 'read')); });
-          tbl.appendChild(h('tr', {}, [
-            h('td', { class: 'n', text: key }),
-            h('td', {}, [h('span', { class: p.state === 'ON' ? 'tok-on mono' : (p.state === 'OFF' ? 'tok-off mono' : 'mono'), text: p.state })]),
-            h('td', { text: p.comment }),
-            used
-          ]));
+          if (!groups[p.type]) { groups[p.type] = []; order.push(p.type); }
+          groups[p.type].push(p);
         });
-        ioWrap.appendChild(tbl);
-        if (!shown) ioWrap.appendChild(h('p', { class: 'muted', text: 'No I/O points match.' }));
+        order.forEach(function (type) {
+          var pts = groups[type];
+          var on = pts.filter(function (p) { return p.state === 'ON'; }).length;
+          var labeled = pts.filter(function (p) { return p.comment; }).length;
+          var open = !!(state.secOpen && state.secOpen['io-' + type]);
+          var item = h('div', { class: 'xref-item' + (open ? ' open' : '') });
+          var head = h('button', { class: 'xi-head' }, [
+            h('span', { class: 'xi-caret', text: open ? '▾' : '▸' }),
+            h('span', { class: 'xi-key mono', text: type }),
+            h('span', { class: 'xi-label', text: pts.length + ' points · ' + on + ' ON · ' + labeled + ' labeled' })
+          ]);
+          head.addEventListener('click', function () {
+            state.secOpen['io-' + type] = !open;
+            drawIOTable();
+          });
+          item.appendChild(head);
+          if (open) {
+            var body = h('div', { class: 'xi-body table-wrap' });
+            var tbl = ioTable();
+            pts.slice(0, 600).forEach(function (p) { ioRow(tbl, p); });
+            body.appendChild(tbl);
+            if (pts.length > 600) body.appendChild(h('p', { class: 'muted', text: 'Showing first 600 — use the filter to narrow.' }));
+            item.appendChild(body);
+          }
+          ioWrap.appendChild(item);
+        });
       };
       ioIn2.addEventListener('input', drawIOTable);
       drawIOTable();
