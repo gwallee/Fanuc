@@ -1,0 +1,130 @@
+/PROG  _RECOVER
+/ATTR
+OWNER		= MNEDITOR;
+COMMENT		= "Recover to Home";
+PROG_SIZE	= 2103;
+CREATE		= DATE 21-01-20  TIME 23:36:38;
+MODIFIED	= DATE 26-07-24  TIME 16:59:08;
+FILE_NAME	= ;
+VERSION		= 0;
+LINE_COUNT	= 102;
+MEMORY_SIZE	= 2607;
+PROTECT		= READ_WRITE;
+TCD:  STACK_SIZE	= 0,
+      TASK_PRIORITY	= 50,
+      TIME_SLICE	= 0,
+      BUSY_LAMP_OFF	= 0,
+      ABORT_REQUEST	= 0,
+      PAUSE_REQUEST	= 0;
+DEFAULT_GROUP	= 1,*,*,*,*;
+CONTROL_CODE	= 00000000 00000000;
+LOCAL_REGISTERS	= 0,0,0;
+/APPL
+
+AUTO_SINGULARITY_HEADER;
+  ENABLE_SINGULARITY_AVOIDANCE   : TRUE;
+/MN
+   1:  !********RECOVER TO HOME********* ;
+   2:  R[1:Task ID]=100    ;
+   3:  COL GUARD ADJUST 100 ;
+   4:   ;
+   5:  !**Chk if at Ref Pos ;
+   6:  LBL[100] ;
+   7:  IF (F[5:ON :At RefPos]),JMP LBL[800] ;
+   8:  !**Chk if inside DCS Zn ;
+   9:  IF (F[501:OFF:DCS-At Hopper]),JMP LBL[600] ;
+  10:  IF (F[502:OFF:DCS-At Infd1]),JMP LBL[600] ;
+  11:  IF (F[503:OFF:DCS-At Recon In]),JMP LBL[600] ;
+  12:  IF (F[504:OFF:DCS-At Outfd1]),JMP LBL[600] ;
+  13:  IF (F[505:OFF:DCS-At Recon Out]),JMP LBL[600] ;
+  14:  IF (F[506:OFF:DCS-At Rjct]),JMP LBL[600] ;
+  15:  IF (F[511:OFF]),JMP LBL[610] ;
+  16:  IF (F[512:OFF]),JMP LBL[610] ;
+  17:  IF (F[513:OFF]),JMP LBL[610] ;
+  18:  IF (F[514:OFF]),JMP LBL[610] ;
+  19:  IF (F[515:OFF]),JMP LBL[610] ;
+  20:  IF (F[516:OFF]),JMP LBL[610] ;
+  21:  !**Go Zone Chk ;
+  22:  JMP LBL[700] ;
+  23:   ;
+  24:   ;
+  25:  !**********ZN CHK ZONES********** ;
+  26:  LBL[200] ;
+  27:  //UFRAME_NUM=0 ;
+  28:  //UTOOL_NUM=3 ;
+  29:  //WAIT    .25(sec) ;
+  30:  //PR[99:*LPOS]=LPOS    ;
+  31:  //PR[91:*temp1]=PR[99:*LPOS]    ;
+  32:  //    ;
+  33:  //!***Slow Move Up*** ;
+  34:  //PR[91,3:*temp1]=PR[99,3:*LPOS]+100    ;
+  35:  //L PR[91:*temp1] R[208:008:Rck1-C2-R1]mm/sec FINE    ;
+  36:  //    ;
+  37:  //!**Chk Z-Ht ;
+  38:  //IF (PR[91,3:*temp1]>=0),JMP LBL[290] ;
+  39:  //    ;
+  40:  //!***Move Z-Ht Clr*** ;
+  41:  //PR[91,3:*temp1]=0    ;
+  42:  //L PR[91:*temp1] R[210:010:Rck1-C2-R3]mm/sec FINE    ;
+  43:  //JMP LBL[290] ;
+  44:  //    ;
+  45:  //!***Return to Transit*** ;
+  46:  //LBL[*290] ;
+  47:  //WAIT    .10(sec) ;
+  48:  //PR[100:*JPOS]=JPOS    ;
+  49:  //WAIT    .10(sec) ;
+  50:  //PR[6:*Transit]=PR[5:Trans-Origin]    ;
+  51:  //PR[6,1:*Transit]=PR[100,1:*JPOS]    ;
+  52:  //J PR[6:*Transit] R[211:011:Rck1-C2-R4]% FINE    ;
+  53:  //WAIT (DO[37:OFF:At Transit])    ;
+  54:  //JMP LBL[990] ;
+  55:  !*********END ZN CHK ZONE******** ;
+  56:   ;
+  57:  !**********IN DCS ZONE*********** ;
+  58:  LBL[600] ;
+  59:  CALL _RECOV_DCS    ;
+  60:  IF (F[5:ON :At RefPos]),JMP LBL[800] ;
+  61:  JMP LBL[700] ;
+  62:  !**********END-DCS ZONES********* ;
+  63:   ;
+  64:  !******AT REFERENCE POSITION***** ;
+  65:  LBL[800] ;
+  66:  CALL _RECOV_REF_POS    ;
+  67:  IF (!DO[37:OFF:At Transit]),JMP LBL[100] ;
+  68:  JMP LBL[990] ;
+  69:  !***********END-REF POS********** ;
+  70:   ;
+  71:   ;
+  72:  !***RECOVER ERRORS*************** ;
+  73:  !***Cant find robot pos*** ;
+  74:  LBL[700] ;
+  75:  DO[62:OFF:Recov Error]=ON ;
+  76:  PAUSE ;
+  77:  DO[62:OFF:Recov Error]=OFF ;
+  78:  JMP LBL[100] ;
+  79:   ;
+  80:  !***Robot Jogged*** ;
+  81:  LBL[701] ;
+  82:  DO[62:OFF:Recov Error]=ON ;
+  83:  PAUSE ;
+  84:  DO[60:OFF:Jogged]=OFF ;
+  85:  DO[62:OFF:Recov Error]=OFF ;
+  86:  JMP LBL[100] ;
+  87:   ;
+  88:   ;
+  89:  !***********MOVE HOME************ ;
+  90:  LBL[990] ;
+  91:  IF (!DO[37:OFF:At Transit]),JMP LBL[100] ;
+  92:  IF (DI[1:ON :Auto Mode] OR R[2:Manual TaskID]<>10),JMP LBL[995] ;
+  93:J PR[5:Trans-Origin] 50% FINE    ;
+  94:  WAIT (DO[33:OFF:At Home])    ;
+  95:   ;
+  96:  !**Init Pos ;
+  97:  LBL[995] ;
+  98:  CALL _INIT_POS    ;
+  99:  JMP LBL[999] ;
+ 100:   ;
+ 101:   ;
+ 102:  LBL[999] ;
+/POS
+/END

@@ -1,0 +1,133 @@
+/PROG  __AUTO
+/ATTR
+OWNER		= MNEDITOR;
+COMMENT		= "Auto Task Loop";
+PROG_SIZE	= 2221;
+CREATE		= DATE 18-08-09  TIME 15:40:54;
+MODIFIED	= DATE 26-07-23  TIME 23:46:54;
+FILE_NAME	= ;
+VERSION		= 0;
+LINE_COUNT	= 105;
+MEMORY_SIZE	= 2785;
+PROTECT		= READ_WRITE;
+TCD:  STACK_SIZE	= 0,
+      TASK_PRIORITY	= 50,
+      TIME_SLICE	= 0,
+      BUSY_LAMP_OFF	= 0,
+      ABORT_REQUEST	= 0,
+      PAUSE_REQUEST	= 0;
+DEFAULT_GROUP	= 1,*,*,*,*;
+CONTROL_CODE	= 00000000 00000000;
+LOCAL_REGISTERS	= 0,0,0;
+/APPL
+
+AUTO_SINGULARITY_HEADER;
+  ENABLE_SINGULARITY_AVOIDANCE   : TRUE;
+/MN
+   1:  !*********AUTO TASK LOOP********* ;
+   2:  LBL[100:Wait Start] ;
+   3:  IF DI[1:ON :Auto Mode]=OFF,JMP LBL[999] ;
+   4:  DO[1:OFF:Auto Mode Echo]=ON ;
+   5:  IF (F[101:OFF:Sys Chks]),CALL _SYS_CHECKS ;
+   6:  IF (DI[2:OFF:Start]),JMP LBL[101] ;
+   7:  DO[2:OFF:Running]=OFF ;
+   8:  WAIT    .10(sec) ;
+   9:  JMP LBL[100] ;
+  10:   ;
+  11:  LBL[101:Start] ;
+  12:  DO[2:OFF:Running]=ON ;
+  13:   ;
+  14:  !***INITIALIZE ;
+  15:  LBL[105] ;
+  16:  CALL _INIT    ;
+  17:   ;
+  18:   ;
+  19:  !************SET TASK************ ;
+  20:  LBL[150:Main Loop] ;
+  21:  IF (!DI[1:ON :Auto Mode]),JMP LBL[999] ;
+  22:  IF (!DI[2:OFF:Start]),JMP LBL[100] ;
+  23:  IF (F[101:OFF:Sys Chks]),CALL _SYS_CHECKS ;
+  24:   ;
+  25:  !Find Next Task ;
+  26:  CALL _FIND_TASK    ;
+  27:  IF (F[8:OFF:Task Rdy]),JMP LBL[R[8]] ;
+  28:  WAIT    .25(sec) ;
+  29:  JMP LBL[150] ;
+  30:   ;
+  31:   ;
+  32:  !***********TASK LOOP************ ;
+  33:  !***Pk Tote from Convs*********** ;
+  34:  LBL[200] ;
+  35:  R[8:Task-JMP LBL]=0    ;
+  36:  IF (F[101:OFF:Sys Chks]),CALL _SYS_CHECKS ;
+  37:  CALL _PK_CONV    ;
+  38:  JMP LBL[800] ;
+  39:   ;
+  40:  !***Pk Tote from Rack************ ;
+  41:  LBL[210] ;
+  42:  R[8:Task-JMP LBL]=0    ;
+  43:  IF (F[101:OFF:Sys Chks]),CALL _SYS_CHECKS ;
+  44:  CALL _PK_RACK    ;
+  45:  JMP LBL[800] ;
+  46:   ;
+  47:  !***Scan Tote BC***************** ;
+  48:  LBL[220] ;
+  49:  R[8:Task-JMP LBL]=0    ;
+  50:  IF (F[101:OFF:Sys Chks]),CALL _SYS_CHECKS ;
+  51:  CALL _SCAN_TOTE(1) ;
+  52:  JMP LBL[800] ;
+  53:   ;
+  54:  !***Pre-Fill Inspect************* ;
+  55:  LBL[230] ;
+  56:  R[8:Task-JMP LBL]=0    ;
+  57:  IF (F[101:OFF:Sys Chks]),CALL _SYS_CHECKS ;
+  58:  CALL _INSPECT_PRE    ;
+  59:  JMP LBL[800] ;
+  60:   ;
+  61:  !***Fill At Hopper*************** ;
+  62:  LBL[240] ;
+  63:  R[8:Task-JMP LBL]=0    ;
+  64:  IF (F[101:OFF:Sys Chks]),CALL _SYS_CHECKS ;
+  65:  CALL _HOPPER_DUMP    ;
+  66:  JMP LBL[800] ;
+  67:   ;
+  68:  !***Post-Fill Inspect************ ;
+  69:  LBL[250] ;
+  70:  R[8:Task-JMP LBL]=0    ;
+  71:  IF (F[101:OFF:Sys Chks]),CALL _SYS_CHECKS ;
+  72:  CALL _INSPECT_POST    ;
+  73:  JMP LBL[800] ;
+  74:   ;
+  75:  !***Place Tote on Convs********** ;
+  76:  LBL[260] ;
+  77:  R[8:Task-JMP LBL]=0    ;
+  78:  IF (F[101:OFF:Sys Chks]),CALL _SYS_CHECKS ;
+  79:  CALL _PL_CONV    ;
+  80:  JMP LBL[800] ;
+  81:   ;
+  82:  !***Place Tote in Rack*********** ;
+  83:  LBL[270] ;
+  84:  R[8:Task-JMP LBL]=0    ;
+  85:  IF (F[101:OFF:Sys Chks]),CALL _SYS_CHECKS ;
+  86:  CALL _PL_RACK    ;
+  87:  JMP LBL[800] ;
+  88:   ;
+  89:  !***Place Tote in Reject********* ;
+  90:  LBL[600] ;
+  91:  R[8:Task-JMP LBL]=0    ;
+  92:  IF (F[101:OFF:Sys Chks]),CALL _SYS_CHECKS ;
+  93:  CALL _PL_REJECT    ;
+  94:  JMP LBL[800] ;
+  95:   ;
+  96:   ;
+  97:  !***********TASK DONE************ ;
+  98:  LBL[800] ;
+  99:  R[8:Task-JMP LBL]=0    ;
+ 100:  F[8:OFF:Task Rdy]=(OFF) ;
+ 101:  JMP LBL[150] ;
+ 102:   ;
+ 103:   ;
+ 104:  LBL[999] ;
+ 105:  DO[1:OFF:Auto Mode Echo]=OFF ;
+/POS
+/END

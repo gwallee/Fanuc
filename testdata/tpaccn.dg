@@ -1,0 +1,72 @@
+                       TP Accounting
+
+F Number: F333543
+VERSION : HandlingTool         
+$VERSION: V9.40526     12/12/2025
+DATE:     27-AUG-26 13:14 
+
+Menu                         Elapsed Time         #Sel       #Keys
+                     (YY-MM-DD HH:MM:SS)
+Id:  962, 1                       06:50            5          31
+Id:  381, 5                       01:32            9           1
+Home                           05:10:20           25         304
+Variables                         09:32            4         430
+Master/Cal                           32            2          14
+DCS                         02 21:45:08           22        1232
+Config                            07:46            8         459
+Position Display                  46:38            9         440
+Id:  381, 3                          20            2           5
+Version ID                        03:42            2         153
+File                        02 04:52:16           13         981
+Host Comm                   01 08:31:04           12         268
+EtherNet/IP                 01 23:49:22            7         198
+Digital                     13 06:28:58          120        5647
+UOP                               54:48           11         268
+Registers                   24 06:21:30           92        9510
+SELECT                         06:02:24          211        1418
+Hints                             03:20           15          63
+EDIT                     01-01 03:21:50          210       18588
+Position Reg                      56:20           52        3080
+Axis Limits                       01:16            1          14
+Alarm Log                      23:14:54           13         230
+Frames                         02:04:22            7        3793
+Cell Intface                         32           15          94
+Id:  381, 2                 03 19:08:44            2         356
+Motion                            02:10            2         267
+Macro                                36            1          37
+Ref Position                      14:56           10         436
+Prog Select                          12            2          38
+String Reg                        41:14            4         127
+KAREL Vars                           06            1           0
+KAREL Posns                          02            1           0
+Group                          22:26:16           30         307
+Custom                         05:20:26           17         793
+Interconnect                      01:14            1         361
+Sys Dsn Tool                         42            3          13
+USER                              03:54            5           8
+Program Setup                        52            1           7
+BG Logic                          02:16            7         407
+Notifications                     04:06            2         147
+Resume Offset                        02            1          10
+Coll Guard                           06            1           5
+Clock                          17:33:02            1          69
+Robot                                22            6          26
+Axis                                 06            2          10
+Robot Condition                      02            1           2
+Stop Signal                          02            2           8
+Flag                                 22            2          76
+Exec-hist                      01:40:14           62         139
+
+Full Menus:              02-24 14:17:20 
+Quick Menus:                         00 
+
+MENU Popup:                                      109
+[ TYPE ] Pullup:                                 139
+
+Functions at COLD start
+ABORT (ALL)                                       68
+T/Singularity JOG                                  1
+CYCLE POWER                                       18
+
+Functions at CTRL start
+START (COLD)                                       5

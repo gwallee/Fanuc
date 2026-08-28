@@ -1,0 +1,643 @@
+[*POSREG*]$POSREG  Storage: SHADOW  Access: RW  : ARRAY[1,200] OF Position Reg
+    [1,1] =   'Home'   Group: 1
+  J1 =     -.000 deg   J2 =   -60.000 deg   J3 =   -20.000 deg 
+  J4 =      .000 deg   J5 =    20.000 deg   J6 =     -.000 deg 
+
+    [1,2] =   'TL Maint'   Group: 1
+  J1 =    35.000 deg   J2 =    30.000 deg   J3 =   -90.000 deg 
+  J4 =   -35.000 deg   J5 =    90.000 deg   J6 =      .000 deg 
+
+    [1,3] =   'Safe'   Group: 1
+  J1 =     -.000 deg   J2 =   -45.000 deg   J3 =    60.000 deg 
+  J4 =      .000 deg   J5 =   -60.000 deg   J6 =      .000 deg 
+
+    [1,4] =   'Zero'   Group: 1
+  J1 =     -.000 deg   J2 =      .000 deg   J3 =      .000 deg 
+  J4 =     -.000 deg   J5 =   -90.000 deg   J6 =      .000 deg 
+
+    [1,5] =   'Trans-Origin'   Group: 1
+  J1 =     0.000 deg   J2 =   -60.000 deg   J3 =   -20.000 deg 
+  J4 =     0.000 deg   J5 =    20.000 deg   J6 =     -.000 deg 
+
+    [1,6] =   '*Transit'   Group: 1
+  J1 =   -95.000 deg   J2 =   -60.000 deg   J3 =   -20.000 deg 
+  J4 =     0.000 deg   J5 =    20.000 deg   J6 =     -.000 deg 
+
+    [1,7] =   '' Uninitialized
+    [1,8] =   '' Uninitialized
+    [1,9] =   '' Uninitialized
+    [1,10] =   '' Uninitialized
+    [1,11] =   '' Uninitialized
+    [1,12] =   '' Uninitialized
+    [1,13] =   '' Uninitialized
+    [1,14] =   '' Uninitialized
+    [1,15] =   '' Uninitialized
+    [1,16] =   '' Uninitialized
+    [1,17] =   '' Uninitialized
+    [1,18] =   '' Uninitialized
+    [1,19] =   '' Uninitialized
+    [1,20] =   '*Rack PKPL' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:    17.764   Y:   -30.473   Z:  -784.647
+  W:     -.000   P:      .000   R:    90.001
+    [1,21] =   '*Rack Appr'   Group: 1
+  J1 =   -35.000 deg   J2 =   -42.000 deg   J3 =   -30.000 deg 
+  J4 =   -42.000 deg   J5 =    40.000 deg   J6 =    35.000 deg 
+
+    [1,22] =   '' Uninitialized
+    [1,23] =   '' Uninitialized
+    [1,24] =   '' Uninitialized
+    [1,25] =   '' Uninitialized
+    [1,26] =   '' Uninitialized
+    [1,27] =   '' Uninitialized
+    [1,28] =   '' Uninitialized
+    [1,29] =   '' Uninitialized
+    [1,30] =   '*Conv PKPL' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  1755.468   Y: -1241.118   Z:  -794.908
+  W:      .660   P:    -1.086   R:   -60.415
+    [1,31] =   '*Conv Appr'   Group: 1
+  J1 =   -17.000 deg   J2 =    14.000 deg   J3 =   -81.000 deg 
+  J4 =   -43.000 deg   J5 =    84.000 deg   J6 =     6.000 deg 
+
+    [1,32] =   'In/Out1 to Scan'   Group: 1
+  J1 =   -41.570 deg   J2 =    53.943 deg   J3 =  -117.864 deg 
+  J4 =   -20.653 deg   J5 =   116.322 deg   J6 =    -9.488 deg 
+
+    [1,33] =   '' Uninitialized
+    [1,34] =   '' Uninitialized
+    [1,35] =   'Scan Pos'   Group: 1
+  J1 =   -13.162 deg   J2 =    20.539 deg   J3 =   -79.321 deg 
+  J4 =   -47.340 deg   J5 =    82.716 deg   J6 =     7.830 deg 
+
+    [1,36] =   '' Uninitialized
+    [1,37] =   '' Uninitialized
+    [1,38] =   '' Uninitialized
+    [1,39] =   '' Uninitialized
+    [1,40] =   '*Hopper Pos' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  2357.000   Y:   -78.612   Z:  -495.000
+  W:      .189   P:      .000   R:     -.063
+    [1,41] =   'Hopper Appr'   Group: 1
+  J1 =     0.000 deg   J2 =     8.000 deg   J3 =   -89.000 deg 
+  J4 =     0.000 deg   J5 =    89.000 deg   J6 =     0.000 deg 
+
+    [1,42] =   '' Uninitialized
+    [1,43] =   'Orig-Hopper-Nrml' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  2357.000   Y:   -78.612   Z:  -495.000
+  W:      .189   P:      .000   R:     -.063
+    [1,44] =   'Orig-Hopper-Div' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  2587.895   Y:    49.141   Z:  -495.469
+  W:      .188   P:      .001   R:     -.062
+    [1,45] =   'Inspect Pos'   Group: 1
+  J1 =    -2.379 deg   J2 =    61.272 deg   J3 =   -50.366 deg 
+  J4 =     3.006 deg   J5 =    50.405 deg   J6 =    -2.106 deg 
+
+    [1,46] =   'Inspect Appr' Uninitialized
+    [1,47] =   '' Uninitialized
+    [1,48] =   '' Uninitialized
+    [1,49] =   '' Uninitialized
+    [1,50] =   '' Uninitialized
+    [1,51] =   '' Uninitialized
+    [1,52] =   '' Uninitialized
+    [1,53] =   '' Uninitialized
+    [1,54] =   '' Uninitialized
+    [1,55] =   '' Uninitialized
+    [1,56] =   '' Uninitialized
+    [1,57] =   '' Uninitialized
+    [1,58] =   '' Uninitialized
+    [1,59] =   '' Uninitialized
+    [1,60] =   'User Offset' 
+  Group: 1   Config: N D B, 0, 0, 0
+  X:     0.000   Y:  -475.000   Z:   -15.000
+  W:     0.000   P:     0.000   R:     0.000
+    [1,61] =   'Tool Offset' 
+  Group: 1   Config: N D B, 0, 0, 0
+  X: -1000.000   Y:     0.000   Z:    -8.000
+  W:     0.000   P:     0.000   R:     0.000
+    [1,62] =   '' Uninitialized
+    [1,63] =   '' Uninitialized
+    [1,64] =   '' Uninitialized
+    [1,65] =   '' Uninitialized
+    [1,66] =   '' Uninitialized
+    [1,67] =   '' Uninitialized
+    [1,68] =   '' Uninitialized
+    [1,69] =   '' Uninitialized
+    [1,70] =   'Reject Nest' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  1541.759   Y:     9.876   Z: -1562.588
+  W:     -.000   P:      .000   R:    90.000
+    [1,71] =   'Reject Appr'   Group: 1
+  J1 =   132.000 deg   J2 =    32.000 deg   J3 =   -92.000 deg 
+  J4 =    48.000 deg   J5 =    92.000 deg   J6 =     0.000 deg 
+
+    [1,72] =   '' Uninitialized
+    [1,73] =   '' Uninitialized
+    [1,74] =   '' Uninitialized
+    [1,75] =   '' Uninitialized
+    [1,76] =   '' Uninitialized
+    [1,77] =   '' Uninitialized
+    [1,78] =   '' Uninitialized
+    [1,79] =   '' Uninitialized
+    [1,80] =   '' Uninitialized
+    [1,81] =   'Orig-Bin PKPL' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:     -.000   Y:     -.000   Z:     0.000
+  W:      .000   P:     -.000   R:    90.000
+    [1,82] =   '' Uninitialized
+    [1,83] =   '' Uninitialized
+    [1,84] =   '' Uninitialized
+    [1,85] =   '' Uninitialized
+    [1,86] =   '' Uninitialized
+    [1,87] =   '' Uninitialized
+    [1,88] =   '' Uninitialized
+    [1,89] =   '' Uninitialized
+    [1,90] =   '' Uninitialized
+    [1,91] =   '*temp1'   Group: 1
+  J1 =   -95.000 deg   J2 =   -42.000 deg   J3 =   -30.000 deg 
+  J4 =   -42.000 deg   J5 =    40.000 deg   J6 =    35.000 deg 
+
+    [1,92] =   '*temp2'   Group: 1
+  J1 =   -73.887 deg   J2 =    61.425 deg   J3 =   -79.209 deg 
+  J4 =    13.661 deg   J5 =    84.680 deg   J6 =    -2.263 deg 
+
+    [1,93] =   '*temp3' Uninitialized
+    [1,94] =   '' Uninitialized
+    [1,95] =   '' Uninitialized
+    [1,96] =   '' Uninitialized
+    [1,97] =   '' Uninitialized
+    [1,98] =   '' Uninitialized
+    [1,99] =   '*LPOS' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  1127.210   Y:    16.810   Z: -1752.305
+  W:     -.389   P:    -4.707   R:    90.448
+    [1,100] =   '*JPOS'   Group: 1
+  J1 =   -85.000 deg   J2 =   -42.000 deg   J3 =   -30.000 deg 
+  J4 =    42.000 deg   J5 =    40.000 deg   J6 =   -35.000 deg 
+
+    [1,101] =   '' Uninitialized
+    [1,102] =   '' Uninitialized
+    [1,103] =   '' Uninitialized
+    [1,104] =   '' Uninitialized
+    [1,105] =   '' Uninitialized
+    [1,106] =   '' Uninitialized
+    [1,107] =   '' Uninitialized
+    [1,108] =   '' Uninitialized
+    [1,109] =   '' Uninitialized
+    [1,110] =   '' Uninitialized
+    [1,111] =   'Orig-Infd1' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  1128.856   Y:    -1.691   Z: -1786.344
+  W:     -.381   P:     -.530   R:    90.254
+    [1,112] =   'Orig-Infd2/Recon' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  -134.716   Y:    25.248   Z: -1778.032
+  W:      .533   P:   -30.625   R:    90.317
+    [1,113] =   'Orig-Outfd1' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  1693.809   Y:    -7.352   Z: -1782.867
+  W:     -.176   P:     -.309   R:    90.254
+    [1,114] =   'Orig-Outfd/Recon' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:   425.146   Y:    30.397   Z: -1780.762
+  W:      .551   P:     -.348   R:    90.253
+    [1,115] =   '' Uninitialized
+    [1,116] =   'Appr-InfdOutfd-1'   Group: 1
+  J1 =  -103.000 deg   J2 =    14.000 deg   J3 =   -81.000 deg 
+  J4 =    43.000 deg   J5 =    84.000 deg   J6 =    -6.000 deg 
+
+    [1,117] =   'Appr-ReconConvs'   Group: 1
+  J1 =   -17.000 deg   J2 =    14.000 deg   J3 =   -81.000 deg 
+  J4 =   -43.000 deg   J5 =    84.000 deg   J6 =     6.000 deg 
+
+    [1,118] =   '' Uninitialized
+    [1,119] =   '' Uninitialized
+    [1,120] =   '' Uninitialized
+    [1,121] =   'Orig-Rack1' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:     -.000   Y:     -.000   Z:     0.000
+  W:      .000   P:     -.000   R:    90.000
+    [1,122] =   'Orig-Rack2' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:     -.000   Y:     -.000   Z:     0.000
+  W:      .000   P:     -.000   R:    90.000
+    [1,123] =   'Orig-Rack3' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:     -.000   Y:     -.000   Z:     0.000
+  W:      .000   P:     -.000   R:    90.000
+    [1,124] =   'Orig-Rack4' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:     -.000   Y:     -.000   Z:     0.000
+  W:      .000   P:     -.000   R:    90.000
+    [1,125] =   'Orig-Rack5' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:     -.000   Y:     -.000   Z:     0.000
+  W:      .000   P:     -.000   R:    90.000
+    [1,126] =   'Orig-Rack6' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:     -.000   Y:     -.000   Z:     0.000
+  W:      .000   P:     -.000   R:    90.000
+    [1,127] =   '' Uninitialized
+    [1,128] =   '' Uninitialized
+    [1,129] =   '' Uninitialized
+    [1,130] =   '' Uninitialized
+    [1,131] =   'Appr-Rack1-Left'   Group: 1
+  J1 =  -155.000 deg   J2 =   -42.000 deg   J3 =   -30.000 deg 
+  J4 =   -42.000 deg   J5 =    40.000 deg   J6 =    35.000 deg 
+
+    [1,132] =   'Appr-Rack1-Right'   Group: 1
+  J1 =   155.000 deg   J2 =   -42.000 deg   J3 =   -30.000 deg 
+  J4 =    42.000 deg   J5 =    40.000 deg   J6 =   -35.000 deg 
+
+    [1,133] =   'Appr-Rack2-Left'   Group: 1
+  J1 =   -95.000 deg   J2 =   -42.000 deg   J3 =   -30.000 deg 
+  J4 =   -42.000 deg   J5 =    40.000 deg   J6 =    35.000 deg 
+
+    [1,134] =   'Appr-Rack2-Right'   Group: 1
+  J1 =  -145.000 deg   J2 =   -42.000 deg   J3 =   -30.000 deg 
+  J4 =    42.000 deg   J5 =    40.000 deg   J6 =   -35.000 deg 
+
+    [1,135] =   'Appr-Rack3-Left'   Group: 1
+  J1 =   -35.000 deg   J2 =   -42.000 deg   J3 =   -30.000 deg 
+  J4 =   -42.000 deg   J5 =    40.000 deg   J6 =    35.000 deg 
+
+    [1,136] =   'Appr-Rack3-Right'   Group: 1
+  J1 =   -85.000 deg   J2 =   -42.000 deg   J3 =   -30.000 deg 
+  J4 =    42.000 deg   J5 =    40.000 deg   J6 =   -35.000 deg 
+
+    [1,137] =   'Appr-Rack4-Left'   Group: 1
+  J1 =    25.000 deg   J2 =   -42.000 deg   J3 =   -30.000 deg 
+  J4 =   -42.000 deg   J5 =    40.000 deg   J6 =    35.000 deg 
+
+    [1,138] =   'Appr-Rack4-Right'   Group: 1
+  J1 =   -25.000 deg   J2 =   -42.000 deg   J3 =   -30.000 deg 
+  J4 =    42.000 deg   J5 =    40.000 deg   J6 =   -35.000 deg 
+
+    [1,139] =   'Appr-Rack5-Left'   Group: 1
+  J1 =    85.000 deg   J2 =   -42.000 deg   J3 =   -30.000 deg 
+  J4 =   -42.000 deg   J5 =    40.000 deg   J6 =    35.000 deg 
+
+    [1,140] =   'Appr-Rack5-Right'   Group: 1
+  J1 =    35.000 deg   J2 =   -42.000 deg   J3 =   -30.000 deg 
+  J4 =    42.000 deg   J5 =    40.000 deg   J6 =   -35.000 deg 
+
+    [1,141] =   'Appr-Rack6-Left'   Group: 1
+  J1 =   145.000 deg   J2 =   -42.000 deg   J3 =   -30.000 deg 
+  J4 =   -42.000 deg   J5 =    40.000 deg   J6 =    35.000 deg 
+
+    [1,142] =   'Appr-Rack6-Right'   Group: 1
+  J1 =    95.000 deg   J2 =   -42.000 deg   J3 =   -30.000 deg 
+  J4 =    42.000 deg   J5 =    40.000 deg   J6 =   -35.000 deg 
+
+    [1,143] =   'Hop2 L-Rack-1'   Group: 1
+  J1 =    -5.000 deg   J2 =    24.000 deg   J3 =   -99.000 deg 
+  J4 =   -26.000 deg   J5 =   100.000 deg   J6 =    -4.500 deg 
+
+    [1,144] =   'Hop2 L-Rack-2'   Group: 1
+  J1 =   -15.000 deg   J2 =   -42.000 deg   J3 =   -30.000 deg 
+  J4 =   -42.000 deg   J5 =    40.000 deg   J6 =    35.000 deg 
+
+    [1,145] =   '' Uninitialized
+    [1,146] =   'Hop2 R-Rack-1'   Group: 1
+  J1 =    -5.000 deg   J2 =   -42.000 deg   J3 =   -30.000 deg 
+  J4 =   -42.000 deg   J5 =    40.000 deg   J6 =    35.000 deg 
+
+    [1,147] =   'Hop2 L-Rack-2' Uninitialized
+    [1,148] =   '' Uninitialized
+    [1,149] =   '' Uninitialized
+    [1,150] =   'Orig-Hopper-Nrml' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  2302.500   Y:   -23.000   Z:  -549.400
+  W:     -.000   P:      .000   R:      .000
+    [1,151] =   'Orig-Hopper-Div' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  2599.500   Y:   159.000   Z:  -549.400
+  W:      .000   P:     -.000   R:      .000
+    [1,152] =   '' Uninitialized
+    [1,153] =   '' Uninitialized
+    [1,154] =   '' Uninitialized
+    [1,155] =   '' Uninitialized
+    [1,156] =   '' Uninitialized
+    [1,157] =   '' Uninitialized
+    [1,158] =   '' Uninitialized
+    [1,159] =   '' Uninitialized
+    [1,160] =   '' Uninitialized
+    [1,161] =   'Orig-Rack1-Clmn1' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:    17.760   Y:     9.877   Z:    38.226
+  W:      .000   P:     -.000   R:    90.000
+    [1,162] =   'Orig-Rack1-Clmn2' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:   525.760   Y:     9.877   Z:    38.226
+  W:     -.000   P:     -.000   R:    90.000
+    [1,163] =   'Orig-Rack1-Clmn3' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  1033.760   Y:     9.877   Z:    37.250
+  W:      .000   P:     -.000   R:    90.000
+    [1,164] =   'Orig-Rack1-Clmn4' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  1541.760   Y:     9.877   Z:    38.226
+  W:     -.000   P:      .000   R:    90.000
+    [1,165] =   '' Uninitialized
+    [1,166] =   'Orig-Rack2-Clmn1' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:    32.669   Y:   -11.258   Z:    29.366
+  W:     -.000   P:      .000   R:    89.999
+    [1,167] =   'Orig-Rack2-Clmn2' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:   540.669   Y:   -11.258   Z:    29.366
+  W:     -.000   P:     -.000   R:    90.000
+    [1,168] =   'Orig-Rack2-Clmn3' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  1048.668   Y:   -12.000   Z:    29.366
+  W:      .000   P:     -.000   R:    90.000
+    [1,169] =   'Orig-Rack2-Clmn4' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  1556.669   Y:   -12.000   Z:    32.000
+  W:     -.000   P:     -.000   R:    90.000
+    [1,170] =   '' Uninitialized
+    [1,171] =   'Orig-Rack3-Clmn1' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:    17.764   Y:   -30.473   Z:    15.353
+  W:     -.000   P:      .000   R:    90.001
+    [1,172] =   'Orig-Rack3-Clmn2' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:   525.764   Y:   -30.473   Z:    15.353
+  W:      .000   P:      .000   R:    90.000
+    [1,173] =   'Orig-Rack3-Clmn3' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  1033.760   Y:   -30.812   Z:    12.715
+  W:      .000   P:      .001   R:    90.000
+    [1,174] =   'Orig-Rack3-Clmn4' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  1541.765   Y:   -31.749   Z:    11.866
+  W:      .000   P:      .001   R:    90.000
+    [1,175] =   '' Uninitialized
+    [1,176] =   'Orig-Rack4-Clmn1' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:     -.000   Y:   -15.000   Z:     -.000
+  W:     -.000   P:     -.000   R:    90.000
+    [1,177] =   'Orig-Rack4-Clmn2' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:   507.999   Y:   -15.000   Z:     -.000
+  W:      .000   P:      .000   R:    90.000
+    [1,178] =   'Orig-Rack4-Clmn3' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  1015.999   Y:   -15.000   Z:      .000
+  W:     -.000   P:     -.000   R:    90.000
+    [1,179] =   'Orig-Rack4-Clmn4' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  1523.999   Y:   -15.000   Z:     -.000
+  W:     -.000   P:      .000   R:    90.000
+    [1,180] =   '' Uninitialized
+    [1,181] =   'Orig-Rack5-Clmn1' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:     -.000   Y:   -15.000   Z:     -.000
+  W:     -.000   P:     -.000   R:    90.000
+    [1,182] =   'Orig-Rack5-Clmn2' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:   507.999   Y:   -15.000   Z:     -.000
+  W:      .000   P:      .000   R:    90.000
+    [1,183] =   'Orig-Rack5-Clmn3' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  1015.999   Y:   -15.000   Z:      .000
+  W:     -.000   P:     -.000   R:    90.000
+    [1,184] =   'Orig-Rack5-Clmn4' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  1523.999   Y:   -15.000   Z:     -.000
+  W:     -.000   P:      .000   R:    90.000
+    [1,185] =   '' Uninitialized
+    [1,186] =   'Orig-Rack6-Clmn1' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:     -.000   Y:   -15.000   Z:     -.000
+  W:     -.000   P:     -.000   R:    90.000
+    [1,187] =   'Orig-Rack6-Clmn2' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:   507.999   Y:   -15.000   Z:     -.000
+  W:      .000   P:      .000   R:    90.000
+    [1,188] =   'Orig-Rack6-Clmn3' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  1015.999   Y:   -15.000   Z:      .000
+  W:     -.000   P:     -.000   R:    90.000
+    [1,189] =   'Orig-Rack6-Clmn4' 
+  Group: 1   Config: F U T, 0, 0, 0
+  X:  1523.999   Y:   -15.000   Z:     -.000
+  W:     -.000   P:      .000   R:    90.000
+    [1,190] =   '' Uninitialized
+    [1,191] =   '' Uninitialized
+    [1,192] =   '' Uninitialized
+    [1,193] =   '' Uninitialized
+    [1,194] =   '' Uninitialized
+    [1,195] =   '' Uninitialized
+    [1,196] =   '' Uninitialized
+    [1,197] =   '' Uninitialized
+    [1,198] =   '' Uninitialized
+    [1,199] =   '' Uninitialized
+    [1,200] =   '' Uninitialized
+
+[*POSREG*]$MAXPREGNUM  Storage: CMOS  Access: RW  : INTEGER = 200
+
+[*POSREG*]$EXPPREGCMT  Storage: SHADOW  Access: RW  : ARRAY[200] OF STRING[16]
+  [1] = Uninitialized
+  [2] = Uninitialized
+  [3] = Uninitialized
+  [4] = Uninitialized
+  [5] = Uninitialized
+  [6] = Uninitialized
+  [7] = Uninitialized
+  [8] = Uninitialized
+  [9] = Uninitialized
+  [10] = Uninitialized
+  [11] = Uninitialized
+  [12] = Uninitialized
+  [13] = Uninitialized
+  [14] = Uninitialized
+  [15] = Uninitialized
+  [16] = Uninitialized
+  [17] = Uninitialized
+  [18] = Uninitialized
+  [19] = Uninitialized
+  [20] = Uninitialized
+  [21] = Uninitialized
+  [22] = Uninitialized
+  [23] = Uninitialized
+  [24] = Uninitialized
+  [25] = Uninitialized
+  [26] = Uninitialized
+  [27] = Uninitialized
+  [28] = Uninitialized
+  [29] = Uninitialized
+  [30] = Uninitialized
+  [31] = Uninitialized
+  [32] = Uninitialized
+  [33] = Uninitialized
+  [34] = Uninitialized
+  [35] = Uninitialized
+  [36] = Uninitialized
+  [37] = Uninitialized
+  [38] = Uninitialized
+  [39] = Uninitialized
+  [40] = Uninitialized
+  [41] = Uninitialized
+  [42] = Uninitialized
+  [43] = Uninitialized
+  [44] = Uninitialized
+  [45] = Uninitialized
+  [46] = Uninitialized
+  [47] = Uninitialized
+  [48] = Uninitialized
+  [49] = Uninitialized
+  [50] = Uninitialized
+  [51] = Uninitialized
+  [52] = Uninitialized
+  [53] = Uninitialized
+  [54] = Uninitialized
+  [55] = Uninitialized
+  [56] = Uninitialized
+  [57] = Uninitialized
+  [58] = Uninitialized
+  [59] = Uninitialized
+  [60] = Uninitialized
+  [61] = Uninitialized
+  [62] = Uninitialized
+  [63] = Uninitialized
+  [64] = Uninitialized
+  [65] = Uninitialized
+  [66] = Uninitialized
+  [67] = Uninitialized
+  [68] = Uninitialized
+  [69] = Uninitialized
+  [70] = Uninitialized
+  [71] = Uninitialized
+  [72] = Uninitialized
+  [73] = Uninitialized
+  [74] = Uninitialized
+  [75] = Uninitialized
+  [76] = Uninitialized
+  [77] = Uninitialized
+  [78] = Uninitialized
+  [79] = Uninitialized
+  [80] = Uninitialized
+  [81] = Uninitialized
+  [82] = Uninitialized
+  [83] = Uninitialized
+  [84] = Uninitialized
+  [85] = Uninitialized
+  [86] = Uninitialized
+  [87] = Uninitialized
+  [88] = Uninitialized
+  [89] = Uninitialized
+  [90] = Uninitialized
+  [91] = Uninitialized
+  [92] = Uninitialized
+  [93] = Uninitialized
+  [94] = Uninitialized
+  [95] = Uninitialized
+  [96] = Uninitialized
+  [97] = Uninitialized
+  [98] = Uninitialized
+  [99] = Uninitialized
+  [100] = Uninitialized
+  [101] = Uninitialized
+  [102] = Uninitialized
+  [103] = Uninitialized
+  [104] = Uninitialized
+  [105] = Uninitialized
+  [106] = Uninitialized
+  [107] = Uninitialized
+  [108] = Uninitialized
+  [109] = Uninitialized
+  [110] = Uninitialized
+  [111] = Uninitialized
+  [112] = Uninitialized
+  [113] = Uninitialized
+  [114] = Uninitialized
+  [115] = Uninitialized
+  [116] = Uninitialized
+  [117] = Uninitialized
+  [118] = Uninitialized
+  [119] = Uninitialized
+  [120] = Uninitialized
+  [121] = Uninitialized
+  [122] = Uninitialized
+  [123] = Uninitialized
+  [124] = Uninitialized
+  [125] = Uninitialized
+  [126] = Uninitialized
+  [127] = Uninitialized
+  [128] = Uninitialized
+  [129] = Uninitialized
+  [130] = Uninitialized
+  [131] = Uninitialized
+  [132] = Uninitialized
+  [133] = Uninitialized
+  [134] = Uninitialized
+  [135] = Uninitialized
+  [136] = Uninitialized
+  [137] = Uninitialized
+  [138] = Uninitialized
+  [139] = Uninitialized
+  [140] = Uninitialized
+  [141] = Uninitialized
+  [142] = Uninitialized
+  [143] = Uninitialized
+  [144] = Uninitialized
+  [145] = Uninitialized
+  [146] = Uninitialized
+  [147] = Uninitialized
+  [148] = Uninitialized
+  [149] = Uninitialized
+  [150] = Uninitialized
+  [151] = Uninitialized
+  [152] = Uninitialized
+  [153] = Uninitialized
+  [154] = Uninitialized
+  [155] = Uninitialized
+  [156] = Uninitialized
+  [157] = Uninitialized
+  [158] = Uninitialized
+  [159] = Uninitialized
+  [160] = Uninitialized
+  [161] = Uninitialized
+  [162] = Uninitialized
+  [163] = Uninitialized
+  [164] = Uninitialized
+  [165] = Uninitialized
+  [166] = Uninitialized
+  [167] = Uninitialized
+  [168] = Uninitialized
+  [169] = Uninitialized
+  [170] = Uninitialized
+  [171] = Uninitialized
+  [172] = Uninitialized
+  [173] = Uninitialized
+  [174] = Uninitialized
+  [175] = Uninitialized
+  [176] = Uninitialized
+  [177] = Uninitialized
+  [178] = Uninitialized
+  [179] = Uninitialized
+  [180] = Uninitialized
+  [181] = Uninitialized
+  [182] = Uninitialized
+  [183] = Uninitialized
+  [184] = Uninitialized
+  [185] = Uninitialized
+  [186] = Uninitialized
+  [187] = Uninitialized
+  [188] = Uninitialized
+  [189] = Uninitialized
+  [190] = Uninitialized
+  [191] = Uninitialized
+  [192] = Uninitialized
+  [193] = Uninitialized
+  [194] = Uninitialized
+  [195] = Uninitialized
+  [196] = Uninitialized
+  [197] = Uninitialized
+  [198] = Uninitialized
+  [199] = Uninitialized
+  [200] = Uninitialized
+

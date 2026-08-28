@@ -1,0 +1,6 @@
+[CRXLIB]BOPCANCEL  Storage: UNINIT_DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[CRXLIB]PLGINST_FLAG  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[CRXLIB]SETTLIF_FLAG  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+

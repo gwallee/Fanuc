@@ -1,0 +1,90 @@
+F Number: F333543
+VERSION : HandlingTool         
+$VERSION: V9.40526     12/12/2025
+DATE:     24-JUL-26 23:03 
+DCS Version: V4.5.15
+
+--- Cartesian Position Check -----------
+  Process time factor (Max.1000):  248
+ No.        G M Status     Comment
+  1 DISABLE 1 WL CHGD [Safe Zn         ]
+  2 DISABLE 1 WD ---- [                ]
+  3 DISABLE 1 WD ---- [                ]
+  4 DISABLE 1 WD ---- [                ]
+  5 DISABLE 1 WD ---- [                ]
+  6 DISABLE 1 WD ---- [                ]
+  7 DISABLE 1 WD ---- [                ]
+  8 DISABLE 1 WD ---- [                ]
+  9 DISABLE 1 WD ---- [                ]
+ 10 DISABLE 1 WD ---- [                ]
+ 11 ENABLE  1 RD SAFE [In Hopper       ]
+ 12 ENABLE  1 RL SAFE [In Infd1        ]
+ 13 ENABLE  1 RL SAFE [In Recon-In     ]
+ 14 ENABLE  1 RL SAFE [In Outfd1       ]
+ 15 ENABLE  1 RL SAFE [In Recon-Out    ]
+ 16 ENABLE  1 RD DSBL [In Rjct/KpOut   ]
+ 17 DISABLE 1 WD ---- [                ]
+ 18 DISABLE 1 WD ---- [                ]
+ 19 DISABLE 1 WD ---- [                ]
+ 20 DISABLE 1 WD ---- [                ]
+ 21 DISABLE 1 WD ---- [                ]
+ 22 DISABLE 1 WD ---- [                ]
+ 23 DISABLE 1 WD ---- [                ]
+ 24 DISABLE 1 WD ---- [                ]
+ 25 DISABLE 1 WD ---- [                ]
+ 26 DISABLE 1 WD ---- [                ]
+ 27 DISABLE 1 WD ---- [                ]
+ 28 DISABLE 1 WD ---- [                ]
+ 29 DISABLE 1 WD ---- [                ]
+ 30 DISABLE 1 WD ---- [                ]
+ 31 DISABLE 1 WD ---- [                ]
+ 32 DISABLE 1 WD ---- [                ]
+
+    No.  1              Status:CHGD
+  1 Comment:   [Safe Zn              ]
+  2 Enable/Disable:            DISABLE
+  3 Method:    Working zone(Lines)     
+  4 Group:                            1
+  5 Target model 1:         Robot model
+  6 Target model 2:        User model 1
+  7 Target model 3:             DISABLE
+  8 Base frame:   User frame:     0
+  9 Number of vertexes:               8
+    Position(mm):    X      Y
+      Current     1103.1   -661.5
+ 10   P1          3600.0    500.0
+ 11   P2          3600.0   -400.0
+ 12   P3          2525.0  -1470.0
+ 13   P4             0.0  -2925.0
+ 14   P5         -2525.0  -1470.0
+ 15   P6         -2525.0   1470.0
+ 16   P7             0.0   2925.0
+ 17   P8          2525.0   1470.0
+      Current   Z1     Z2  
+ 18     -393.3   -1600.0   2000.0
+ 19 Stop type:         Stop Category 0
+ 20 Disabling input: SSI[  8:          ]
+ 21 Use Stop Position Prediction: Yes   
+ -- Speed check detail --
+    Limit(mm/s) / DSBL input
+  1 Limit 1:  250.0 / ---[  0]
+  2 Limit 2:  250.0 / ---[  0]
+  3 Limit 3:  250.0 / ---[  0]
+  4 Limit 4:  250.0 / ---[  0]
+  5 delay time:                   0 msec
+  6 Permissible distance(mm):       0.0
+
+--- Signature number (Dec) -------------
+                Current        Latch
+1 Total:        -241335826            0
+  Time:24-JUL-26 23:03              None
+2 Base:         1533501523            0
+  Time:02-JUN-26 23:04              None
+   Mastering:  -1901107411
+   Robot:      -1009854816
+   Other:       -930978075
+3 Pos./Speed:  -1976516177            0
+  Time:24-JUL-26 23:03              None
+4 I/O connect:   752027228            0
+  Time:02-JUN-26 22:59              None
+

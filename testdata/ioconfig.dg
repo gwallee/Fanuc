@@ -1,0 +1,187 @@
+F Number: F333543
+VERSION : HandlingTool         
+$VERSION: V9.40526     12/12/2025
+DATE:     27-AUG-26 13:14 
+
+IO CONFIGURATION::
+
+DIN[   1]  Auto Mode
+DIN[   2]  Start
+DIN[   3]  Pause
+DIN[   4]  RTE
+DIN[   5]  Run Task
+DIN[   6]  End of Run
+DIN[  17]  Infd Pk Rdy
+DIN[  18]  Recon Pk Rdy
+DIN[  19]  Outfd PL Rdy
+DIN[  20]  Recon PL Rdy
+DIN[  21]  RackPK Rdy
+DIN[  22]  RackPL Rdy
+DIN[  23]  Hopper Rdy
+DIN[  24]  Hopper Done
+DIN[  25]  Divided Tote
+DIN[  26]  Scan Pass
+DIN[  27]  Scan Fail
+DIN[  28]  Reject PL Cmd
+DIN[  29]  Reject PL Ack
+DIN[  30]  Inspect Pass
+DIN[  31]  Inspect Fail
+DIN[  65]  Clamp Ext-Up
+DIN[  66]  Clamp Full Ret
+DIN[  67]  Hook Full Close
+DIN[  68]  Hook Ret-Open
+DIN[  69]  Tote Chk Snsr
+DIN[  70]  Tote Tilt Snsr
+DIN[  71]  Infd1 Pres
+DIN[  72]  Recon-In Pres
+DIN[  73]  Outfd1 Pres
+DIN[  74]  Recon-Out Pres
+DIN    1  -  96   RACK:  89   SLOT:   1   PORT:   1
+DIN[ 101]  IMSTP
+DIN[ 102]  Hold
+DIN[ 103]  SFSPD
+DIN[ 104]  Cycle Stop
+DIN[ 105]  Fault Reset
+DIN[ 106]  Start
+DIN[ 107]  Home
+DIN[ 108]  Enable
+DIN[ 109]  RSR 1
+DIN[ 110]  RSR 2
+DIN[ 111]  RSR 3
+DIN[ 112]  UI 11
+DIN[ 113]  UI 12
+DIN[ 114]  UI 13
+DIN[ 115]  UI 14
+DIN[ 116]  Remote CMD
+DIN  101  - 116   RACK:  89   SLOT:   1   PORT:  97
+DIN[ 121]  DCS-Rjct dsbl
+DIN  121  - 136   RACK:  36   SLOT:   1   PORT:   1
+DOUT[   1]  Auto Mode Echo
+DOUT[   2]  Running
+DOUT[   3]  Paused
+DOUT[   5]  Task Done
+DOUT[   6]  EOR Done
+DOUT[  17]  Infd Picked
+DOUT[  18]  Recon Picked
+DOUT[  19]  Outfd Placed
+DOUT[  20]  Recon Placed
+DOUT[  21]  Rack Picked
+DOUT[  22]  Rack Placed
+DOUT[  23]  Tote in Pos
+DOUT[  24]  Dump Dn Ack
+DOUT[  26]  Scan Trigger
+DOUT[  29]  Reject Placed
+DOUT[  30]  Inspect Trigger
+DOUT[  31]  Inspect Ack
+DOUT[  33]  At Home
+DOUT[  34]  At TL Maint
+DOUT[  35]  At Safe
+DOUT[  36]  At Zero
+DOUT[  37]  At Transit
+DOUT[  38]  At Hopper
+DOUT[  39]  At Infd
+DOUT[  40]  At Infd Recon
+DOUT[  41]  At Outfd
+DOUT[  42]  At Outfd Recon
+DOUT[  43]  At Reject
+DOUT[  44]  At Scanner
+DOUT[  49]  Activate Alarm (SR)
+DOUT[  51]  Unknown ToteID
+DOUT[  52]  Unknown ToteSts
+DOUT[  53]  Tote Task Err
+DOUT[  54]  DCS Err
+DOUT[  55]  Col Detect
+DOUT[  56]  Hopper Err
+DOUT[  57]  Inspect Err
+DOUT[  58]  Scan Err
+DOUT[  59]  Rjct Not Rdy
+DOUT[  60]  Jogged
+DOUT[  61]  IO Simulated
+DOUT[  62]  Recov Error
+DOUT[  63]  BGLogic Off
+DOUT[  64]  TP Prompt
+DOUT[  65]  Ext Clamp-Up
+DOUT[  66]  Ret Clamp-Down
+DOUT[  67]  Ext Hook-Closed
+DOUT[  68]  Ret Hook-Open
+DOUT    1  -  96   RACK:  89   SLOT:   1   PORT:   1
+DOUT[ 101]  CMD Enabled
+DOUT[ 102]  System Ready
+DOUT[ 103]  Prg Running
+DOUT[ 104]  Prg Paused
+DOUT[ 105]  Motion Held
+DOUT[ 106]  Fault
+DOUT[ 107]  At Perch
+DOUT[ 108]  TP Enabled
+DOUT[ 109]  Battery Alarm
+DOUT[ 110]  Busy
+DOUT[ 111]  ACK 1
+DOUT[ 112]  Power Cycled
+DOUT[ 113]  Start-TP
+DOUT[ 114]  ES TP
+DOUT[ 115]  ES Controller
+DOUT[ 116]  Robot in Auto
+DOUT  101  - 116   RACK:  89   SLOT:   1   PORT:  97
+DOUT[ 201]  At Conv1/3 Appr
+DOUT[ 202]  At Recon Appr
+DOUT[ 203]  At Scan Pos
+DOUT[ 204]  At Inspct Pos
+DOUT[ 205]  At Hopper Appr
+DOUT[ 206]  At Dump Pos
+DOUT[ 207]  At Dump-Divide Pos
+DOUT[ 208]  At Reject Appr
+DOUT[ 211]  At L-RacksApr
+DOUT[ 212]  At R-RacksApr
+DOUT  201  - 264   RACK:   0   SLOT:   0   PORT: 201
+GIN[   1] Task ID
+GIN    1   RACK:  89   SLOT:   1   PORT: 113   #NUM:  16
+GIN[   2] Tote ID Ack
+GIN    2   RACK:  89   SLOT:   1   PORT: 129   #NUM:  16
+GIN[   3] RackPK-Sectn
+GIN    3   RACK:  89   SLOT:   1   PORT: 145   #NUM:  16
+GIN[   4] RackPK-Row
+GIN    4   RACK:  89   SLOT:   1   PORT: 161   #NUM:  16
+GIN[   5] RackPK-Colmn
+GIN    5   RACK:  89   SLOT:   1   PORT: 177   #NUM:  16
+GIN[   6] RackPL-Sectn
+GIN    6   RACK:  89   SLOT:   1   PORT: 193   #NUM:  16
+GIN[   7] RackPL-Row
+GIN    7   RACK:  89   SLOT:   1   PORT: 209   #NUM:  16
+GIN[   8] RackPL-Colmn
+GIN    8   RACK:  89   SLOT:   1   PORT: 225   #NUM:  16
+GIN    9   RACK:  89   SLOT:   1   PORT: 241   #NUM:  16
+GIN   10   RACK:  89   SLOT:   1   PORT: 257   #NUM:  16
+GOUT[   1] Robot TaskID
+GOUT    1   RACK:  89   SLOT:   1   PORT: 113   #NUM:  16
+GOUT[   2] Tote ID in Rob
+GOUT    2   RACK:  89   SLOT:   1   PORT: 129   #NUM:  16
+GOUT    3   RACK:  89   SLOT:   1   PORT: 145   #NUM:  16
+GOUT    4   RACK:  89   SLOT:   1   PORT: 161   #NUM:  16
+GOUT    5   RACK:  89   SLOT:   1   PORT: 177   #NUM:  16
+GOUT    6   RACK:  89   SLOT:   1   PORT: 193   #NUM:  16
+GOUT    7   RACK:  89   SLOT:   1   PORT: 209   #NUM:  16
+GOUT    8   RACK:  89   SLOT:   1   PORT: 225   #NUM:  16
+GOUT    9   RACK:  89   SLOT:   1   PORT: 241   #NUM:  16
+GOUT   10   RACK:  89   SLOT:   1   PORT: 257   #NUM:  16
+UI[   1] *IMSTP
+UI[   2] *Hold
+UI[   3] *SFSPD
+UI[   4] Cycle stop
+UI[   5] Fault reset
+UI[   6] Start
+UI[   7] Home
+UI[   8] Enable
+UI[   9] RSR1/PNS1/STYLE1
+UI[  10] RSR2/PNS2/STYLE2
+UI    1  -  10   RACK:  89   SLOT:   1   PORT:  97
+UO[   1] Cmd enabled
+UO[   2] System ready
+UO[   3] Prg running
+UO[   4] Prg paused
+UO[   5] Motion held
+UO[   6] Fault
+UO[   7] At perch
+UO[   8] TP enabled
+UO[   9] Batt alarm
+UO[  10] Busy
+UO    1  -  10   RACK:  89   SLOT:   1   PORT:  97

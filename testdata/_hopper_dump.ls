@@ -1,0 +1,131 @@
+/PROG  _HOPPER_DUMP
+/ATTR
+OWNER		= MNEDITOR;
+COMMENT		= "Chk Tote Empty";
+PROG_SIZE	= 2067;
+CREATE		= DATE 26-07-10  TIME 15:08:48;
+MODIFIED	= DATE 26-08-24  TIME 16:20:12;
+FILE_NAME	= _INSPECT;
+VERSION		= 0;
+LINE_COUNT	= 103;
+MEMORY_SIZE	= 2575;
+PROTECT		= READ_WRITE;
+TCD:  STACK_SIZE	= 0,
+      TASK_PRIORITY	= 50,
+      TIME_SLICE	= 0,
+      BUSY_LAMP_OFF	= 0,
+      ABORT_REQUEST	= 0,
+      PAUSE_REQUEST	= 0;
+DEFAULT_GROUP	= 1,*,*,*,*;
+CONTROL_CODE	= 00000000 00000000;
+LOCAL_REGISTERS	= 0,0,0;
+/APPL
+
+AUTO_SINGULARITY_HEADER;
+  ENABLE_SINGULARITY_AVOIDANCE   : FALSE;
+/MN
+   1:  !******FILL TOTE AT HOPPER******* ;
+   2:  LBL[100] ;
+   3:  IF (!F[1:ON :Part in Grip]),JMP LBL[999] ;
+   4:  R[40:*Hopper-Pos]=0    ;
+   5:   ;
+   6:  !***Setup Hopper Dump************ ;
+   7:  LBL[150] ;
+   8:  F[40:OFF:Hopper-Set]=(OFF) ;
+   9:  CALL _SET_HOPPER    ;
+  10:  IF (F[40:OFF:Hopper-Set]),JMP LBL[200] ;
+  11:  JMP LBL[999] ;
+  12:   ;
+  13:   ;
+  14:  !***Appr Hopper****************** ;
+  15:  LBL[200] ;
+  16:  IF (DO[205:OFF:At Hopper Appr]),JMP LBL[300] ;
+  17:  CALL _APPR_HOPPER(1) ;
+  18:  IF (F[700:OFF:Appr Error]),JMP LBL[700] ;
+  19:  JMP LBL[200] ;
+  20:   ;
+  21:   ;
+  22:  !***Move into Hopper************* ;
+  23:  LBL[300] ;
+  24:  UFRAME_NUM=0 ;
+  25:  UTOOL_NUM=1 ;
+  26:   ;
+  27:J PR[41:Hopper Appr] R[104:ToteSpd-J]% CNT50    ;
+  28:   ;
+  29:  CALL _SET_OFFS((-800),0,(-8),61) ;
+  30:L PR[43:Orig-Hopper-Nrml] R[103:ToteSpd-L]mm/sec CNT50 Tool_Offset    ;
+  31:   ;
+  32:  IF R[40:*Hopper-Pos]=2,JMP LBL[320] ;
+  33:  JMP LBL[310] ;
+  34:   ;
+  35:  !**Appr Dump Pos-Nrml ;
+  36:  LBL[310] ;
+  37:  CALL _SET_OFFS((-600),0,(-8),61) ;
+  38:L PR[40:*Hopper Pos] R[103:ToteSpd-L]mm/sec CNT100 Tool_Offset    ;
+  39:  CALL _SET_OFFS(0,0,(-8),61) ;
+  40:L PR[40:*Hopper Pos] R[103:ToteSpd-L]mm/sec CNT25 Tool_Offset    ;
+  41:  JMP LBL[350] ;
+  42:   ;
+  43:  !**Appr Dump Pos-Divided ;
+  44:  LBL[320] ;
+  45:  CALL _SET_OFFS((-600),(-50),(-8),61) ;
+  46:L PR[40:*Hopper Pos] R[103:ToteSpd-L]mm/sec CNT100 Tool_Offset    ;
+  47:  CALL _SET_OFFS(0,(-10),(-8),61) ;
+  48:L PR[40:*Hopper Pos] R[103:ToteSpd-L]mm/sec CNT25 Tool_Offset    ;
+  49:  JMP LBL[350] ;
+  50:   ;
+  51:  !**Move to Dump Pos ;
+  52:  LBL[350] ;
+  53:L PR[40:*Hopper Pos] R[106:PL Spd]mm/sec FINE    ;
+  54:  WAIT (DO[206:OFF:At Dump Pos] OR DO[207:OFF:At Dump-Divide Pos])    ;
+  55:  JMP LBL[400] ;
+  56:   ;
+  57:   ;
+  58:  !***Fill Tote******************** ;
+  59:  LBL[400] ;
+  60:  IF (!DO[206:OFF:At Dump Pos] AND !DO[207:OFF:At Dump-Divide Pos]),JMP LBL[100] ;
+  61:  DO[23:OFF:Tote in Pos]=OFF ;
+  62:  DO[24:OFF:Dump Dn Ack]=OFF ;
+  63:  WAIT (DI[23:OFF:Hopper Rdy] AND !DI[24:OFF:Hopper Done])    ;
+  64:   ;
+  65:  !**Trigger Dump ;
+  66:  CALL _SET_WAIT(R[42:*WaitTm x100]) ;
+  67:  DO[23:OFF:Tote in Pos]=ON ;
+  68:  !Wait for Pass/Fail ;
+  69:  //WAIT (DI[24:OFF:Hopper Done]) TIMEOUT,LBL[407] ;
+  70:  WAIT (DI[24:OFF:Hopper Done])    ;
+  71:  JMP LBL[410] ;
+  72:   ;
+  73:  !**Dump Not Done ;
+  74:  LBL[407] ;
+  75:  DO[23:OFF:Tote in Pos]=OFF ;
+  76:  DO[56:OFF:Hopper Err]=ON ;
+  77:  PAUSE ;
+  78:  DO[56:OFF:Hopper Err]=OFF ;
+  79:  JMP LBL[100] ;
+  80:   ;
+  81:  !***Dump Finished*** ;
+  82:  LBL[410] ;
+  83:  R[100:*Tote-Sts ID]=40    ;
+  84:  DO[23:OFF:Tote in Pos]=OFF ;
+  85:  JMP LBL[500] ;
+  86:   ;
+  87:   ;
+  88:  !***Retreat Hopper*************** ;
+  89:  LBL[500] ;
+  90:  IF (DO[204:OFF:At Inspct Pos]),JMP LBL[600] ;
+  91:L PR[45:Inspect Pos] R[103:ToteSpd-L]mm/sec FINE    ;
+  92:  WAIT (DO[204:OFF:At Inspct Pos])    ;
+  93:  JMP LBL[600] ;
+  94:   ;
+  95:   ;
+  96:  !***Hopper Done****************** ;
+  97:  LBL[600] ;
+  98:  F[40:OFF:Hopper-Set]=(OFF) ;
+  99:  R[40:*Hopper-Pos]=0    ;
+ 100:  JMP LBL[999] ;
+ 101:   ;
+ 102:   ;
+ 103:  LBL[999] ;
+/POS
+/END

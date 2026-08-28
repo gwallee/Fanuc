@@ -1,0 +1,100 @@
+<?xml version="1.0" ?>
+<EIPCFG>
+  <!-- Common Information for Implicit and Explicit Connections -->
+  <COMMON>
+    <!-- This tag defines RSLogix Software info inclduing name, 
+         revision, and version -->
+    <SOFTWARE name="RSLogix5000" rev="1.0" ver="20.1" />
+    
+    <!-- This tag defines connection name. PLC must mtach connection name, 
+         otherwise Import will fail. -->
+
+    <CONN name="ROBOT" />
+
+    <!-- Rung if you want create as a result of import --> 
+
+    <RUNGS yes="1" />
+
+  </COMMON>
+  
+  <!-- This tag defines configuration info for Implicit connection. --> 
+  <IMPLICIT>
+  
+    <!-- Slot specific configuration info. Name defines the structure 
+         name and name will be appended with _T in export file. --> 
+    <SLOT num="0" name="imudt">
+    
+      <!-- Input configuration info. Name defines the structure 
+         name and name will be appended with _T in export file. --> 
+      <INPUT name="gmin" >
+      
+      <!-- This tag defines register type and corresponding attributes 
+         as appropriate. 
+
+         1: Numeric:
+                    real: if reg type is real  
+         2: Position:
+                    jpos: if rep is joint  
+                    group: group no            
+        
+        <REG type ="NUMERIC" start="1" total="1" real="0"/>
+        <REG type ="STRING" start="1" total="1"/>
+        <REG type ="POSITION" start="1" total="1" jpos="0" group="1"/>
+        
+	This tag defines KAREL varinfo: var name and program name
+		
+        <KAREL name="" prog="" />                                   
+      -->
+		       
+      </INPUT>
+
+      <!-- Output configuration info. Name defines the structure 
+         name and name will be appended with _T in export file. --> 
+      <OUTPUT name ="gmout" >
+      <!--
+        <REG type ="NUMERIC" start="2" total="1" />
+        <REG type ="STRING" start="2" total="1"/>
+        <REG type ="POSITION" start="2" total="1" jpos="0" group="1" />
+        <KAREL name="recipe" prog="myprog1" />
+        <KAREL name="status" prog="myprog2" />
+      -->
+      </OUTPUT>
+    </SLOT>
+  </IMPLICIT>
+  
+  <!-- This tag defines configuration info for Implicit connection. --> 
+  <EXPLICIT>
+
+    <!-- attach this configuration to attr 1. --> 
+    <ATTR num = "0" name="emudt1" class="6E" inst="1">
+      <INPUT name="egmin1"> 
+      <!--
+        <REG type ="NUMERIC" start="3" total="1" />
+        <REG type ="STRING" start="3" total="1"/>
+        <REG type ="POSITION" start="3" total="1" jpos="0" group="1"/>
+        <KAREL name="priority" prog="myprog1" />
+      -->
+      </INPUT>
+      <OUTPUT name ="egmout1" >
+      <!--
+        <REG type ="NUMERIC" start="4" total="1" />
+        <REG type ="STRING" start="4" total="1"/>
+        <REG type ="POSITION" start="4" total="1" jpos="0" group="1"/>
+	    <KAREL name="pos1" prog="myprog2" />
+      -->
+      </OUTPUT>
+    </ATTR>
+
+    <!-- attach this configuration to attr 2. --> 
+    <ATTR num = "0" name="emudt2" class="6E" inst="1">
+      
+      <!-- Sysvar can't be written. You don't need to configure INPUT,
+           It will be ignored by system. --> 
+      <OUTPUT name ="egmout2" >
+      <!--
+        <KAREL name="$application" prog="*SYSTEM*" />
+      -->
+      </OUTPUT>
+    </ATTR>
+  </EXPLICIT>
+</EIPCFG>

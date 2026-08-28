@@ -1,0 +1,11 @@
+tb_cart 1           -- cartesian 1. cycle priority 2. path priority
+tb_jnt 1            -- joint 1. cycle priority 2. path priority
+!MME>flange_type 1 -- Generated Automatically
+!MME>motion_range 1    -- motion range: 1.standard 2.dress-out integrated
+payload 80  -- max payload
+mount 0             -- 0: Floor Mount 1: Upside Down Mount
+grease 1            -- 1: Standard Grease 2: Food Grade Grease
+!MME>sam_type 1          -- 1: Full SA 2: Wrist Axis SA
+flange_type 1 -- Generated Automatically
+motion_range 1 -- Generated Automatically
+ENDOFL              -- end of the file

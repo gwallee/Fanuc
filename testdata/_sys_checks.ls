@@ -1,0 +1,51 @@
+/PROG  _SYS_CHECKS
+/ATTR
+OWNER		= MNEDITOR;
+COMMENT		= "Pause/RTE Check";
+PROG_SIZE	= 603;
+CREATE		= DATE 19-01-18  TIME 16:47:02;
+MODIFIED	= DATE 26-07-14  TIME 10:03:44;
+FILE_NAME	= _SYS_CHE;
+VERSION		= 0;
+LINE_COUNT	= 23;
+MEMORY_SIZE	= 1023;
+PROTECT		= READ_WRITE;
+TCD:  STACK_SIZE	= 0,
+      TASK_PRIORITY	= 50,
+      TIME_SLICE	= 0,
+      BUSY_LAMP_OFF	= 0,
+      ABORT_REQUEST	= 0,
+      PAUSE_REQUEST	= 0;
+DEFAULT_GROUP	= 1,*,*,*,*;
+CONTROL_CODE	= 00000000 00000000;
+LOCAL_REGISTERS	= 0,0,0;
+/APPL
+
+AUTO_SINGULARITY_HEADER;
+  ENABLE_SINGULARITY_AVOIDANCE   : FALSE;
+/MN
+   1:  !***SYS CHECK STANDARD*********** ;
+   2:  !v 01.00 2019-10-02 ;
+   3:  LBL[100:Pause Check] ;
+   4:  IF DI[3:OFF:Pause]=OFF,JMP LBL[198] ;
+   5:   ;
+   6:  !Stop And Wait For Resume ;
+   7:  DO[3:OFF:Paused]=ON ;
+   8:  PAUSE ;
+   9:  JMP LBL[100] ;
+  10:   ;
+  11:  LBL[198] ;
+  12:  DO[3:OFF:Paused]=OFF ;
+  13:   ;
+  14:  LBL[200:RTE] ;
+  15:  IF DI[4:OFF:RTE]=OFF,JMP LBL[298] ;
+  16:  F[104:OFF:Sys Chks Ran]=(ON) ;
+  17:  IF DO[35:OFF:At Safe]=OFF,CALL _SAFE ;
+  18:  F[104:OFF:Sys Chks Ran]=(ON) ;
+  19:  JMP LBL[200] ;
+  20:   ;
+  21:  LBL[298] ;
+  22:  !Check BGLogic ;
+  23:  DO[63:OFF:BGLogic Off]=ON ;
+/POS
+/END

@@ -1,0 +1,31 @@
+F Number: F333543
+VERSION : HandlingTool         
+$VERSION: V9.40526     12/12/2025
+DATE:     16-JUL-26 22:28 
+DCS Version: V4.5.15
+
+--- Pos./speed check setup -------------
+                          Status:CHGD
+ SSI[13] Configuration check
+  1 Disabled JPC DSBL Signal    DISABLE
+  2 Disabled JSC DSBL Signal    DISABLE
+  3 Disabled CPC DSBL Signal    DISABLE
+  4 Disabled CSC DSBL Signal    DISABLE
+  5 Invalid Tool Frame          DISABLE
+ Position/Speed check setup
+  6 Disabled CPC Position Check ENABLE 
+  7 Shift+Reset direction check ENABLE 
+--- Signature number (Dec) -------------
+                Current        Latch
+1 Total:        1705872321            0
+  Time:16-JUL-26 22:28              None
+2 Base:         1533501523            0
+  Time:02-JUN-26 23:04              None
+   Mastering:  -1901107411
+   Robot:      -1009854816
+   Other:       -930978075
+3 Pos./Speed:  -2045272211            0
+  Time:16-JUL-26 22:28              None
+4 I/O connect:   752027228            0
+  Time:02-JUN-26 22:59              None
+

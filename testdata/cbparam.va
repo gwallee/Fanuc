@@ -1,0 +1,193 @@
+[CBPARAM]PAYLOAD1  Storage: DRAM  Access: RW  : REAL = 1.186400e+01
+
+[CBPARAM]PAYLOAD1_X  Storage: DRAM  Access: RW  : REAL = -3.186000e+00
+
+[CBPARAM]PAYLOAD1_Y  Storage: DRAM  Access: RW  : REAL = -8.480000e-01
+
+[CBPARAM]PAYLOAD1_Z  Storage: DRAM  Access: RW  : REAL = 7.930000e-01
+
+[CBPARAM]PAYLOAD1_IX  Storage: DRAM  Access: RW  : REAL = 2.351696e+03
+
+[CBPARAM]PAYLOAD1_IY  Storage: DRAM  Access: RW  : REAL = 1.424092e+03
+
+[CBPARAM]PAYLOAD1_IZ  Storage: DRAM  Access: RW  : REAL = 3.770709e+03
+
+[CBPARAM]PAYLOAD2  Storage: DRAM  Access: RW  : REAL = 8.256400e+01
+
+[CBPARAM]PAYLOAD2_X  Storage: DRAM  Access: RW  : REAL = -1.845740e+01
+
+[CBPARAM]PAYLOAD2_Y  Storage: DRAM  Access: RW  : REAL = -1.218500e-01
+
+[CBPARAM]PAYLOAD2_Z  Storage: DRAM  Access: RW  : REAL = 1.798504e+01
+
+[CBPARAM]PAYLOAD2_IX  Storage: DRAM  Access: RW  : REAL = 1.566604e+04
+
+[CBPARAM]PAYLOAD2_IY  Storage: DRAM  Access: RW  : REAL = 2.011828e+04
+
+[CBPARAM]PAYLOAD2_IZ  Storage: DRAM  Access: RW  : REAL = 1.181117e+04
+
+[CBPARAM]TFRAME_X  Storage: DRAM  Access: RW  : ARRAY[3] OF REAL
+  [1] = 2.393140e+02
+  [2] = -2.390460e+02
+  [3] = 2.306000e+00
+
+[CBPARAM]TFRAME_Y  Storage: DRAM  Access: RW  : ARRAY[3] OF REAL
+  [1] = 9.984100e+01
+  [2] = 2.951890e+02
+  [3] = -3.389530e+02
+
+[CBPARAM]TFRAME_Z  Storage: DRAM  Access: RW  : ARRAY[3] OF REAL
+  [1] = 8.000000e+00
+  [2] = 8.000000e+00
+  [3] = 2.300000e+01
+
+[CBPARAM]INIT_UF  Storage: DRAM  Access: RW  : ARRAY[6] OF REAL
+  [1] = Uninitialized
+  [2] = Uninitialized
+  [3] = Uninitialized
+  [4] = Uninitialized
+  [5] = Uninitialized
+  [6] = Uninitialized
+
+[CBPARAM]SE_CTRLMODE  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[CBPARAM]DATA_C1  Storage: DRAM  Access: RW  : ARRAY[9] OF REAL
+  [1] = Uninitialized
+  [2] = Uninitialized
+  [3] = Uninitialized
+  [4] = Uninitialized
+  [5] = Uninitialized
+  [6] = Uninitialized
+  [7] = Uninitialized
+  [8] = Uninitialized
+  [9] = Uninitialized
+
+[CBPARAM]DATA_C2  Storage: DRAM  Access: RW  : ARRAY[9] OF REAL
+  [1] = Uninitialized
+  [2] = Uninitialized
+  [3] = Uninitialized
+  [4] = Uninitialized
+  [5] = Uninitialized
+  [6] = Uninitialized
+  [7] = Uninitialized
+  [8] = Uninitialized
+  [9] = Uninitialized
+
+[CBPARAM]DATA_C3  Storage: DRAM  Access: RW  : ARRAY[9] OF REAL
+  [1] = Uninitialized
+  [2] = Uninitialized
+  [3] = Uninitialized
+  [4] = Uninitialized
+  [5] = Uninitialized
+  [6] = Uninitialized
+  [7] = Uninitialized
+  [8] = Uninitialized
+  [9] = Uninitialized
+
+[CBPARAM]DATA_C4  Storage: DRAM  Access: RW  : ARRAY[9] OF REAL
+  [1] = Uninitialized
+  [2] = Uninitialized
+  [3] = Uninitialized
+  [4] = Uninitialized
+  [5] = Uninitialized
+  [6] = Uninitialized
+  [7] = Uninitialized
+  [8] = Uninitialized
+  [9] = Uninitialized
+
+[CBPARAM]DATA_C5  Storage: DRAM  Access: RW  : ARRAY[9] OF REAL
+  [1] = Uninitialized
+  [2] = Uninitialized
+  [3] = Uninitialized
+  [4] = Uninitialized
+  [5] = Uninitialized
+  [6] = Uninitialized
+  [7] = Uninitialized
+  [8] = Uninitialized
+  [9] = Uninitialized
+
+[CBPARAM]DATA_C6  Storage: DRAM  Access: RW  : ARRAY[9] OF REAL
+  [1] = Uninitialized
+  [2] = Uninitialized
+  [3] = Uninitialized
+  [4] = Uninitialized
+  [5] = Uninitialized
+  [6] = Uninitialized
+  [7] = Uninitialized
+  [8] = Uninitialized
+  [9] = Uninitialized
+
+[CBPARAM]DATA_C7  Storage: DRAM  Access: RW  : ARRAY[9] OF REAL
+  [1] = Uninitialized
+  [2] = Uninitialized
+  [3] = Uninitialized
+  [4] = Uninitialized
+  [5] = Uninitialized
+  [6] = Uninitialized
+  [7] = Uninitialized
+  [8] = Uninitialized
+  [9] = Uninitialized
+
+[CBPARAM]DATA_C8  Storage: DRAM  Access: RW  : ARRAY[9] OF REAL
+  [1] = Uninitialized
+  [2] = Uninitialized
+  [3] = Uninitialized
+  [4] = Uninitialized
+  [5] = Uninitialized
+  [6] = Uninitialized
+  [7] = Uninitialized
+  [8] = Uninitialized
+  [9] = Uninitialized
+
+[CBPARAM]DATA_C9  Storage: DRAM  Access: RW  : ARRAY[9] OF REAL
+  [1] = Uninitialized
+  [2] = Uninitialized
+  [3] = Uninitialized
+  [4] = Uninitialized
+  [5] = Uninitialized
+  [6] = Uninitialized
+  [7] = Uninitialized
+  [8] = Uninitialized
+  [9] = Uninitialized
+
+[CBPARAM]DATA_C10  Storage: DRAM  Access: RW  : ARRAY[9] OF REAL
+  [1] = Uninitialized
+  [2] = Uninitialized
+  [3] = Uninitialized
+  [4] = Uninitialized
+  [5] = Uninitialized
+  [6] = Uninitialized
+  [7] = Uninitialized
+  [8] = Uninitialized
+  [9] = Uninitialized
+
+[CBPARAM]AVG_ERR_TOL  Storage: DRAM  Access: RW  : REAL = 3.100000e-01
+
+[CBPARAM]MAX_ERR_TOL  Storage: DRAM  Access: RW  : REAL = 4.100000e-01
+
+[CBPARAM]AVG_RES_TOL  Storage: DRAM  Access: RW  : REAL = 5.100000e-01
+
+[CBPARAM]MAX_RES_TOL  Storage: DRAM  Access: RW  : REAL = 6.500000e-01
+
+[CBPARAM]MAX_MEAS_TOL  Storage: DRAM  Access: RW  : REAL = Uninitialized
+
+[CBPARAM]SE_AVG_ERR  Storage: DRAM  Access: RW  : REAL = Uninitialized
+
+[CBPARAM]SE_MAX_ERR  Storage: DRAM  Access: RW  : REAL = Uninitialized
+
+[CBPARAM]SE_AVG_RES  Storage: DRAM  Access: RW  : REAL = Uninitialized
+
+[CBPARAM]SE_MAX_RES  Storage: DRAM  Access: RW  : REAL = Uninitialized
+
+[CBPARAM]S7_AVG_ERR  Storage: DRAM  Access: RW  : REAL = Uninitialized
+
+[CBPARAM]S7_MAX_ERR  Storage: DRAM  Access: RW  : REAL = Uninitialized
+
+[CBPARAM]FACT_200PTS  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[CBPARAM]J1_COMP_R  Storage: DRAM  Access: RW  : REAL = Uninitialized
+
+[CBPARAM]J1_PART_R  Storage: DRAM  Access: RW  : REAL = Uninitialized
+
+[CBPARAM]J5_PART_R  Storage: DRAM  Access: RW  : REAL = Uninitialized
+
