@@ -36,7 +36,7 @@ Want a double-click desktop install later? Wrap this same code in Electron/Tauri
 - Multi-program library with syntax highlighting, header attributes, parsed `/POS` position tables (Cartesian + joint, multi-group), drag-and-drop import, localStorage persistence, `.LS` export
 
 ### Edit
-- Full-source editor per program: **Save to library** re-parses and refreshes every view and re-runs all checks; for programs opened from a directory via the bridge, **Save to library + disk** writes the file back
+- Full-source editor per program, syntax-highlighted and filling the tab: **Save to library** re-parses and refreshes every view and re-runs all checks; for programs opened from a directory via the bridge, **Save to library + disk** writes the file back
 - **Save + send to robot** uploads over FTP with the snapshot/verify/auto-restore safety net; if the checks find errors that would fail translation, it warns before sending
 - ON in green, OFF in red, comments recognized, full syntax highlighting in viewer and search results
 
@@ -64,11 +64,10 @@ Static analysis across the whole library — comment lines (`!…`) never count 
 The Checks tab count updates live as you edit.
 
 ### Understand
-- **Explain mode** — plain-English annotation under every line
 - **Summary** — per-program narrative, motion/I-O/register stats, loop detection
 - **Flow tab** —
+  - *Control flow graph* (first): the selected program split into blocks with drawn jump arrows — amber up = loop, blue down = skip ahead, dashed = conditional; jumps to missing labels flagged on the block. **Click a block to isolate it**: only the arrows into and out of it stay drawn, the blocks they connect stay lit, and everything else dims — the way to follow one jump through a program with a hundred of them. Click it again, or **Show all**, to bring the rest back; **Go to code** on each block opens that line in the Code tab.
   - *Call order*: the sequence programs actually run in (`1 → 1.1 → 1.2 → 1.2.1 …`), with call-site line numbers, loop annotations, recursion and missing-program flags
-  - *Control flow graph*: the selected program split into blocks with drawn jump arrows — amber up = loop, blue down = skip ahead, dashed = conditional; jumps to missing labels flagged on the block
 - **Cross-reference** — every `R[]`, `PR[]`, I/O point, and `TIMER[]` across the library with clickable read/write references
 - **Robot tab** — live register values with search/filter (matched against where each register is used in code), filterable I/O configuration
 
@@ -85,7 +84,8 @@ js/analyzer.js    per-program + library analysis (xref, call graph, labels)
 js/linter.js      static checks
 js/flow.js        control-flow blocks/edges + call-order computation
 js/diff.js        line diff + program-set comparison
-js/explain.js     instruction → plain-English rules
+js/explain.js     instruction → plain-English rules (unit-tested; not wired
+                  into the UI since the per-line Explain toggle was removed)
 js/vaparse.js     NUMREG.VA / DIOCFGSV.IO parsing
 js/app.js         UI
 samples/          demo cell: MAIN, PICK, PLACE, GRIPPER, PALLET

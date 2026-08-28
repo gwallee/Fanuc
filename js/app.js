@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var P = window.FanucParser, A = window.FanucAnalyzer, X = window.FanucExplain;
+  var P = window.FanucParser, A = window.FanucAnalyzer;
   var L = window.FanucLinter, FL = window.FanucFlow, VA = window.FanucVA, D = window.FanucDiff;
   var STORE_KEY_V1 = 'fanuc-tp-studio.programs.v1';
   var STORE_KEY = 'fanuc-tp-studio.programs.v2';
@@ -11,7 +11,6 @@
     programs: {},          // NAME -> { parsed, analysis, source, origin }
     selected: null,
     tab: 'code',
-    explain: false,
     editing: false,
     graph: null,
     xref: null,
@@ -28,7 +27,8 @@
     hiddenRules: {},       // {rule: true} check rules the user muted (persisted)
     checksOpen: {},        // {rule: bool} transient expand state in the Checks tab
     xrefOpen: {},          // {itemKey: true} expanded items in Cross-reference
-    xrefFilter: ''
+    xrefFilter: '',
+    flowFocus: null        // block idx isolated in the control-flow graph
   };
 
   var PREFS_KEY = 'fanuc-tp-studio.prefs.v1';
@@ -566,7 +566,11 @@
     if (line.comment !== null) {
       return '<span class="tok-cmt">! ' + esc(line.comment) + '</span>';
     }
-    var s = esc(line.text);
+    return tokenize(esc(line.text));
+  }
+
+  /* Colour the instruction text of one already-HTML-escaped TP line. */
+  function tokenize(s) {
     s = s.replace(/(MESSAGE\[)([^\]]*)(\])/g, '<span class="tok-kw">$1</span><span class="tok-str">$2</span><span class="tok-kw">$3</span>');
     s = s.replace(/\bLBL\[[^\]]*\]/g, function (m0) { return '<span class="tok-lbl">' + m0 + '</span>'; });
     s = s.replace(/\b(CALL|RUN)\s+([A-Z_][A-Z0-9_]*)/g, function (_, kw, name) {
@@ -584,6 +588,25 @@
       '<span class="tok-kw">$1</span>');
     s = s.replace(/\b(FINE|CNT\d+|ACC\d+|max_speed|BREAK|RTCP|Wjnt|PTH)\b/g, '<span class="tok-num">$1</span>');
     return s;
+  }
+
+  /* Highlight raw .LS text for the editor overlay. Unlike highlight(), which
+   * works on parsed lines, this sees the file as typed — section markers,
+   * TP line numbers, /ATTR entries and all — so the <pre> underneath the
+   * textarea lines up character for character with what is being edited. */
+  function highlightSource(src) {
+    return String(src).split('\n').map(highlightSourceLine).join('\n');
+  }
+
+  function highlightSourceLine(raw) {
+    if (!raw) return '';
+    if (/^\s*\//.test(raw)) return '<span class="tok-kw">' + esc(raw) + '</span>'; // /PROG, /MN, /POS, /END
+    var m = raw.match(/^(\s*\d+:)([\s\S]*)$/);
+    if (!m) return tokenize(esc(raw));
+    var num = '<span class="tok-ln">' + esc(m[1]) + '</span>';
+    var cm = m[2].match(/^(\s*)(!.*)$/);
+    if (cm) return num + esc(cm[1]) + '<span class="tok-cmt">' + esc(cm[2]) + '</span>';
+    return num + tokenize(esc(m[2]));
   }
 
   /* ================= occurrence highlighting =================
@@ -834,6 +857,7 @@
 
   function renderPane() {
     var pane = document.getElementById('pane');
+    pane.className = 'pane';
     pane.innerHTML = '';
     var needsProgram = ['code', 'summary', 'flow', 'positions'].indexOf(state.tab) !== -1;
     if (!Object.keys(state.programs).length && needsProgram) {
@@ -869,12 +893,6 @@
         h('span', { class: 'ln', text: line.num }),
         h('span', { class: 'src', html: (line.motion ? '<span class="tok-motion">' + line.motion + '</span> ' : '') + highlight(line) })
       ]));
-      if (state.explain) {
-        box.appendChild(h('div', { class: 'explain-row' }, [
-          h('span', { class: 'ln' }),
-          h('span', { class: 'note', text: '↳ ' + X.explainLine(line) })
-        ]));
-      }
     });
     box.addEventListener('click', function (ev) {
       var t = ev.target;
@@ -900,19 +918,10 @@
   }
 
   function renderSplit(pane) {
-    var explain = (function () {
-      var cb = h('input', { type: 'checkbox' });
-      cb.checked = state.explain;
-      cb.addEventListener('change', function () { state.explain = cb.checked; render(); });
-      var lab = h('label', {}, [cb]);
-      lab.appendChild(document.createTextNode(' Explain every line'));
-      return lab;
-    })();
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Side by side' }),
       h('span', { class: 'muted', text: 'drag a program from the library onto either half to view it there' }),
       h('span', { style: 'flex:1' }),
-      explain,
       h('button', { class: 'btn subtle', text: 'Close split', onclick: function () { state.split = null; render(); } })
     ]));
 
@@ -961,14 +970,6 @@
         onclick: function () { state.tab = 'checks'; render(); }
       }) : null,
       h('span', { style: 'flex:1' }),
-      (function () {
-        var cb = h('input', { type: 'checkbox' });
-        cb.checked = state.explain;
-        cb.addEventListener('change', function () { state.explain = cb.checked; render(); });
-        var lab = h('label', {}, [cb]);
-        lab.appendChild(document.createTextNode(' Explain every line'));
-        return lab;
-      })(),
       h('button', { class: 'btn', text: 'Edit', onclick: function () { state.editing = true; render(); } }),
       h('button', {
         class: 'btn', text: 'Side-by-side', title: 'Open a second program next to this one (or drag one from the library onto the right half)',
@@ -1000,8 +1001,34 @@
     var oldName = p.parsed.name;
     var status = h('span', { class: 'muted' });
 
-    var ta = h('textarea', { class: 'editor', spellcheck: 'false' });
+    var ta = h('textarea', {
+      class: 'editor', spellcheck: 'false', wrap: 'off',
+      autocapitalize: 'off', autocomplete: 'off', autocorrect: 'off'
+    });
     ta.value = p.source;
+
+    /* Syntax highlighting in a plain textarea: a <pre> holding the coloured
+     * copy sits directly behind transparent text, with identical metrics, and
+     * follows the textarea's scroll. Editing stays completely native. */
+    var hl = h('pre', { class: 'editor-hl', 'aria-hidden': 'true' });
+    var editorWrap = h('div', { class: 'editor-wrap' }, [hl, ta]);
+    var repaintQueued = false;
+    function paint() {
+      // the trailing newline keeps the last line scrollable in step with the textarea
+      hl.innerHTML = highlightSource(ta.value) + '\n';
+      syncScroll();
+    }
+    function syncScroll() {
+      hl.scrollTop = ta.scrollTop;
+      hl.scrollLeft = ta.scrollLeft;
+    }
+    ta.addEventListener('input', function () {
+      if (repaintQueued) return;
+      repaintQueued = true;
+      requestAnimationFrame(function () { repaintQueued = false; paint(); });
+    });
+    ta.addEventListener('scroll', syncScroll);
+    paint();
 
     function save(alsoDisk) {
       var src = ta.value;
@@ -1060,6 +1087,7 @@
 
     var bar = h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Editing ' + oldName }),
+      h('span', { class: 'muted', text: 'saving re-parses the program and re-runs every check — renaming /PROG renames it in the library' }),
       status,
       h('span', { style: 'flex:1' }),
       h('button', { class: 'btn primary', text: 'Save to library', onclick: function () { save(false); } }),
@@ -1077,8 +1105,8 @@
     if (p.origin.type === 'robot' && !(state.server && state.robot.ip)) {
       pane.appendChild(h('p', { class: 'muted', text: 'This program was read from robot ' + p.origin.ip + '. Connect to the robot (Robot tab) to send edits back over FTP with the snapshot/auto-restore safety net.' }));
     }
-    pane.appendChild(ta);
-    pane.appendChild(h('p', { class: 'muted', text: 'Saving re-parses the program, refreshes every view, and re-runs the checks. If you change the /PROG name the program is renamed in the library.' }));
+    pane.appendChild(editorWrap);
+    pane.classList.add('editing');
     ta.focus();
   }
 
@@ -1205,25 +1233,28 @@
   function renderFlow(pane) {
     var p = current();
     if (!p) return;
-    var g = state.graph;
 
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Program flow' })
     ]));
 
-    // -- call order --
+    /* Control flow of the open program comes first: it is the part that gets
+     * read line by line, and isolating a block should not mean scrolling
+     * past the whole call tree to reach it. */
+    var secCfg = secHead('Control flow inside ' + p.parsed.name, 'flow-cfg');
+    pane.appendChild(secCfg.el);
+    if (secCfg.open) renderCfg(pane, p);
+
+    var secCall = secHead('Call order — the sequence programs run in', 'flow-callorder');
+    pane.appendChild(secCall.el);
+    if (secCall.open) renderCallOrder(pane);
+  }
+
+  function renderCallOrder(pane) {
+    var g = state.graph;
     var rootNames = A.roots(g);
     if (!rootNames.length) rootNames = Object.keys(state.programs);
     var flowWrap = h('div', { class: 'graph' });
-    var secCall = secHead('Call order — the sequence programs run in', 'flow-callorder');
-    flowWrap.appendChild(secCall.el);
-    if (!secCall.open) {
-      pane.appendChild(flowWrap);
-      var secCfg0 = secHead('Control flow inside ' + p.parsed.name, 'flow-cfg');
-      pane.appendChild(secCfg0.el);
-      if (secCfg0.open) renderCfg(pane, p);
-      return;
-    }
     flowWrap.appendChild(h('p', { class: 'muted', text: 'Read top to bottom: each row is a CALL in the order it appears. Indent = call depth. Sections inside loops repeat every cycle. Click a program to open it, ▸ to collapse a branch.' }));
 
     if (!state.flowCollapse) state.flowCollapse = {};
@@ -1289,7 +1320,7 @@
       });
       FL.visibleRows(rowsByRoot[r], perRoot).forEach(function (row) {
         var key = r + '|' + row.seq;
-        var el = h('div', { class: 'seq-row', style: 'padding-left:' + (row.depth * 26) + 'px' });
+        var el = h('div', { class: 'seq-row', style: 'padding-left:' + (row.depth * 22) + 'px' });
         el.appendChild(row.hasChildren
           ? h('span', {
               class: 'seq-caret', text: state.flowCollapse[key] ? '▸' : '▾',
@@ -1333,28 +1364,69 @@
       flowWrap.appendChild(ul);
     }
     pane.appendChild(flowWrap);
-
-    // -- control-flow graph of the selected program --
-    var secCfg = secHead('Control flow inside ' + p.parsed.name, 'flow-cfg');
-    pane.appendChild(secCfg.el);
-    if (secCfg.open) renderCfg(pane, p);
   }
 
-  function renderCfg(pane, p) {
-    pane.appendChild(h('p', { class: 'muted', text: 'Blocks run top to bottom. Curved arrows are jumps: amber going up = loop, blue going down = skip ahead; dashed = conditional (IF / timeout / skip).' }));
+  /* Block to scroll back into view after the next render — isolating a block
+   * rebuilds the pane, and losing your place in a long graph defeats the
+   * point of isolating it. */
+  var cfgScrollTo = null;
+  var cfgFocusProg = null;
 
+  function renderCfg(pane, p) {
     var flow = FL.buildFlow(p.parsed);
-    var wrap = h('div', { class: 'flow-wrap' });
+    // isolation belongs to one program's graph — switching or editing drops it
+    if (cfgFocusProg !== p.parsed.name) { state.flowFocus = null; cfgFocusProg = p.parsed.name; }
+    var focus = state.flowFocus;
+    if (focus !== null && focus >= flow.blocks.length) focus = state.flowFocus = null;
+
+    /* Isolation: the focused block plus every block an arrow runs to or from.
+     * Everything else is dimmed, and so are the arrows that miss it. */
+    var related = {};
+    if (focus !== null) {
+      related[focus] = true;
+      flow.edges.forEach(function (e) {
+        if (e.from === focus && e.to !== null) related[e.to] = true;
+        if (e.to === focus) related[e.from] = true;
+      });
+    }
+
+    var ctl = h('div', { class: 'flow-ctl' }, [
+      h('p', {
+        class: 'muted',
+        text: focus === null
+          ? 'Blocks run top to bottom. Curved arrows are jumps: amber going up = loop, blue going down = skip ahead; dashed = conditional (IF / timeout / skip). Click a block to isolate its jumps.'
+          : 'Isolated ' + flow.blocks[focus].title + ' — only the arrows into and out of it are drawn, and the blocks they connect stay lit. Click the block again to bring the rest back.'
+      }),
+      focus === null ? null : h('button', {
+        class: 'btn subtle', text: 'Show all',
+        onclick: function () { cfgScrollTo = focus; state.flowFocus = null; render(); }
+      })
+    ]);
+    pane.appendChild(ctl);
+
+    var wrap = h('div', { class: 'flow-wrap' + (focus === null ? '' : ' isolated') });
     var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('class', 'flow-svg');
     wrap.appendChild(svg);
     var col = h('div', { class: 'flow-col' });
 
     flow.blocks.forEach(function (b) {
-      var card = h('div', { class: 'flow-card ' + b.kind.replace(' ', '-'), 'data-block': b.idx });
+      var cls = 'flow-card ' + b.kind.replace(' ', '-');
+      if (focus !== null) cls += b.idx === focus ? ' focus' : (related[b.idx] ? ' related' : ' dimmed');
+      var card = h('div', {
+        class: cls,
+        'data-block': b.idx,
+        title: b.idx === focus ? 'Click to show every block again' : 'Click to isolate this block’s jumps'
+      });
       card.appendChild(h('div', { class: 'fc-head' }, [
         h('span', { class: 'fc-title', text: b.title }),
-        h('span', { class: 'fc-range', text: b.kind === 'normal' ? '' : 'lines ' + b.startNum + '–' + b.endNum })
+        h('span', { class: 'fc-range', text: b.kind === 'normal' ? '' : 'lines ' + b.startNum + '–' + b.endNum }),
+        h('span', { class: 'fc-spacer' }),
+        h('button', {
+          class: 'fc-goto', text: 'Go to code',
+          title: 'Open ' + p.parsed.name + ' at line ' + b.startNum + ' in the Code tab',
+          onclick: function (ev) { ev.stopPropagation(); gotoLine(p.parsed.name, b.startNum); }
+        })
       ]));
       var body = h('div', { class: 'fc-body' });
       b.preview.forEach(function (t) {
@@ -1369,7 +1441,10 @@
         visCalls.forEach(function (name) {
           cc.appendChild(h('span', {
             class: 'chip read', text: '→ ' + name,
-            onclick: state.programs[name] ? function () { state.selected = name; render(); } : null
+            title: state.programs[name] ? 'Open ' + name : name + ' is not in the library',
+            onclick: state.programs[name]
+              ? function (ev) { ev.stopPropagation(); state.selected = name; render(); }
+              : null
           }));
         });
         card.appendChild(cc);
@@ -1378,16 +1453,27 @@
       missing.forEach(function (e) {
         card.appendChild(h('div', { class: 'fc-missing', text: '⚠ jumps to ' + e.label + ' — label not defined' }));
       });
-      card.addEventListener('click', function () { gotoLine(p.parsed.name, b.startNum); });
+      card.addEventListener('click', function () {
+        cfgScrollTo = b.idx;
+        state.flowFocus = state.flowFocus === b.idx ? null : b.idx;
+        render();
+      });
       col.appendChild(card);
     });
     wrap.appendChild(col);
     pane.appendChild(wrap);
 
-    requestAnimationFrame(function () { drawFlowEdges(wrap, svg, flow); });
+    requestAnimationFrame(function () {
+      drawFlowEdges(wrap, svg, flow, focus);
+      if (cfgScrollTo !== null) {
+        var el = wrap.querySelector('.flow-card[data-block="' + cfgScrollTo + '"]');
+        cfgScrollTo = null;
+        if (el) el.scrollIntoView({ block: 'center' });
+      }
+    });
   }
 
-  function drawFlowEdges(wrap, svg, flow) {
+  function drawFlowEdges(wrap, svg, flow, focus) {
     var cards = wrap.querySelectorAll('.flow-card');
     if (!cards.length) return;
     var W = wrap.clientWidth, Hh = wrap.scrollHeight;
@@ -1417,21 +1503,37 @@
       var c = cards[idx];
       return { top: c.offsetTop, bottom: c.offsetTop + c.offsetHeight };
     }
+    function onFocus(e) {
+      return focus !== null && (e.from === focus || e.to === focus);
+    }
 
-    // lane assignment for jump edges: longer spans further left
+    // lane assignment for jump edges: longer spans further left. When a block
+    // is isolated its own arrows take the innermost lanes, so the ones you
+    // actually want to follow run closest to the blocks.
     var jumps = flow.edges.filter(function (e) { return e.kind !== 'fall' && e.to !== null; });
     jumps.sort(function (a, b) { return Math.abs(b.to - b.from) - Math.abs(a.to - a.from); });
     jumps.forEach(function (e, i) { e.lane = i % 6; });
+    if (focus !== null) {
+      var lit = jumps.filter(onFocus);
+      lit.sort(function (a, b) { return Math.abs(a.to - a.from) - Math.abs(b.to - b.from); });
+      lit.forEach(function (e, i) { e.lane = i % 6; });
+    }
 
-    flow.edges.forEach(function (e) {
+    // dimmed arrows first so the isolated ones are drawn over them
+    var ordered = flow.edges.slice().sort(function (a, b) {
+      return (onFocus(a) ? 1 : 0) - (onFocus(b) ? 1 : 0);
+    });
+
+    ordered.forEach(function (e) {
       if (e.to === null) return;
+      var lit = focus === null || onFocus(e);
       var from = cardBox(e.from), to = cardBox(e.to);
       var path = document.createElementNS(ns, 'path');
       if (e.kind === 'fall') {
         var x = GUTTER + 30;
         path.setAttribute('d', 'M ' + x + ' ' + (from.bottom + 1) + ' L ' + x + ' ' + (to.top - 1));
         path.setAttribute('stroke', 'var(--gutter)');
-        path.setAttribute('marker-end', 'url(#arr-fall)');
+        if (lit) path.setAttribute('marker-end', 'url(#arr-fall)');
       } else {
         var back = to.top < from.top;
         var y1 = from.bottom - 14;
@@ -1441,11 +1543,12 @@
           'M ' + GUTTER + ' ' + y1 +
           ' C ' + xr + ' ' + y1 + ', ' + xr + ' ' + y2 + ', ' + GUTTER + ' ' + y2);
         path.setAttribute('stroke', back ? 'var(--accent)' : 'var(--motion)');
-        path.setAttribute('marker-end', back ? 'url(#arr-back)' : 'url(#arr-fwd)');
+        if (lit) path.setAttribute('marker-end', back ? 'url(#arr-back)' : 'url(#arr-fwd)');
         if (e.kind === 'cond') path.setAttribute('stroke-dasharray', '5 4');
       }
       path.setAttribute('fill', 'none');
-      path.setAttribute('stroke-width', '1.6');
+      path.setAttribute('stroke-width', lit && focus !== null ? '2.4' : '1.6');
+      if (!lit) path.setAttribute('opacity', '0.12');
       svg.appendChild(path);
     });
   }
