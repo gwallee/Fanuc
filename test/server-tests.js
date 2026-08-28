@@ -79,6 +79,17 @@ async function post(route, body) {
     check(fs.readFileSync(path.join(b1.folder, 'MAIN.LS'), 'utf8') === files['MAIN.LS'], 'backup file content matches robot');
     const b2 = await post('/api/robot/backup', { ip: ROBOT, dest });
     check(path.basename(b2.folder).endsWith('_02'), 'second backup today increments to _02: ' + path.basename(b2.folder));
+
+    console.log('\n-- quick backup (.LS + .VA only) --');
+    files['SYSMAST.SV'] = 'binary-ish system file';
+    files['MAIN.TP'] = 'binary tp';
+    const b3 = await post('/api/robot/backup', { ip: ROBOT, dest, mode: 'quick' });
+    check(b3.ok && b3.mode === 'quick', 'quick backup ran');
+    check(path.basename(b3.folder).endsWith('_03_quick'), 'quick folder continues the counter with _quick suffix: ' + path.basename(b3.folder));
+    const got = fs.readdirSync(b3.folder).sort();
+    check(got.every((f) => /\.(LS|VA)$/i.test(f)) && got.includes('MAIN.LS') && got.includes('NUMREG.VA'),
+      'quick backup contains only .LS/.VA: ' + got.join(', '));
+    check(!got.includes('SYSMAST.SV') && !got.includes('MAIN.TP'), '.SV/.TP files skipped');
   } catch (e) {
     failures++;
     console.error('FAIL  unexpected error: ' + (e.stack || e.message));

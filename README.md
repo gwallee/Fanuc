@@ -22,7 +22,7 @@ The bridge serves this same app and adds what a browser alone cannot do — brow
 
 - **Robot by IP** — reads the program list, any `.LS`, live register values (`NUMREG.VA`), and I/O configuration (`DIOCFGSV.IO`). Tries the controller web server (`http://<robot-ip>/MD/`) first and falls back to FTP automatically, so either protocol being enabled is enough. Optional FTP credentials (default anonymous).
 - **Safe upload over FTP** — sending a `.LS` to the controller triggers LS→TP translation, and a translation error makes the controller **delete the program**. The bridge makes that impossible to lose work to: it snapshots the robot's current version first, uploads, reads the file back to verify it survived, and if it's gone it **auto-restores the snapshot** — then the UI keeps your editor open so the fix is one keystroke away. Snapshots land in `backups/pre-upload/`.
-- **Backups** — one click pulls every file off `MD:` into `backups/<robot-name-or-ip>_<YYYY-MM-DD>_<NN>/`; `NN` auto-increments for same-day backups, and the robot name is read from the controller when available.
+- **Backups** — one click pulls every file off `MD:` into `backups/<robot-name-or-ip>_<YYYY-MM-DD>_<NN>/`; `NN` auto-increments for same-day backups, and the robot name is read from the controller when available. **Quick backup** grabs only `.LS` + `.VA` (folder suffixed `_quick`) — fast, ideal right before making changes.
 - **Local directory by path** — point at a backup folder; every `.LS` loads into the library (plus `NUMREG.VA`/`DIOCFGSV.IO` label data if present), and edits can be saved back to disk.
 - **Phone access** — run the bridge on a shop-floor PC and open `http://<that-pc-ip>:8642` from your phone on the same network: full app, live robot data.
 
@@ -44,14 +44,19 @@ Want a double-click desktop install later? Wrap this same code in Electron/Tauri
 - **Ctrl+E** (Studio 5000 habit): select anything — in the viewer or the editor — and Ctrl+E cross-references it library-wide; clicking any register/I-O token in the Code view does the same
 - Click a `CALL`ed program name to open it (open-selection)
 
-### Compare (diff against a backup)
-- Load a baseline (backup folder path via the bridge, or pick `.LS` files anywhere) and see everything that changed: changed / new / missing / header-only / identical, with per-program green/red line diffs
+### Side-by-side
+- **Side-by-side** button (or drag a program from the library onto the right half of the code view) opens two programs next to each other, each with its own program selector — Notepad++ split-view style
+- **Compare A↔B** jumps straight from the split into a line diff of the two panes
+
+### Compare (diff)
+- **Two programs**: pick any two library programs and get a green/red unified diff (Notepad++ Compare-plugin style)
+- **Against a backup**: load a baseline (backup folder path via the bridge, or pick `.LS` files anywhere) and see everything that changed: changed / new / missing / header-only / identical, with per-program line diffs
 - Header-only differences (dates, sizes the controller rewrites on every touch) are classified separately so real code changes stand out
 
 ### Check (Checks tab)
 Static analysis across the whole library — comment lines (`!…`) never count as uses:
 - **error** — `JMP`/`TIMEOUT`/`Skip` to a `LBL[n]` that is never defined (INTP-267 at runtime); duplicate label definitions
-- **warn** — unlabeled registers, position registers, or I/O points used on active lines; `CALL` to a program not in the library; unreachable code after an unconditional `JMP`/`END`/`ABORT`
+- **warn** — unlabeled registers, position registers, or I/O points used on active lines; `CALL` to a program not in the library; unreachable code after an unconditional `JMP`/`END`/`ABORT`; **handshake without motion** — `DO[n]=ON` answered by a `WAIT` on an input with no move between them (the robot sits idle for the whole round-trip; motion, `CALL`/`RUN`, or a label between them clears the check)
 - **info** — labels nothing jumps to; registers read but never written; **registers/I-O labeled on the controller but never used in any program** (fed by `NUMREG.VA` / `DIOCFGSV.IO` from the connected robot or an opened backup folder)
 
 The Checks tab count updates live as you edit.

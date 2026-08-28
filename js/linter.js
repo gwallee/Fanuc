@@ -45,6 +45,31 @@
         }
       });
 
+      // --- handshake without motion: DO[n]=ON answered by WAIT DI/RI with no
+      // move between them. The convention is: set the output, START THE MOVE,
+      // then wait for the reply at the destination — otherwise the robot sits
+      // idle for the whole communication round-trip.
+      // Motion, CALL/RUN (may contain motion), and LBL (merge point) reset it.
+      var pendingDO = null;
+      parsed.lines.forEach(function (line) {
+        if (line.comment !== null) return;
+        var t = line.text;
+        if (line.motion) { pendingDO = null; return; }
+        if (/^(CALL|RUN)\b/.test(t) || /^LBL\[/.test(t)) pendingDO = null;
+        var dm = t.match(/^DO\[(\d+)(?::([^\]]*))?\]\s*=\s*ON\b/);
+        if (dm) { pendingDO = { key: 'DO[' + dm[1] + ']', line: line.num }; return; }
+        if (pendingDO && /^WAIT\b/.test(t) && /\b(DI|RI)\[\d+/.test(t)) {
+          findings.push({
+            severity: 'warn',
+            rule: 'handshake-without-motion',
+            message: name + ': ' + pendingDO.key + '=ON (line ' + pendingDO.line + ') is answered by a WAIT on an input at line ' + line.num +
+              ' with no motion between them — the robot sits idle for the whole handshake. Start the move after setting the output, then WAIT at the destination.',
+            refs: [{ prog: name, line: pendingDO.line }, { prog: name, line: line.num }]
+          });
+          pendingDO = null;
+        }
+      });
+
       // --- unreachable code after an unconditional JMP / END / ABORT ---
       for (var i = 0; i < parsed.lines.length - 1; i++) {
         var line = parsed.lines[i];

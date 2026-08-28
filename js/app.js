@@ -21,6 +21,8 @@
     dirExtern: null,       // register/IO label data found in an opened folder
     dirStatus: null,
     compare: null,         // { label, programs: {NAME: source}, results, open: name|null }
+    pair: null,            // { a, b } two-program comparison
+    split: null,           // program name shown in the right half of the Code view
     upload: null           // last robot-upload result banner
   };
 
@@ -194,13 +196,13 @@
     });
   }
 
-  function takeBackup() {
+  function takeBackup(mode) {
     state.robot.backup = { running: true };
     render();
     fetch('/api/robot/backup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ip: state.robot.ip, user: state.robot.ftpUser || undefined, pass: state.robot.ftpPass || undefined })
+      body: JSON.stringify({ ip: state.robot.ip, mode: mode, user: state.robot.ftpUser || undefined, pass: state.robot.ftpPass || undefined })
     }).then(function (r) { return r.json(); }).then(function (b) {
       if (b.error) throw new Error(b.error);
       state.robot.backup = b;
@@ -400,13 +402,20 @@
       if (p.origin.type === 'robot') meta += ' · from ' + p.origin.ip;
       else if (p.origin.type === 'dir') meta += ' · on disk';
       else if (p.parsed.attrs.COMMENT) meta += ' · ' + p.parsed.attrs.COMMENT;
-      list.appendChild(h('button', {
+      var item = h('button', {
         class: 'prog-item' + (n === state.selected ? ' active' : ''),
+        draggable: 'true',
+        title: 'Click to open · drag onto the code view to open side-by-side',
         onclick: function () { state.selected = n; state.editing = false; render(); }
       }, [
         h('div', { class: 'name', text: n }),
         h('div', { class: 'meta', text: meta })
-      ]));
+      ]);
+      item.addEventListener('dragstart', function (e) {
+        e.dataTransfer.setData('text/x-prog', n);
+        e.dataTransfer.effectAllowed = 'link';
+      });
+      list.appendChild(item);
     });
   }
 
@@ -509,13 +518,93 @@
     }
   }
 
-  /* ---- code tab (view + edit) ---- */
+  /* ---- code tab (view + edit + side-by-side) ---- */
+
+  function buildCodeBox(p) {
+    var box = h('div', { class: 'codebox' });
+    p.parsed.lines.forEach(function (line) {
+      box.appendChild(h('div', { class: 'cline', 'data-line': line.num }, [
+        h('span', { class: 'ln', text: line.num }),
+        h('span', { class: 'src', html: (line.motion ? '<span class="tok-motion">' + line.motion + '</span> ' : '') + highlight(line) })
+      ]));
+      if (state.explain) {
+        box.appendChild(h('div', { class: 'explain-row' }, [
+          h('span', { class: 'ln' }),
+          h('span', { class: 'note', text: '↳ ' + X.explainLine(line) })
+        ]));
+      }
+    });
+    box.addEventListener('click', function (ev) {
+      var t = ev.target;
+      if (t.classList.contains('tok-call')) {
+        var name = t.getAttribute('data-call').toUpperCase();
+        if (state.programs[name]) { state.selected = name; render(); }
+        return;
+      }
+      if (t.classList.contains('tok-reg') || t.classList.contains('tok-io')) crossRefToken(t.textContent);
+    });
+    return box;
+  }
+
+  function progSelect(value, onchange) {
+    var sel = h('select', { class: 'prog-select' });
+    Object.keys(state.programs).sort().forEach(function (n) {
+      var o = h('option', { value: n, text: n });
+      if (n === value) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', function () { onchange(sel.value); });
+    return sel;
+  }
+
+  function renderSplit(pane) {
+    var explain = (function () {
+      var cb = h('input', { type: 'checkbox' });
+      cb.checked = state.explain;
+      cb.addEventListener('change', function () { state.explain = cb.checked; render(); });
+      var lab = h('label', {}, [cb]);
+      lab.appendChild(document.createTextNode(' Explain every line'));
+      return lab;
+    })();
+    pane.appendChild(h('div', { class: 'code-toolbar' }, [
+      h('span', { class: 'title', text: 'Side by side' }),
+      h('span', { class: 'muted', text: 'drag a program from the library onto either half to view it there' }),
+      h('span', { style: 'flex:1' }),
+      explain,
+      h('button', { class: 'btn subtle', text: 'Close split', onclick: function () { state.split = null; render(); } })
+    ]));
+
+    var wrap = h('div', { class: 'split-wrap' });
+    [['left', state.selected], ['right', state.split]].forEach(function (side) {
+      var name = side[1];
+      var p = state.programs[name];
+      var col = h('div', { class: 'code-pane ' + side[0], 'data-side': side[0] });
+      col.appendChild(h('div', { class: 'pane-head' }, [
+        progSelect(name, function (v) {
+          if (side[0] === 'left') state.selected = v; else state.split = v;
+          render();
+        }),
+        h('button', {
+          class: 'btn subtle', text: 'Edit',
+          onclick: function () { state.selected = name; state.split = null; state.editing = true; render(); }
+        }),
+        h('button', {
+          class: 'btn subtle', text: 'Compare A↔B', title: 'Diff these two programs in the Compare tab',
+          onclick: function () { state.pair = { a: state.selected, b: state.split }; state.tab = 'compare'; render(); }
+        })
+      ]));
+      col.appendChild(p ? buildCodeBox(p) : h('p', { class: 'muted', text: 'no program' }));
+      wrap.appendChild(col);
+    });
+    pane.appendChild(wrap);
+  }
 
   function renderCode(pane) {
     var p = current();
     if (!p) return;
 
     if (state.editing) return renderEditor(pane, p);
+    if (state.split && state.programs[state.split]) return renderSplit(pane);
 
     var progFindings = state.findings.filter(function (f) {
       return f.severity !== 'info' && f.refs.some(function (r) { return r.prog === p.parsed.name; });
@@ -539,6 +628,10 @@
         return lab;
       })(),
       h('button', { class: 'btn', text: 'Edit', onclick: function () { state.editing = true; render(); } }),
+      h('button', {
+        class: 'btn', text: 'Side-by-side', title: 'Open a second program next to this one (or drag one from the library onto the right half)',
+        onclick: function () { state.split = p.parsed.name; render(); }
+      }),
       (state.server && state.robot.ip) ? h('button', {
         class: 'btn', text: 'Send to robot',
         title: 'Upload ' + p.parsed.name + '.LS to ' + state.robot.ip + ' over FTP (snapshot + verify + auto-restore on failure)',
@@ -558,36 +651,7 @@
     pane.appendChild(bar);
     var banner = uploadBanner();
     if (banner) pane.appendChild(banner);
-
-    var box = h('div', { class: 'codebox' });
-    p.parsed.lines.forEach(function (line) {
-      var row = h('div', { class: 'cline', 'data-line': line.num }, [
-        h('span', { class: 'ln', text: line.num }),
-        h('span', { class: 'src', html: (line.motion ? '<span class="tok-motion">' + line.motion + '</span> ' : '') + highlight(line) })
-      ]);
-      box.appendChild(row);
-      if (state.explain) {
-        box.appendChild(h('div', { class: 'explain-row' }, [
-          h('span', { class: 'ln' }),
-          h('span', { class: 'note', text: '↳ ' + X.explainLine(line) })
-        ]));
-      }
-    });
-    pane.appendChild(box);
-
-    box.addEventListener('click', function (ev) {
-      var t = ev.target;
-      if (t.classList.contains('tok-call')) {
-        // open-selection: click a CALLed program to open it
-        var name = t.getAttribute('data-call').toUpperCase();
-        if (state.programs[name]) { state.selected = name; render(); }
-        return;
-      }
-      if (t.classList.contains('tok-reg') || t.classList.contains('tok-io')) {
-        // find-in-files: click any register / I/O token to see every use
-        crossRefToken(t.textContent);
-      }
-    });
+    pane.appendChild(buildCodeBox(p));
   }
 
   function renderEditor(pane, p) {
@@ -1223,7 +1287,32 @@
   }
 
   function renderCompare(pane) {
+    // -- two-program compare (Notepad++ Compare-plugin style) --
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
+      h('span', { class: 'title', text: 'Compare two programs' })
+    ]));
+    var names = Object.keys(state.programs).sort();
+    if (names.length >= 1) {
+      if (!state.pair) state.pair = { a: state.selected || names[0], b: state.split || state.selected || names[0] };
+      var row = h('div', { class: 'search-bar' });
+      row.appendChild(progSelect(state.pair.a, function (v) { state.pair.a = v; render(); }));
+      row.appendChild(h('span', { class: 'muted', text: 'vs' }));
+      row.appendChild(progSelect(state.pair.b, function (v) { state.pair.b = v; render(); }));
+      row.appendChild(h('button', { class: 'btn subtle', text: '⇄ swap', onclick: function () { state.pair = { a: state.pair.b, b: state.pair.a }; render(); } }));
+      pane.appendChild(row);
+      var pa = state.programs[state.pair.a], pb = state.programs[state.pair.b];
+      if (pa && pb) {
+        if (state.pair.a === state.pair.b) {
+          pane.appendChild(h('p', { class: 'muted', text: 'Same program on both sides — pick two different programs (or two revisions imported under different names).' }));
+        } else {
+          pane.appendChild(renderDiffBody(pa.source, pb.source, true));
+        }
+      }
+    } else {
+      pane.appendChild(h('p', { class: 'muted', text: 'Import programs first.' }));
+    }
+
+    pane.appendChild(h('div', { class: 'code-toolbar', style: 'margin-top:18px' }, [
       h('span', { class: 'title', text: 'Compare against a backup' }),
       h('span', { class: 'muted', text: 'see everything that changed on the robot since a backup was taken' })
     ]));
@@ -1307,8 +1396,10 @@
     progList('Header-only changes (dates / sizes — code identical)', r.headerOnly, 'header');
   }
 
-  function renderDiffBody(baselineSrc, currentSrc) {
-    var ops = D.diffLines(D.bodyOf(baselineSrc), D.bodyOf(currentSrc));
+  function renderDiffBody(baselineSrc, currentSrc, fullSource) {
+    var ops = fullSource
+      ? D.diffLines(baselineSrc, currentSrc)
+      : D.diffLines(D.bodyOf(baselineSrc), D.bodyOf(currentSrc));
     var box = h('div', { class: 'codebox diffbox' });
     var ctx = 2, shown = {};
     // mark which indexes to show: changes plus context
@@ -1426,17 +1517,24 @@
     pane.appendChild(h('h3', { text: 'Backups' }));
     var bk = state.robot.backup;
     var today = new Date().toISOString().slice(0, 10);
-    pane.appendChild(h('p', { class: 'muted', text: 'Pulls every file off MD: over FTP into backups/<robot-name-or-ip>_' + today + '_NN on the bridge PC — NN increments automatically for multiple backups on the same day. The robot name is read from the controller when it answers over HTTP.' }));
+    pane.appendChild(h('p', { class: 'muted', text: 'Saved to backups/<robot-name-or-ip>_' + today + '_NN on the bridge PC — NN increments automatically for multiple backups on the same day, and quick backups get a _quick suffix. The robot name is read from the controller when it answers over HTTP.' }));
     pane.appendChild(h('p', {}, [
       h('button', {
-        class: 'btn primary', text: (bk && bk.running) ? 'Backing up…' : 'Take backup now',
-        onclick: (bk && bk.running) ? null : takeBackup
+        class: 'btn primary', text: (bk && bk.running) ? 'Backing up…' : 'Full backup',
+        title: 'Every file on MD:',
+        onclick: (bk && bk.running) ? null : function () { takeBackup('full'); }
+      }),
+      document.createTextNode(' '),
+      h('button', {
+        class: 'btn', text: (bk && bk.running) ? '…' : 'Quick backup (.LS + .VA)',
+        title: 'Just programs and variable files — fast, ideal right before making changes',
+        onclick: (bk && bk.running) ? null : function () { takeBackup('quick'); }
       })
     ]));
     if (bk && bk.error) pane.appendChild(h('p', {}, [h('span', { class: 'badge warn', text: 'backup failed' }), h('span', { class: 'muted', text: ' ' + bk.error })]));
     if (bk && bk.ok) {
       pane.appendChild(h('p', {}, [
-        h('span', { class: 'badge ok', text: 'backup complete' }),
+        h('span', { class: 'badge ok', text: (bk.mode === 'quick' ? 'quick ' : '') + 'backup complete' }),
         h('span', { text: ' ' + bk.files + ' files (' + (bk.bytes / 1024).toFixed(0) + ' KB) → ' }),
         h('span', { class: 'mono', text: bk.folder })
       ]));
@@ -1587,7 +1685,22 @@
     window.addEventListener('drop', function (e) {
       e.preventDefault();
       document.body.classList.remove('dragging');
-      if (e.dataTransfer && e.dataTransfer.files.length) importFiles(e.dataTransfer.files);
+      if (!e.dataTransfer) return;
+      var progName = e.dataTransfer.getData('text/x-prog');
+      if (progName && state.programs[progName]) {
+        // Notepad++-style: drop a program onto the code view — right half opens
+        // it side-by-side, left half (or no split yet, left third) replaces the view
+        var paneEl = document.getElementById('pane');
+        var r = paneEl.getBoundingClientRect();
+        var rightHalf = e.clientX > r.left + r.width / 2;
+        state.tab = 'code';
+        state.editing = false;
+        if (rightHalf) state.split = progName;
+        else state.selected = progName;
+        render();
+        return;
+      }
+      if (e.dataTransfer.files.length) importFiles(e.dataTransfer.files);
     });
 
     restore();

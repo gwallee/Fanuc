@@ -236,6 +236,7 @@ async function handleApi(req, res, u) {
     let payload;
     try { payload = JSON.parse(body); } catch (e) { return fail(res, 400, 'invalid JSON body'); }
     const { ip, user, pass, dest } = payload;
+    const mode = payload.mode === 'quick' ? 'quick' : 'full';
     if (!ip || !ROBOT_HOST.test(String(ip).split(':')[0])) return fail(res, 400, 'missing or invalid ip');
     const t = parseTarget(ip);
     let robotName = null;
@@ -249,10 +250,10 @@ async function handleApi(req, res, u) {
     fs.mkdirSync(destRoot, { recursive: true });
     let nn = 1;
     for (const e of fs.readdirSync(destRoot)) {
-      const m = e.match(new RegExp('^' + base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '_(\\d+)$'));
+      const m = e.match(new RegExp('^' + base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '_(\\d+)(?:_quick)?$'));
       if (m) nn = Math.max(nn, parseInt(m[1], 10) + 1);
     }
-    const folder = path.join(destRoot, base + '_' + String(nn).padStart(2, '0'));
+    const folder = path.join(destRoot, base + '_' + String(nn).padStart(2, '0') + (mode === 'quick' ? '_quick' : ''));
     try {
       const ftp = await Ftp.connect(t.host, t.port, user, pass, 20000);
       const files = await ftp.nlst();
@@ -261,6 +262,7 @@ async function handleApi(req, res, u) {
       const failed = [];
       for (const f of files) {
         if (!ROBOT_NAME.test(f)) continue;
+        if (mode === 'quick' && !/\.(ls|va)$/i.test(f)) continue;
         try {
           const buf = await ftp.retr(f);
           fs.writeFileSync(path.join(folder, f.toUpperCase()), buf);
@@ -269,7 +271,7 @@ async function handleApi(req, res, u) {
         } catch (e) { failed.push(f); }
       }
       await ftp.quit();
-      return json(res, 200, { ok: true, folder, robotName, files: saved, failed, bytes });
+      return json(res, 200, { ok: true, folder, robotName, mode, files: saved, failed, bytes });
     } catch (e) {
       return fail(res, 502, 'backup failed: ' + e.message);
     }

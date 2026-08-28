@@ -125,6 +125,36 @@ check(byRule('unreachable-code').some(f => f.refs.some(r => r.prog === 'BAD' && 
 const cleanFindings = L.lint(programs, A.buildCallGraph(programs), A.buildGlobalXref(programs));
 check(!cleanFindings.some(f => f.severity === 'error'), 'sample cell has no errors');
 
+console.log('\n-- handshake without motion --');
+const hsSrc = `/PROG HS
+/MN
+   1:  DO[20:station start]=ON ;
+   2:  WAIT DI[21:station done]=ON ;
+   3:  DO[20:station start]=ON ;
+   4:J P[1:over there] 100% FINE ;
+   5:  WAIT DI[21:station done]=ON ;
+   6:  DO[22:next]=ON ;
+   7:  CALL GRIPPER(1) ;
+   8:  WAIT DI[23:ready]=ON ;
+   9:  DO[24:sig]=ON ;
+  10:  LBL[5] ;
+  11:  WAIT DI[25:in]=ON ;
+  12:  RO[1:clamp]=ON ;
+  13:  WAIT RI[1:clamped]=ON ;
+/END
+`;
+const hsParsed = P.parseLS(hsSrc, 'HS.LS');
+const hsLib = Object.assign({}, programs, { HS: { parsed: hsParsed, analysis: A.analyzeProgram(hsParsed), source: hsSrc } });
+const hsFindings = L.lint(hsLib, A.buildCallGraph(hsLib), A.buildGlobalXref(hsLib)).filter(f => f.rule === 'handshake-without-motion');
+const hsAt = line => hsFindings.some(f => f.refs.some(r => r.prog === 'HS' && r.line === line));
+check(hsAt(2), 'flagged: DO=ON at 1 → WAIT DI at 2 with nothing between');
+check(!hsAt(5), 'NOT flagged: motion between DO=ON (3) and WAIT (5)');
+check(!hsAt(8), 'NOT flagged: CALL between DO=ON (6) and WAIT (8) — the call may move');
+check(!hsAt(11), 'NOT flagged: LBL between DO=ON (9) and WAIT (11) — merge point');
+check(!hsAt(13), 'NOT flagged: RO (gripper valve) is exempt, only DO handshakes checked');
+check(hsFindings.some(f => f.refs.some(r => r.prog === 'PALLET')),
+  'sample PALLET flagged: DO[120]=ON → WAIT DI[121] with only a MESSAGE between');
+
 console.log('\n-- flow --');
 const flow = FL.buildFlow(main.parsed);
 check(flow.blocks.length >= 5, 'MAIN splits into blocks (' + flow.blocks.length + ')');
