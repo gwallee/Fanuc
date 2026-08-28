@@ -1019,6 +1019,31 @@
     $('usernameSaveBtn').addEventListener('click', saveUsername);
     $('usernameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveUsername(); });
 
+    // Shows what is actually running, and offers a way out of a stale
+    // cached copy without needing devtools or a hard-refresh shortcut.
+    const readout = $('versionReadout');
+    if (readout) readout.textContent = WTW_CONFIG.app.version;
+
+    $('forceUpdateBtn').addEventListener('click', async () => {
+      toast('Clearing cache and reloading…');
+      try {
+        if (window.caches && caches.keys) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map((k) => caches.delete(k)));
+        }
+        if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map((r) => r.unregister()));
+        }
+      } catch (err) {
+        console.warn('[pwa] force update cleanup failed', err);
+      }
+      // Cache-busting query so even an HTTP-cached document is bypassed.
+      const url = new URL(window.location.href);
+      url.searchParams.set('v', Date.now().toString(36));
+      window.location.replace(url.toString());
+    });
+
     $('clearRoastLogBtn').addEventListener('click', () => {
       WTWStorage.clearRoastLog();
       renderRoastLog();
