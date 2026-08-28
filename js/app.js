@@ -361,8 +361,9 @@
               if (mapped && mapped.progLine !== null) {
                 row.appendChild(document.createTextNode(' — that is program line ' + mapped.progLine + ': "' + mapped.raw.replace(/^\d+\s*:\s*/, '').replace(/\s*;\s*$/, '') + '" '));
                 row.appendChild(h('span', {
-                  class: 'chip write', text: 'go to line ' + mapped.progLine,
-                  onclick: function () { gotoLine(u.name.replace(/\.LS$/i, ''), mapped.progLine); }
+                  class: 'chip write', text: 'fix line ' + mapped.progLine,
+                  title: 'Open the editor with this line selected',
+                  onclick: function () { gotoEditorLine(u.name.replace(/\.LS$/i, ''), mapped.progLine); }
                 }));
               } else if (mapped) {
                 row.appendChild(document.createTextNode(' — file line ' + lm[1] + ' is in the header/positions section: "' + mapped.raw + '"'));
@@ -401,6 +402,10 @@
     var ip = state.robot.ip;
     return api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=' + encodeURIComponent(name) + ftpQS())
       .then(function (b) {
+        if (!isProgramSource(b.content)) {
+          toast(b.name + ' is a controller log export, not a TP program — skipped.');
+          return null;
+        }
         var prog = addProgram(b.content, b.name, { type: 'robot', ip: ip, name: b.name });
         rebuildDerived();
         persist();
@@ -514,6 +519,36 @@
       render();
     });
     return { el: el, open: open };
+  }
+
+  /* Open the EDITOR on a program with a specific TP line selected and
+   * scrolled into view — used by the failed-upload banner, where the next
+   * action is always "fix that line". Keeps an already-open editor (and any
+   * unsaved changes) intact and just moves the selection. */
+  function gotoEditorLine(progName, progLine) {
+    state.selected = progName;
+    state.tab = 'code';
+    var needRender = !(state.editing && document.querySelector('textarea.editor'));
+    if (needRender) {
+      state.editing = true;
+      render();
+    }
+    requestAnimationFrame(function () {
+      var ta = document.querySelector('textarea.editor');
+      if (!ta) return;
+      var lines = ta.value.split('\n');
+      var re = new RegExp('^\\s*' + progLine + '\\s*:');
+      var offset = 0, target = -1;
+      for (var i = 0; i < lines.length; i++) {
+        if (re.test(lines[i])) { target = i; break; }
+        offset += lines[i].length + 1;
+      }
+      if (target === -1) return;
+      ta.focus();
+      ta.setSelectionRange(offset, offset + lines[target].length);
+      var lh = parseFloat(getComputedStyle(ta).lineHeight) || 20;
+      ta.scrollTop = Math.max(0, target * lh - ta.clientHeight / 3);
+    });
   }
 
   function chip(ref, cls) {
@@ -2059,7 +2094,7 @@
           title: state.programs[name] ? 'in library — click to re-import' : 'click to import',
           onclick: function () {
             if (!confirmCrossSource([f])) return;
-            importFromRobot(f).then(function (n) { state.selected = n; render(); });
+            importFromRobot(f).then(function (n) { if (n) { state.selected = n; render(); } });
           }
         }));
       });
