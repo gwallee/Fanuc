@@ -1105,6 +1105,21 @@
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') openSettings(false); });
   }
 
+  /* ---------------- Desktop downloads ---------------- */
+
+  function openDownloads(open) {
+    const modal = $('downloadModal');
+    const overlay = $('downloadOverlay');
+    if (!modal) return;
+    modal.hidden = !open;
+    if (overlay) overlay.hidden = !open;
+    document.body.classList.toggle('modal-open', open);
+    if (open) {
+      WTWDownloads.loadAndRender($('downloadBody'));
+      $('downloadClose').focus();
+    }
+  }
+
   /* ---------------- PWA ---------------- */
 
   function registerServiceWorker() {
@@ -1203,10 +1218,24 @@
         }
       });
     }
+    $('downloadBtn').addEventListener('click', () => openDownloads(true));
+    $('settingsDownloadBtn').addEventListener('click', () => {
+      openSettings(false);
+      openDownloads(true);
+    });
+    $('footerDownloadLink').addEventListener('click', (e) => {
+      e.preventDefault();
+      openDownloads(true);
+    });
+    $('downloadClose').addEventListener('click', () => openDownloads(false));
+    $('downloadOverlay').addEventListener('click', () => openDownloads(false));
+
     $('tempModalClose').addEventListener('click', () => openTempChart(false));
     $('tempModalOverlay').addEventListener('click', () => openTempChart(false));
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !$('tempModal').hidden) openTempChart(false);
+      if (e.key !== 'Escape') return;
+      if (!$('tempModal').hidden) openTempChart(false);
+      if (!$('downloadModal').hidden) openDownloads(false);
     });
 
     $('compareRefreshBtn').addEventListener('click', () => {

@@ -66,6 +66,16 @@ const WTW_CONFIG = {
     minutelyResolution: 15,
   },
 
+  // Where the desktop builds come from. The GitHub API is key-less and
+  // CORS-enabled, so the app can list the real release assets.
+  repo: {
+    owner: 'gwallee',
+    name: 'What-The-Weather',
+    get url() { return `https://github.com/${this.owner}/${this.name}`; },
+    get releasesUrl() { return `${this.url}/releases`; },
+    get latestApi() { return `https://api.github.com/repos/${this.owner}/${this.name}/releases/latest`; },
+  },
+
   search: {
     maxResults: 6,   // candidates offered in the picker
     maxRecent: 6,    // remembered searches

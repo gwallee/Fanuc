@@ -8,7 +8,7 @@
    is deleted on activate.
    ============================================================ */
 
-const CACHE_VERSION = 'wtw-v13-1';
+const CACHE_VERSION = 'wtw-v13-2';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 
@@ -22,6 +22,7 @@ const SHELL = [
   './nws.js',
   './units.js',
   './search.js',
+  './downloads.js',
   './air.js',
   './rain.js',
   './precip.js',

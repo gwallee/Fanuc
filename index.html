@@ -30,7 +30,13 @@
       </div>
     </div>
 
-    <div class="search-bar" role="search">
+    <div class="header-tools" role="search">
+      <div class="tool-row">
+        <button type="button" id="searchBtn" class="btn btn-primary btn-compact">🔍 Search</button>
+        <button type="button" id="geoBtn" class="btn btn-compact" title="Use my location" aria-label="Use my location">📍</button>
+        <button type="button" id="downloadBtn" class="btn btn-compact" title="Get the desktop app" aria-label="Get the desktop app">⬇️</button>
+        <button type="button" id="settingsBtn" class="btn btn-compact" title="Settings" aria-label="Open settings">⚙️</button>
+      </div>
       <div class="search-field">
         <input
           type="text"
@@ -46,9 +52,6 @@
         <ul class="search-results" id="searchResults" role="listbox"
             aria-label="Search results" hidden></ul>
       </div>
-      <button type="button" id="searchBtn" class="btn btn-primary">🔍 Search</button>
-      <button type="button" id="geoBtn" class="btn" title="Use my location">📍</button>
-      <button type="button" id="settingsBtn" class="btn" title="Settings" aria-label="Open settings">⚙️</button>
     </div>
   </header>
 
@@ -317,6 +320,12 @@
     </div>
 
     <div class="setting-group">
+      <label>Desktop app</label>
+      <button type="button" id="settingsDownloadBtn" class="btn btn-small">⬇️ Download for Windows, macOS or Linux</button>
+      <p class="setting-hint">Installs the same app locally, with a shortcut and its own icon.</p>
+    </div>
+
+    <div class="setting-group">
       <label>App version</label>
       <div class="setting-row">
         <span class="version-readout" id="versionReadout">—</span>
@@ -327,6 +336,20 @@
 
     <p class="settings-footnote">Everything is stored locally in your browser. No accounts, no API keys.</p>
   </aside>
+
+  <!-- ================= Desktop downloads ================= -->
+  <div class="modal-overlay" id="downloadOverlay" hidden></div>
+  <div class="download-modal" id="downloadModal" role="dialog" aria-modal="true"
+       aria-labelledby="downloadTitle" hidden>
+    <div class="temp-modal-head">
+      <div>
+        <h2 id="downloadTitle">⬇️ Get the Desktop App</h2>
+        <p class="temp-modal-summary">Same app, installed on your machine. No API keys.</p>
+      </div>
+      <button type="button" id="downloadClose" class="btn btn-small" aria-label="Close downloads">✕</button>
+    </div>
+    <div class="dl-body" id="downloadBody"></div>
+  </div>
 
   <!-- ================= Temperature trend ================= -->
   <div class="modal-overlay" id="tempModalOverlay" hidden></div>
@@ -352,7 +375,8 @@
     <span>What the Wether <span id="appVersionFooter">V13</span> ⚡🌩️ — data from the
       <a href="https://www.weather.gov/documentation/services-web-api" target="_blank" rel="noopener">National Weather Service</a>
       and <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, radar from
-      <a href="https://opengeo.ncep.noaa.gov/" target="_blank" rel="noopener">NOAA</a> — no API keys needed</span>
+      <a href="https://opengeo.ncep.noaa.gov/" target="_blank" rel="noopener">NOAA</a> — no API keys needed
+      · <a href="#" id="footerDownloadLink">Get the desktop app</a></span>
   </footer>
 
   <!-- Load order matters: config → storage → themes → AI → radar → app -->
@@ -361,6 +385,7 @@
   <script src="themes.js"></script>
   <script src="units.js"></script>
   <script src="search.js"></script>
+  <script src="downloads.js"></script>
   <script src="nws.js"></script>
   <script src="air.js"></script>
   <script src="rain.js"></script>

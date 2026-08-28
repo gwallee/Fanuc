@@ -135,6 +135,15 @@ body.loading { cursor: progress; }
 
 .btn-small { padding: 0.35rem 0.65rem; min-height: 34px; font-size: 0.85rem; }
 
+/* Header actions: deliberately smaller than body buttons, but still
+   above the 32px comfortable-tap floor. */
+.btn-compact {
+  padding: 0.3rem 0.6rem;
+  min-height: 34px;
+  font-size: 0.82rem;
+  border-radius: 9px;
+}
+
 .btn.saved { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
 
 /* ---------------- Accessibility helpers ---------------- */
@@ -236,18 +245,32 @@ body.loading { cursor: progress; }
   box-shadow: var(--glow);
 }
 
-.search-bar { display: flex; gap: 0.5rem; flex: 1 1 340px; max-width: 620px; }
-.search-bar input {
-  flex: 1;
+/* Actions on top, search directly beneath them. */
+.header-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex: 1 1 340px;
+  max-width: 620px;
+  min-width: 0;
+}
+.tool-row {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.header-tools input {
+  width: 100%;
   min-width: 0;
   background: var(--input-bg);
   border: 1px solid var(--input-border);
   border-radius: 10px;
-  padding: 0.55rem 0.9rem;
-  min-height: 42px;
+  padding: 0.5rem 0.85rem;
+  min-height: 40px;
   outline: none;
 }
-.search-bar input:focus { border-color: var(--accent); box-shadow: var(--glow); }
+.header-tools input:focus { border-color: var(--accent); box-shadow: var(--glow); }
 
 /* ---------------- Welcome panel ---------------- */
 
@@ -619,6 +642,86 @@ body.modal-open { overflow: hidden; }
 .temp-chart-wrap { width: 100%; overflow: hidden; }
 #tempChartCanvas { display: block; width: 100%; }
 .temp-modal-note { font-size: 0.72rem; color: var(--text-dim); margin-top: 0.6rem; }
+
+/* ---------------- Downloads ---------------- */
+
+.download-modal {
+  position: fixed;
+  z-index: 140;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(560px, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: var(--shadow), var(--glow);
+  padding: 1.1rem 1.2rem calc(1.1rem + env(safe-area-inset-bottom));
+}
+
+.dl-meta { font-size: 0.78rem; color: var(--text-dim); margin-bottom: 0.7rem; }
+
+.dl-group {
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.6rem;
+  background: var(--input-bg);
+}
+/* The visitor's own platform is called out first. */
+.dl-mine { border-color: var(--accent); box-shadow: var(--glow); }
+
+.dl-group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.45rem;
+}
+.dl-icon { font-size: 1.15rem; }
+.dl-platform { font-weight: 800; font-size: 0.95rem; }
+.dl-badge {
+  margin-left: auto;
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+}
+
+.dl-asset {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  text-decoration: none;
+  color: var(--text);
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  border-radius: 10px;
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.35rem;
+  font-size: 0.88rem;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.dl-asset:hover { background: var(--btn-hover); border-color: var(--accent); }
+.dl-kind { font-weight: 600; }
+.dl-size { color: var(--text-dim); font-size: 0.78rem; white-space: nowrap; }
+
+.dl-all {
+  display: inline-block;
+  margin-top: 0.3rem;
+  font-size: 0.82rem;
+}
+.dl-note {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-top: 0.7rem;
+  line-height: 1.5;
+}
 
 /* ---------------- Rain nowcast ---------------- */
 
@@ -1071,9 +1174,9 @@ body.radar-fullscreen { overflow: hidden; }
   .app-header { padding: 0.75rem 0.8rem; }
   .brand-logo { width: 42px; height: 42px; }
   .brand-text h1 { font-size: 1.1rem; }
-  .search-bar { flex-wrap: wrap; }
-  .search-bar input { flex: 1 1 100%; }
-  .search-bar .btn { flex: 1; }
+  .header-tools { flex: 1 1 100%; max-width: none; }
+  .tool-row { justify-content: stretch; }
+  .tool-row .btn { flex: 1; }
 
   .wx-temp { font-size: 2.7rem; }
   .wx-icon { font-size: 3.2rem; }

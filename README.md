@@ -301,6 +301,7 @@ WhatTheWether-V13/
 ├── radar.js        # Animated canvas radar engine
 ├── local-ai.js     # Local AI 3.0 roast generator (offline)
 ├── search.js       # Place search, candidates and recents
+├── downloads.js    # Lists desktop builds from the latest release
 ├── units.js        # Imperial/metric + clock formatting (single source)
 ├── air.js          # Air quality, pollen, moon phase, sun figures
 ├── rain.js         # Chooses the most authoritative precipitation source
@@ -402,6 +403,12 @@ variables and zero secrets.
 
 The same app installs as a real desktop application on Windows, macOS and
 Linux — still no API keys.
+
+**From inside the app:** the ⬇️ button in the header (also in Settings, and
+linked in the footer) opens a downloads panel that lists the real assets from
+the latest GitHub release — grouped by platform, with file sizes, and your own
+platform highlighted. If nothing has been released yet it says so rather than
+offering dead links.
 
 **Get a build without building anything:** push a tag (or click *Run workflow*
 on the **Build desktop apps** action) and GitHub builds all three platforms
