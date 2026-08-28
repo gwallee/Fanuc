@@ -81,6 +81,10 @@
     state.findings = L.lint(state.programs, state.graph, state.xref, buildExtern(), { passThroughCalls: state.flowIgnore });
   }
 
+  // Controllers export logs (ERRALL.LS, HIST.LS, LOGBOOK.LS…) with a .ls
+  // extension too — only files with a /PROG header are actual programs.
+  function isProgramSource(src) { return /^\/PROG\b/m.test(src); }
+
   function addProgram(source, filename, origin) {
     var parsed = P.parseLS(source, filename);
     state.programs[parsed.name] = {
@@ -143,16 +147,23 @@
       return;
     }
     var lastName = null;
+    var imported = 0, skipped = 0;
     files.forEach(function (f) {
       var reader = new FileReader();
       reader.onload = function () {
-        lastName = addProgram(String(reader.result), f.name, { type: 'upload' });
+        var src = String(reader.result);
+        if (isProgramSource(src)) {
+          lastName = addProgram(src, f.name, { type: 'upload' });
+          imported++;
+        } else skipped++;
         if (--pending === 0) {
-          state.selected = lastName;
+          if (lastName) state.selected = lastName;
           rebuildDerived();
           persist();
           render();
-          toast('Imported ' + files.length + ' program' + (files.length > 1 ? 's' : '') + ' into the library.');
+          toast(imported
+            ? 'Imported ' + imported + ' program' + (imported > 1 ? 's' : '') + (skipped ? ' (skipped ' + skipped + ' log file' + (skipped > 1 ? 's' : '') + ' — no /PROG header)' : '') + '.'
+            : 'No programs found — ' + skipped + ' file' + (skipped > 1 ? 's are' : ' is') + ' a controller log export, not a TP program.');
         }
       };
       reader.readAsText(f);
@@ -199,7 +210,7 @@
   }
 
   function connectRobot(ip) {
-    state.robot = { ip: ip, ftpUser: state.robot.ftpUser, ftpPass: state.robot.ftpPass, files: [], registers: null, rawIO: null, ioComments: null, error: null, loadedAt: null, backup: null };
+    state.robot = { ip: ip, ftpUser: state.robot.ftpUser, ftpPass: state.robot.ftpPass, files: [], registers: null, rawIO: null, ioState: null, ioComments: null, error: null, loadedAt: null, backup: null };
     state.tab = 'robot';
     render();
     api('/api/robot/list?ip=' + encodeURIComponent(ip) + ftpQS()).then(function (b) {
@@ -228,14 +239,27 @@
 
   function loadRobotIO() {
     var ip = state.robot.ip;
-    api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=DIOCFGSV.IO' + ftpQS()).then(function (b) {
-      state.robot.rawIO = VA.rawLines(b.content);
-      state.robot.ioComments = VA.parseIOComments(b.content);
+    // IOSTATE.DG carries live state + comments in ASCII (DIOCFGSV.IO is binary
+    // on many controllers)
+    api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=IOSTATE.DG' + ftpQS()).then(function (b) {
+      var points = VA.parseIOState(b.content);
+      if (!points.length) throw new Error('IOSTATE.DG had no readable points');
+      state.robot.ioState = points;
+      state.robot.rawIO = null;
+      state.robot.ioComments = points.filter(function (p) { return p.comment; });
       rebuildDerived();
       if (state.tab === 'robot') render();
-    }).catch(function (e) {
-      state.robot.rawIO = { error: e.message };
-      if (state.tab === 'robot') render();
+    }).catch(function () {
+      api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=DIOCFGSV.IO' + ftpQS()).then(function (b) {
+        state.robot.ioState = null;
+        state.robot.rawIO = VA.rawLines(b.content);
+        state.robot.ioComments = VA.parseIOComments(b.content);
+        rebuildDerived();
+        if (state.tab === 'robot') render();
+      }).catch(function (e) {
+        state.robot.rawIO = { error: e.message };
+        if (state.tab === 'robot') render();
+      });
     });
   }
 
@@ -312,12 +336,16 @@
       // pick up controller label data if the folder is a backup
       var numreg = b.files.find(function (f) { return /^numreg\.va$/i.test(f.name); });
       var iocfg = b.files.find(function (f) { return /^diocfgsv\.io$/i.test(f.name); });
+      var iostate = b.files.find(function (f) { return /^iostate\.dg$/i.test(f.name); });
       var extern = { source: 'backup ' + b.path, registers: null, io: null };
       var externLoads = [];
       if (numreg) externLoads.push(api('/api/dir/file?path=' + encodeURIComponent(numreg.path)).then(function (f) {
         extern.registers = VA.parseNumreg(f.content);
       }).catch(function () {}));
-      if (iocfg) externLoads.push(api('/api/dir/file?path=' + encodeURIComponent(iocfg.path)).then(function (f) {
+      if (iostate) externLoads.push(api('/api/dir/file?path=' + encodeURIComponent(iostate.path)).then(function (f) {
+        extern.io = VA.parseIOState(f.content).filter(function (p) { return p.comment; });
+      }).catch(function () {}));
+      else if (iocfg) externLoads.push(api('/api/dir/file?path=' + encodeURIComponent(iocfg.path)).then(function (f) {
         extern.io = VA.parseIOComments(f.content);
       }).catch(function () {}));
       Promise.all(externLoads).then(function () {
@@ -331,12 +359,16 @@
         return;
       }
       var pending = lsFiles.length;
+      var imported = 0, skipped = 0;
       lsFiles.forEach(function (f) {
         api('/api/dir/file?path=' + encodeURIComponent(f.path)).then(function (file) {
-          addProgram(file.content, file.name, { type: 'dir', path: file.path });
+          if (isProgramSource(file.content)) {
+            addProgram(file.content, file.name, { type: 'dir', path: file.path });
+            imported++;
+          } else skipped++;
         }).catch(function () { /* unreadable file — skip */ }).then(function () {
           if (--pending === 0) {
-            state.dirStatus = 'Loaded ' + lsFiles.length + ' program' + (lsFiles.length > 1 ? 's' : '') + ' from ' + b.path;
+            state.dirStatus = 'Loaded ' + imported + ' program' + (imported === 1 ? '' : 's') + (skipped ? ' (+' + skipped + ' log files skipped)' : '') + ' from ' + b.path;
             state.selected = state.selected || Object.keys(state.programs)[0];
             rebuildDerived();
             persist();
@@ -1803,14 +1835,49 @@
       drawRegs();
     }
 
-    // I/O
+    // I/O — live state table from IOSTATE.DG
     pane.appendChild(h('h3', {}, [
-      document.createTextNode('I/O configuration (DIOCFGSV.IO) '),
-      h('button', { class: 'btn subtle', text: state.robot.rawIO ? 'Refresh' : 'Read from robot', onclick: loadRobotIO })
+      document.createTextNode('Live I/O (IOSTATE.DG) '),
+      h('button', { class: 'btn subtle', text: (state.robot.ioState || state.robot.rawIO) ? 'Refresh' : 'Read from robot', onclick: loadRobotIO })
     ]));
+    if (state.robot.ioState) {
+      var ioBar2 = h('div', { class: 'search-bar' });
+      var ioIn2 = h('input', { type: 'search', placeholder: 'Filter I/O… e.g. DI[1], DO, gripper, ON' });
+      ioBar2.appendChild(ioIn2);
+      pane.appendChild(ioBar2);
+      var ioWrap = h('div', { class: 'table-wrap' });
+      pane.appendChild(ioWrap);
+      var drawIOTable = function () {
+        var q = ioIn2.value.trim().toLowerCase();
+        ioWrap.innerHTML = '';
+        var tbl = h('table', { class: 'xref-table' });
+        tbl.appendChild(h('tr', {}, [h('th', { text: 'Point' }), h('th', { text: 'Live state' }), h('th', { text: 'Comment' }), h('th', { text: 'Used at' })]));
+        var shown = 0;
+        state.robot.ioState.forEach(function (p) {
+          var key = p.type + '[' + p.index + ']';
+          var hay = (key + ' ' + p.state + ' ' + p.comment).toLowerCase();
+          if (q && hay.indexOf(q) === -1) return;
+          if (++shown > 300) return;
+          var used = h('td');
+          var x = state.xref.io[key];
+          if (x) x.refs.slice(0, 6).forEach(function (ref) { used.appendChild(chip(ref, ref.write ? 'write' : 'read')); });
+          tbl.appendChild(h('tr', {}, [
+            h('td', { class: 'n', text: key }),
+            h('td', {}, [h('span', { class: p.state === 'ON' ? 'tok-on mono' : (p.state === 'OFF' ? 'tok-off mono' : 'mono'), text: p.state })]),
+            h('td', { text: p.comment }),
+            used
+          ]));
+        });
+        ioWrap.appendChild(tbl);
+        if (!shown) ioWrap.appendChild(h('p', { class: 'muted', text: 'No I/O points match.' }));
+      };
+      ioIn2.addEventListener('input', drawIOTable);
+      drawIOTable();
+      return;
+    }
     var io = state.robot.rawIO;
     if (io && io.error) {
-      pane.appendChild(h('p', { class: 'muted', text: 'Could not read DIOCFGSV.IO: ' + io.error }));
+      pane.appendChild(h('p', { class: 'muted', text: 'Could not read the I/O state: ' + io.error }));
     } else if (io) {
       var ioBar = h('div', { class: 'search-bar' });
       var ioIn = h('input', { type: 'search', placeholder: 'Filter I/O lines… e.g. DI[101], DO, RI' });

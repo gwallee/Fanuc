@@ -80,11 +80,13 @@
         var line = parsed.lines[i];
         if (line.comment !== null) continue;
         if (!/^(JMP\s+LBL\[|END\s*$|ABORT\s*$)/.test(line.text)) continue;
-        // find the next non-comment line; it's unreachable unless it's a label
+        // find the next real instruction; it's unreachable unless it's a label
+        // or block structure (blank numbered lines, ENDIF/ELSE, and the final
+        // END are normal after a JMP)
         for (var k = i + 1; k < parsed.lines.length; k++) {
           var nx = parsed.lines[k];
-          if (nx.comment !== null) continue;
-          if (!/^LBL\[/.test(nx.text)) {
+          if (nx.comment !== null || !nx.text) continue;
+          if (!/^(LBL\[|ENDIF\b|ELSE\b|END\s*$)/.test(nx.text)) {
             findings.push({
               severity: 'warn',
               rule: 'unreachable-code',

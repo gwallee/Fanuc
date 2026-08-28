@@ -170,6 +170,53 @@ check(order[0].name === 'MAIN' && order[1].name === 'GRIPPER' && order[2].name =
   'call order: MAIN → GRIPPER → PICK … (' + order.slice(0, 4).map(r => r.name).join(' → ') + ')');
 check(order.find(r => r.name === 'PICK').seq === '1.2', 'PICK is sequence 1.2');
 
+console.log('\n-- real-backup constructs --');
+const rbSrc = `/PROG RB
+/MN
+   1:  DO[60:OFF:Jogged]=($MOR_GRP[1].$JOGGED) ;
+   2:  F[8:OFF:Task Rdy]=(OFF) ;
+   3:  IF (F[8:OFF:Task Rdy]),JMP LBL[R[8]] ;
+   4:  PR[6,1:*Transit]=(-93) ;
+   5:  UFRAME_NUM=R[20:*RackNum] ;
+   6:  R[R[199]]=0 ;
+   7:  COL GUARD ADJUST 100 ;
+   8:  OFFSET CONDITION PR[60:User Offset] ;
+   9:  PAYLOAD[R[6]] ;
+  10:  JMP LBL[100] ;
+  11:   ;
+  12:  LBL[100] ;
+  13:  END ;
+/END
+`;
+const rbParsed = P.parseLS(rbSrc, 'RB.LS');
+const rbA = A.analyzeProgram(rbParsed);
+check(rbA.io['DO[60]'].label === 'Jogged', 'IO label strips live-state prefix ("OFF:") → "' + rbA.io['DO[60]'].label + '"');
+const rbEx = n => X.explainLine(rbParsed.lines.find(l => l.num === n));
+const rbChecks = [
+  [1, /Set digital output DO\[60\].*mixed logic/],
+  [2, /Turn flag F\[8\] \("Task Rdy"\) OFF/],
+  [3, /jump to the label whose number is in R\[8\]/],
+  [4, /X component of PR\[6\] \("\*Transit"\)/],
+  [5, /user frame whose number is R\[20\]/],
+  [6, /register whose number is in R\[199\]/],
+  [7, /collision-guard sensitivity to 100%/],
+  [8, /offset condition.*PR\[60\]/],
+  [9, /payload schedule whose number is in R\[6\]/]
+];
+rbChecks.forEach(([n, re]) => check(re.test(rbEx(n)), 'line ' + n + ' explained: ' + rbEx(n)));
+const rbLib = { RB: { parsed: rbParsed, analysis: rbA, source: rbSrc } };
+const rbFind = L.lint(rbLib, A.buildCallGraph(rbLib), A.buildGlobalXref(rbLib));
+check(!rbFind.some(f => f.rule === 'unreachable-code'), 'blank line + LBL after JMP not flagged unreachable');
+
+console.log('\n-- IOSTATE.DG parser --');
+const ios = VA.parseIOState('IO STATUS::\n\nDIN[   1]  ON  Auto Mode\nDIN[   2] OFF  Start\nDOUT[ 104] OFF  \nFLG[   8] OFF  Task Rdy                  FLG[ 520] OFF                          \nGIN[   1]  0  Task ID\n');
+check(ios.length === 6, '6 points parsed (got ' + ios.length + ')');
+check(ios[0].type === 'DI' && ios[0].index === 1 && ios[0].state === 'ON' && ios[0].comment === 'Auto Mode', 'DIN[1] → DI[1] ON "Auto Mode"');
+check(ios[2].type === 'DO' && ios[2].comment === '', 'uncommented DOUT parsed with empty comment');
+const flg = ios.filter(p => p.type === 'F');
+check(flg.length === 2 && flg[0].comment === 'Task Rdy' && flg[1].comment === '', 'two-column FLG line split correctly');
+check(ios[5].type === 'GI' && ios[5].state === '0' && ios[5].comment === 'Task ID', 'group input with numeric value parsed');
+
 console.log('\n-- VA parser --');
 const regs = VA.parseNumreg("  [1] = 25  'part count'\n  [2] = 1.5  ''\n  [3] = -4  'offset'\n");
 check(regs.length === 3 && regs[0].value === 25 && regs[0].comment === 'part count', 'NUMREG.VA lines parsed');

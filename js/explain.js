@@ -2,7 +2,12 @@
 (function (global) {
   'use strict';
 
-  function label(txt) { return txt ? ' ("' + txt.trim() + '")' : ''; }
+  function label(txt) {
+    if (!txt) return '';
+    // exports embed live state before the comment: DI[1:ON :Auto Mode]
+    var t = txt.replace(/^(ON|OFF)\s*:\s*/i, '').trim();
+    return t ? ' ("' + t + '")' : '';
+  }
 
   function describeTarget(text) {
     var m = text.match(/^P\[(\d+)(?::\s*"?([^\]"]*)"?)?\]/);
@@ -66,7 +71,8 @@
     s = s.replace(new RegExp('(^|[\\s(])(' + Object.keys(IO_NAMES).join('|') + ')\\[(\\d+)\\]', 'g'),
       function (_, pre, t, n) { return pre + IO_NAMES[t] + ' ' + t + '[' + n + ']'; });
     s = s.replace(new RegExp('\\b(' + Object.keys(IO_NAMES).join('|') + ')\\[(\\d+):([^\\]]*)\\]', 'g'),
-      function (_, t, n, lbl) { return IO_NAMES[t] + ' ' + t + '[' + n + '] ("' + lbl.trim() + '")'; });
+      function (_, t, n, lbl) { return IO_NAMES[t] + ' ' + t + '[' + n + ']' + label(lbl); });
+    s = s.replace(/!\s*/g, 'NOT ');
     s = s.replace(/<>/g, ' is not equal to ').replace(/>=/g, ' is at least ').replace(/<=/g, ' is at most ');
     s = s.replace(/([^<>=])=([^=])/g, '$1 equals $2');
     s = s.replace(/</g, ' is less than ').replace(/>/g, ' is greater than ');
@@ -75,17 +81,44 @@
   }
 
   var RULES = [
-    { re: /^UFRAME_NUM\s*=\s*(\d+)/, fn: function (m) { return 'Select user frame ' + m[1] + ' as the active coordinate frame.'; } },
-    { re: /^UTOOL_NUM\s*=\s*(\d+)/, fn: function (m) { return 'Select tool frame ' + m[1] + ' as the active TCP.'; } },
+    { re: /^UFRAME_NUM\s*=\s*(\d+)\s*$/, fn: function (m) { return 'Select user frame ' + m[1] + ' as the active coordinate frame.'; } },
+    { re: /^UFRAME_NUM\s*=\s*(.+)/, fn: function (m) { return 'Select the user frame whose number is ' + humanizeExpr(m[1]) + '.'; } },
+    { re: /^UTOOL_NUM\s*=\s*(\d+)\s*$/, fn: function (m) { return 'Select tool frame ' + m[1] + ' as the active TCP.'; } },
+    { re: /^UTOOL_NUM\s*=\s*(.+)/, fn: function (m) { return 'Select the tool frame whose number is ' + humanizeExpr(m[1]) + '.'; } },
     { re: /^PAYLOAD\[(\d+)(?::([^\]]*))?\]/, fn: function (m) { return 'Switch to payload schedule ' + m[1] + label(m[2]) + '.'; } },
+    { re: /^PAYLOAD\[R\[(\d+)(?::([^\]]*))?\]\]/, fn: function (m) { return 'Switch to the payload schedule whose number is in R[' + m[1] + ']' + label(m[2]) + '.'; } },
+    { re: /^OFFSET\s+CONDITION\s+(.+)/, fn: function (m) { return 'Arm the offset condition: following motion lines with the bare "Offset" option are shifted by ' + humanizeExpr(m[1]) + '.'; } },
+    { re: /^TOOL_OFFSET\s+CONDITION\s+(.+)/, fn: function (m) { return 'Arm the tool-offset condition: following motion lines with "Tool_Offset" are shifted in tool coordinates by ' + humanizeExpr(m[1]) + '.'; } },
+    { re: /^COL\s+GUARD\s+ADJUST\s+(\d+)/, fn: function (m) { return 'Set collision-guard sensitivity to ' + m[1] + '% (100 = normal, higher = less sensitive).'; } },
+    { re: /^COL\s+DETECT\s+(ON|OFF)/, fn: function (m) { return 'Turn collision detection ' + m[1] + '.'; } },
+    { re: /^JMP\s+LBL\[R\[(\d+)(?::([^\]]*))?\]\]/, fn: function (m) { return 'Jump to the label whose number is currently in R[' + m[1] + ']' + label(m[2]) + ' (computed jump).'; } },
+    { re: /^R\[R\[(\d+)(?::([^\]]*))?\]\]\s*=\s*(.+)/, fn: function (m) { return 'Set the register whose number is in R[' + m[1] + ']' + label(m[2]) + ' (indirect) to ' + humanizeExpr(m[3]) + '.'; } },
     { re: /^OVERRIDE\s*=\s*(\d+)\s*%/, fn: function (m) { return 'Set the general speed override to ' + m[1] + '%.'; } },
     { re: /^CALL\s+([A-Z0-9_]+)(\((.*)\))?/i, fn: function (m) { return 'Call subprogram ' + m[1] + (m[3] ? ' with arguments (' + m[3] + ')' : '') + ', then continue here when it finishes.'; } },
     { re: /^RUN\s+([A-Z0-9_]+)/i, fn: function (m) { return 'Start program ' + m[1] + ' as a parallel task (multitasking) and continue immediately.'; } },
     { re: /^LBL\[(\d+)(?::([^\]]*))?\]/, fn: function (m) { return 'Label ' + m[1] + label(m[2]) + ' — a jump target; does nothing by itself.'; } },
     { re: /^JMP\s+LBL\[(\d+)(?::([^\]]*))?\]/, fn: function (m) { return 'Jump unconditionally to label ' + m[1] + label(m[2]) + '.'; } },
+    { re: /^IF\s+(.*?),\s*JMP\s+LBL\[R\[(\d+)[^\]]*\]\]/, fn: function (m) { return 'If ' + humanizeExpr(m[1]) + ', jump to the label whose number is in R[' + m[2] + '] (computed jump).'; } },
     { re: /^IF\s+(.*?),\s*JMP\s+LBL\[(\d+)[^\]]*\]/, fn: function (m) { return 'If ' + humanizeExpr(m[1]) + ', jump to label ' + m[2] + '; otherwise continue to the next line.'; } },
     { re: /^IF\s+(.*?),\s*CALL\s+([A-Z0-9_]+)/i, fn: function (m) { return 'If ' + humanizeExpr(m[1]) + ', call subprogram ' + m[2] + '.'; } },
     { re: /^IF\s*\((.*)\)\s*THEN/, fn: function (m) { return 'If ' + humanizeExpr(m[1]) + ', run the block until ENDIF (mixed-logic IF/THEN).'; } },
+    { re: /^IF\s*\((.*)\)\s*,\s*(JMP\s+LBL\[R\[(\d+)[^\]]*\]\]|JMP\s+LBL\[(\d+)[^\]]*\]|CALL\s+([A-Z0-9_]+).*)$/i, fn: function (m) {
+        var act = m[3] ? 'jump to the label whose number is in R[' + m[3] + ']'
+          : m[4] ? 'jump to label ' + m[4]
+          : 'call subprogram ' + m[5];
+        return 'If ' + humanizeExpr(m[1]) + ', ' + act + ' (mixed-logic IF).';
+      } },
+    { re: /^IF\s*\((.*)\)\s*,\s*(.+)$/, fn: function (m) {
+        var act = explainLine({ text: m[2], comment: null, motion: null });
+        return 'If ' + humanizeExpr(m[1]) + ': ' + act.charAt(0).toLowerCase() + act.slice(1);
+      } },
+    { re: /^(DO|RO|UO|SO|F|M)\[R\[(\d+)(?::([^\]]*))?\]\]\s*=\s*\(?\s*(ON|OFF)\s*\)?/, fn: function (m) {
+        return 'Turn the ' + IO_NAMES[m[1]] + ' whose number is in R[' + m[2] + ']' + label(m[3]) + ' (indirect) ' + m[4] + '.';
+      } },
+    { re: /^PR\[R\[(\d+)(?::([^\]]*))?\]\s*(?:,\s*(\d+))?\]\s*=\s*(.+)/, fn: function (m) {
+        var comp = m[3] ? 'the ' + (['', 'X', 'Y', 'Z', 'W', 'P', 'R'][parseInt(m[3], 10)] || 'component ' + m[3]) + ' component of ' : '';
+        return 'Set ' + comp + 'the position register whose number is in R[' + m[1] + ']' + label(m[2]) + ' (indirect) to ' + humanizeExpr(m[4]) + '.';
+      } },
     { re: /^ELSE\b/, fn: function () { return 'Otherwise — run this block when the IF condition was false.'; } },
     { re: /^ENDIF\b/, fn: function () { return 'End of the IF/THEN block.'; } },
     { re: /^SELECT\s+R\[(\d+)(?::([^\]]*))?\]\s*=\s*(\d+),\s*(JMP\s+LBL\[(\d+)[^\]]*\]|CALL\s+([A-Z0-9_]+))/, fn: function (m) {
@@ -109,8 +142,11 @@
         var act = { START: 'Start', STOP: 'Stop', RESET: 'Reset to zero' }[m[2]];
         return act + ' program timer ' + m[1] + '.';
       } },
-    { re: /^(DO|RO|UO|SO|F|M)\[(\d+)(?::([^\]]*))?\]\s*=\s*(ON|OFF)/, fn: function (m) {
+    { re: /^(DO|RO|UO|SO|F|M)\[(\d+)(?::([^\]]*))?\]\s*=\s*\(?\s*(ON|OFF)\s*\)?\s*$/, fn: function (m) {
         return 'Turn ' + IO_NAMES[m[1]] + ' ' + m[1] + '[' + m[2] + ']' + label(m[3]) + ' ' + m[4] + '.';
+      } },
+    { re: /^(DO|RO|UO|SO|F|M|GO|AO)\[(\d+)(?::([^\]]*))?\]\s*=\s*\((.+)\)\s*$/, fn: function (m) {
+        return 'Set ' + IO_NAMES[m[1]] + ' ' + m[1] + '[' + m[2] + ']' + label(m[3]) + ' to the value of the expression ' + humanizeExpr(m[4]) + ' (mixed logic).';
       } },
     { re: /^(DO|RO|F|M)\[(\d+)(?::([^\]]*))?\]\s*=\s*PULSE(?:,\s*([\d.]+)\s*sec)?/, fn: function (m) {
         return 'Pulse ' + m[1] + '[' + m[2] + ']' + label(m[3]) + ' on' + (m[4] ? ' for ' + m[4] + ' s' : ' for the default pulse width') + ', then back off.';
@@ -124,9 +160,9 @@
     { re: /^PR\[(\d+)(?::([^\]]*))?\]\s*=\s*(.+)/, fn: function (m) {
         return 'Set position register PR[' + m[1] + ']' + label(m[2]) + ' to ' + humanizeExpr(m[3]) + '.';
       } },
-    { re: /^PR\[(\d+)(?::[^\]]*)?\s*,\s*(\d+)\]\s*=\s*(.+)/, fn: function (m) {
+    { re: /^PR\[(\d+)\s*,\s*(\d+)(?::([^\]]*))?\]\s*=\s*(.+)/, fn: function (m) {
         var comp = ['', 'X', 'Y', 'Z', 'W', 'P', 'R'][parseInt(m[2], 10)] || ('component ' + m[2]);
-        return 'Set the ' + comp + ' component of PR[' + m[1] + '] to ' + humanizeExpr(m[3]) + '.';
+        return 'Set the ' + comp + ' component of PR[' + m[1] + ']' + label(m[3]) + ' to ' + humanizeExpr(m[4]) + '.';
       } },
     { re: /^MESSAGE\s*\[(.*)\]/, fn: function (m) { return 'Show the message "' + m[1] + '" on the teach pendant USER screen.'; } },
     { re: /^UALM\[(\d+)\]/, fn: function (m) { return 'Post user alarm ' + m[1] + ' — the robot faults with the configured alarm text.'; } },

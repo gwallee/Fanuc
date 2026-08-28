@@ -67,7 +67,8 @@
       while ((j = ioRe.exec(text)) !== null) {
         var key = j[1] + '[' + j[2] + ']';
         if (!a.io[key]) a.io[key] = { type: j[1], index: parseInt(j[2], 10), label: null, reads: [], writes: [] };
-        if (j[3] && !a.io[key].label) a.io[key].label = j[3].trim();
+        // exports embed the live state before the comment: DI[1:ON :Auto Mode]
+        if (j[3] && !a.io[key].label) a.io[key].label = j[3].replace(/^(ON|OFF)\s*:\s*/i, '').trim();
         if (isWriteAt(text, j.index)) a.io[key].writes.push(line.num);
         else a.io[key].reads.push(line.num);
       }

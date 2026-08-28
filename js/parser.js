@@ -84,10 +84,12 @@
     var m = raw.match(/^\s*(\d+)\s*:(.*)$/);
     if (!m) {
       if (raw.trim()) {
-        // continuation of previous logical line (long lines wrap in some exports)
+        // continuation of the previous logical line — long lines wrap as
+        // "    :  rest of the instruction"
         var prev = result.lines[result.lines.length - 1];
         if (prev) {
-          prev.text = (prev.text + ' ' + raw.trim()).trim();
+          var cont = raw.replace(/^\s*:\s?/, '').replace(/\s*;\s*$/, '').trim();
+          prev.text = (prev.text.replace(/\s*;\s*$/, '') + ' ' + cont).trim();
           prev.raw += '\n' + raw;
         }
       }
