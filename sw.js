@@ -1,0 +1,116 @@
+/* ============================================================
+   What the Wether V9 — sw.js
+   Service worker: precaches the app shell so the app opens
+   instantly and works offline, and keeps a runtime cache of the
+   last successful weather responses to fall back on.
+
+   Bump CACHE_VERSION whenever shell files change — the old cache
+   is deleted on activate.
+   ============================================================ */
+
+const CACHE_VERSION = 'wtw-v9-1';
+const SHELL_CACHE = `${CACHE_VERSION}-shell`;
+const DATA_CACHE = `${CACHE_VERSION}-data`;
+
+const SHELL = [
+  './',
+  './index.html',
+  './styles.css',
+  './config.js',
+  './storage.js',
+  './themes.js',
+  './nws.js',
+  './map.js',
+  './hourly.js',
+  './share.js',
+  './local-ai.js',
+  './radar.js',
+  './app.js',
+  './logo.svg',
+  './manifest.json',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(SHELL_CACHE)
+      // addAll fails the whole install if any single file 404s, so add
+      // them individually and tolerate misses.
+      .then((cache) => Promise.all(SHELL.map((url) =>
+        cache.add(url).catch((err) => console.warn('[sw] skipped', url, err))
+      )))
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(
+        keys.filter((k) => !k.startsWith(CACHE_VERSION)).map((k) => caches.delete(k))
+      ))
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+  if (request.method !== 'GET') return;
+
+  const url = new URL(request.url);
+  const isWeatherApi =
+    url.hostname === 'api.weather.gov' ||
+    url.hostname.endsWith('open-meteo.com') ||
+    url.hostname === 'api.zippopotam.us';
+
+  // Weather data: network first, fall back to the last good response.
+  if (isWeatherApi) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response && response.ok) {
+            const copy = response.clone();
+            caches.open(DATA_CACHE).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        })
+        .catch(async () => {
+          const cached = await caches.match(request);
+          if (cached) return cached;
+          // respondWith(undefined) throws a TypeError in the page, which
+          // would turn "offline" into an unhandled failure. Answer with a
+          // real 503 so the app can fall back to its saved snapshot.
+          return offlineResponse();
+        })
+    );
+    return;
+  }
+
+  // Radar imagery and basemap tiles: always live, never cached.
+  if (url.hostname.includes('ncep.noaa.gov') || url.hostname.includes('cartocdn.com')) return;
+
+  // App shell: cache first, refreshed in the background.
+  if (url.origin === self.location.origin) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        const network = fetch(request).then((response) => {
+          if (response && response.ok) {
+            const copy = response.clone();
+            caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        }).catch(() => cached || offlineResponse());
+        return cached || network;
+      })
+    );
+  }
+});
+
+// Never resolve respondWith with undefined.
+function offlineResponse() {
+  return new Response(
+    JSON.stringify({ error: 'offline', message: 'No network and nothing cached for this request.' }),
+    { status: 503, statusText: 'Offline', headers: { 'Content-Type': 'application/json' } }
+  );
+}

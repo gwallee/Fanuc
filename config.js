@@ -6,7 +6,7 @@
 const WTW_CONFIG = {
   app: {
     name: 'What the Wether',
-    version: 'V8',
+    version: 'V9',
     tagline: 'Weather with an attitude problem.',
   },
 
@@ -56,8 +56,22 @@ const WTW_CONFIG = {
 
   weather: {
     forecastDays: 7,
+    forecastHours: 48,     // hourly strip length
     temperatureUnit: 'fahrenheit',
     windSpeedUnit: 'mph',
+  },
+
+  // Basemap under the radar. Carto's tiles are free and key-less;
+  // attribution to OpenStreetMap + CARTO is required and is rendered
+  // on the radar card and in the footer.
+  map: {
+    enabled: true,
+    tileDark: 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+    tileLight: 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+    attribution: '© OpenStreetMap contributors © CARTO',
+    minRangeKm: 40,
+    maxRangeKm: 400,
+    zoomSteps: [40, 75, 150, 250, 400],
   },
 
   radar: {
@@ -67,14 +81,17 @@ const WTW_CONFIG = {
     framePlaybackMs: 750, // real-imagery loop speed
   },
 
-  personalities: ['friendly', 'sassy', 'rude', 'brutal'],
+  personalities: ['friendly', 'sassy', 'rude', 'brutal', 'deadpan', 'doomer'],
   themes: [
     { id: 'neon-dark', label: 'Neon Dark' },
     { id: 'midnight',  label: 'Midnight' },
     { id: 'light',     label: 'Light' },
   ],
 
-  storagePrefix: 'wtw8:',
+  // Roast history shown in the app (Local AI 3.0).
+  roastLog: { maxEntries: 50 },
+
+  storagePrefix: 'wtw9:',
 };
 
 // Expose globally (plain <script> loading, works from file:// too).

@@ -1,78 +1,52 @@
 /* ============================================================
-   What the Wether V8 — radar.js
-   Canvas-based animated radar. No tiles, no keys, no network:
-   a stylized "doppler" display seeded from the real current
-   weather (precipitation probability, weather code and wind),
-   with:
-     • range rings + bearing ticks + grid
-     • rotating sweep beam with fading trail
-     • multi-blob storm cells with intensity colors
-     • cells lighting up as the sweep passes over them
-     • wind-driven cell drift + a scrubbable 60-min timeline
-     • play / stop / refresh controls, center location marker
-     • crisp on retina screens, resizes with its container
+   What the Wether V9 — radar.js
+   Canvas radar scope with a real basemap underneath.
+
+   Layers, bottom to top, all projected in EPSG:3857 so they align:
+     1. Basemap tiles (map.js)
+     2. NOAA base-reflectivity imagery, or the stylized simulation
+        when live imagery is unavailable
+     3. Active NWS alert polygons
+     4. Range rings, bearing ticks, sweep beam, location marker
+
+   Controls: play/pause, stop, refresh, my location, zoom in/out,
+   drag to pan, recenter, and a timeline that scrubs real frames by
+   clock time (or simulated minutes in fallback mode).
    ============================================================ */
 
 const WTWRadar = (() => {
   const cfg = () => (window.WTW_CONFIG ? WTW_CONFIG.radar : {});
+  const mapCfg = () => (window.WTW_CONFIG && WTW_CONFIG.map) || {};
+  const imgCfg = () => (window.WTW_CONFIG && WTW_CONFIG.radarImagery) || { enabled: false };
 
   const state = {
-    canvas: null,
-    ctx: null,
-    dpr: 1,
-    width: 0,
-    height: 0,
-    playing: false,
-    rafId: null,
-    sweepAngle: 0,
-    lastFrameTime: 0,
-    timelineMinute: 60,       // 0 = 60 min ago, 60 = now
-    scrubbing: false,
-    cells: [],
-    locationLabel: 'No location',
-    weatherSeed: null,        // last weather used to seed the cells
-    onStatusChange: null,
+    canvas: null, ctx: null, dpr: 1, width: 0, height: 0,
+    playing: false, rafId: null, sweepAngle: 0, lastFrameTime: 0,
+    timelineMinute: 60, scrubbing: false,
+    cells: [], locationLabel: 'No location', weatherSeed: null,
 
-    // Real NWS/NOAA radar imagery
-    source: 'sim',            // 'sim' | 'nws'
-    frames: [],               // [{ time: Date, img: Image }]
-    frameIndex: 0,
-    frameAccum: 0,            // ms accumulated toward the next frame
-    coords: null,             // { lat, lon } for imagery requests
-    loadToken: 0,             // guards against stale async loads
+    source: 'sim',          // 'sim' | 'nws'
+    frames: [], frameIndex: 0, frameAccum: 0,
+    loadToken: 0,
+
+    coords: null,           // searched location (marker)
+    center: null,           // current scope centre (pans away from coords)
+    rangeKm: 150,
+    alerts: [],             // GeoJSON features with geometry
+    dragging: false, dragLast: null, moved: false,
+    refetchTimer: null,
   };
 
-  /* ---------------- Real radar imagery (NOAA WMS) ----------------
-     NOAA's public GeoServer returns georeferenced reflectivity
-     PNGs for an arbitrary bounding box and timestamp — no API key.
-     We request a square box `rangeKm` in every direction around the
-     location, so the image maps exactly onto the scope circle.
-     Note: we only ever draw these images, never read pixels back,
-     so a tainted canvas is not a problem and CORS is not required.
-     ---------------------------------------------------------------- */
+  /* ================= Real imagery (NOAA WMS, EPSG:3857) ================= */
 
-  function imgCfg() {
-    return (window.WTW_CONFIG && WTW_CONFIG.radarImagery) || { enabled: false };
-  }
-
-  function wmsUrl(lat, lon, when) {
+  function wmsUrl(view, when) {
     const c = imgCfg();
-    const latDelta = c.rangeKm / 111.32;
-    const lonDelta = c.rangeKm / (111.32 * Math.cos((lat * Math.PI) / 180));
     const params = new URLSearchParams({
-      service: 'WMS',
-      version: '1.1.1',
-      request: 'GetMap',
-      layers: c.layer,
-      styles: '',
-      format: 'image/png',
-      transparent: 'true',
-      // WMS 1.1.1 + EPSG:4326 uses lon,lat order (1.3.0 flips it,
-      // which is a classic source of upside-down radar).
-      srs: 'EPSG:4326',
-      bbox: [lon - lonDelta, lat - latDelta, lon + lonDelta, lat + latDelta].join(','),
-      width: String(c.imageSize),
-      height: String(c.imageSize),
+      service: 'WMS', version: '1.1.1', request: 'GetMap',
+      layers: c.layer, styles: '', format: 'image/png', transparent: 'true',
+      srs: 'EPSG:3857',
+      bbox: WTWMap.bbox3857(view),
+      width: String(c.imageSize), height: String(c.imageSize),
     });
     if (when) params.set('time', when.toISOString().replace('.000Z', 'Z'));
     return `${c.wmsBase}?${params.toString()}`;
@@ -95,35 +69,30 @@ const WTWRadar = (() => {
     });
   }
 
-  // Fetch the loop. Resolves true when at least one frame loaded.
-  async function loadRealFrames(lat, lon) {
+  async function loadRealFrames() {
     const c = imgCfg();
-    if (!c.enabled || typeof lat !== 'number' || typeof lon !== 'number') return false;
+    if (!c.enabled || !state.center) return false;
 
     const token = ++state.loadToken;
     setStatus('FETCHING', false);
 
+    const view = currentView();
     const stepMs = (c.frameStepMin || 10) * 60000;
     const latest = Math.floor(Date.now() / stepMs) * stepMs;
     const times = [];
-    for (let i = (c.frameCount || 6) - 1; i >= 0; i--) {
-      times.push(new Date(latest - i * stepMs));
-    }
+    for (let i = (c.frameCount || 6) - 1; i >= 0; i--) times.push(new Date(latest - i * stepMs));
 
-    const images = await Promise.all(times.map((t) => loadImage(wmsUrl(lat, lon, t))));
-    if (token !== state.loadToken) return false; // a newer load superseded us
+    const images = await Promise.all(times.map((t) => loadImage(wmsUrl(view, t))));
+    if (token !== state.loadToken) return false;   // superseded by a newer load
 
     const frames = [];
-    times.forEach((t, i) => {
-      if (images[i]) frames.push({ time: t, img: images[i] });
-    });
+    times.forEach((t, i) => { if (images[i]) frames.push({ time: t, img: images[i] }); });
 
     if (!frames.length) {
       state.source = 'sim';
       state.frames = [];
       return false;
     }
-
     state.source = 'nws';
     state.frames = frames;
     state.frameIndex = frames.length - 1;
@@ -131,16 +100,15 @@ const WTWRadar = (() => {
     return true;
   }
 
-  /* ---------------- Storm cell generation ---------------- */
-
-  // Deterministic-ish RNG so refreshing with identical weather
-  // still gives a fresh-but-plausible picture.
-  function rand(min, max) {
-    return min + Math.random() * (max - min);
+  function currentView() {
+    const c = state.center || state.coords || { lat: 39.5, lon: -98.35 };
+    return WTWMap.viewBox(c.lat, c.lon, state.rangeKm);
   }
 
-  // Build storm cells from real weather. More precip probability
-  // and nastier weather codes = more cells + higher intensity.
+  /* ================= Simulated cells (fallback) ================= */
+
+  function rand(min, max) { return min + Math.random() * (max - min); }
+
   function generateCells(weather) {
     const w = weather || {};
     const code = w.weatherCode ?? 0;
@@ -150,18 +118,14 @@ const WTWRadar = (() => {
 
     let baseCount = Math.round((precip / 100) * (cfg().maxStormCells || 7));
     let baseIntensity = precip / 100;
-
     if (code >= 95) { baseCount = Math.max(baseCount, 5); baseIntensity = Math.max(baseIntensity, 0.9); }
     else if (code >= 80) { baseCount = Math.max(baseCount, 4); baseIntensity = Math.max(baseIntensity, 0.7); }
     else if (code >= 61 || (code >= 71 && code <= 77)) { baseCount = Math.max(baseCount, 3); baseIntensity = Math.max(baseIntensity, 0.5); }
     else if (code >= 51) { baseCount = Math.max(baseCount, 2); baseIntensity = Math.max(baseIntensity, 0.3); }
 
-    // Clear weather: nothing on the scope except faint clutter.
     const cells = [];
     const count = Math.min(baseCount, cfg().maxStormCells || 7);
-
-    // Wind vector in "radar units per minute" (radius = 1.0).
-    const windRad = ((windDirDeg + 180) % 360) * Math.PI / 180; // direction it's blowing TOWARD
+    const windRad = ((windDirDeg + 180) % 360) * Math.PI / 180;
     const speed = Math.min(windMph, 40) / 40 * 0.008;
     const driftX = Math.cos(windRad) * speed;
     const driftY = Math.sin(windRad) * speed;
@@ -173,48 +137,27 @@ const WTWRadar = (() => {
       const blobs = [];
       const blobCount = 3 + Math.floor(rand(2, 5));
       for (let b = 0; b < blobCount; b++) {
-        blobs.push({
-          dx: rand(-0.07, 0.07),
-          dy: rand(-0.07, 0.07),
-          r: rand(0.04, 0.11) * (0.7 + intensity * 0.6),
-          jitter: rand(0.5, 1.5),
-        });
+        blobs.push({ dx: rand(-0.07, 0.07), dy: rand(-0.07, 0.07),
+          r: rand(0.04, 0.11) * (0.7 + intensity * 0.6), jitter: rand(0.5, 1.5) });
       }
-      cells.push({
-        // Position at "now"; timeline scrubs back along the drift vector.
-        x: Math.cos(angle) * dist,
-        y: Math.sin(angle) * dist,
-        driftX, driftY,
-        intensity,
-        blobs,
-        pulsePhase: rand(0, Math.PI * 2),
-        glow: 0, // lit up by the sweep, decays over time
-      });
+      cells.push({ x: Math.cos(angle) * dist, y: Math.sin(angle) * dist,
+        driftX, driftY, intensity, blobs, pulsePhase: rand(0, Math.PI * 2), glow: 0 });
     }
 
-    // A little light clutter so the scope never looks dead.
     const clutterCount = count === 0 ? 3 : 2;
     for (let i = 0; i < clutterCount; i++) {
       const angle = rand(0, Math.PI * 2);
       const dist = rand(0.2, 0.9);
-      cells.push({
-        x: Math.cos(angle) * dist,
-        y: Math.sin(angle) * dist,
-        driftX: driftX * 0.5, driftY: driftY * 0.5,
-        intensity: rand(0.05, 0.14),
+      cells.push({ x: Math.cos(angle) * dist, y: Math.sin(angle) * dist,
+        driftX: driftX * 0.5, driftY: driftY * 0.5, intensity: rand(0.05, 0.14),
         blobs: [{ dx: 0, dy: 0, r: rand(0.02, 0.045), jitter: 1 }],
-        pulsePhase: rand(0, Math.PI * 2),
-        glow: 0,
-      });
+        pulsePhase: rand(0, Math.PI * 2), glow: 0 });
     }
 
     state.cells = cells;
     state.weatherSeed = w;
   }
 
-  /* ---------------- Intensity color scale ---------------- */
-
-  // Classic radar scale: green → yellow → orange → red → magenta.
   function intensityColor(intensity, alpha) {
     let r, g, b;
     if (intensity < 0.25)      { r = 40;  g = 200; b = 90;  }
@@ -226,102 +169,93 @@ const WTWRadar = (() => {
     return `rgba(${r},${g},${b},${alpha})`;
   }
 
-  /* ---------------- Drawing ---------------- */
+  function withAlpha(color, alpha) {
+    if (color.startsWith('#')) {
+      let hex = color.slice(1);
+      if (hex.length === 3) hex = hex.split('').map((c) => c + c).join('');
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+    const m = color.match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    return m ? `rgba(${m[1]},${m[2]},${m[3]},${alpha})` : color;
+  }
 
   function themeVar(name, fallback) {
     const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     return v || fallback;
   }
 
+  /* ================= Drawing ================= */
+
   function draw() {
     const { ctx, width, height } = state;
     if (!ctx || width === 0) return;
 
-    const cx = width / 2;
-    const cy = height / 2;
+    const cx = width / 2, cy = height / 2;
     const radius = Math.min(width, height) / 2 - 10;
+    const size = radius * 2;
+    const originX = cx - radius, originY = cy - radius;
 
     const accent = themeVar('--radar-accent', '#00ff9d');
     const ringColor = themeVar('--radar-ring', 'rgba(0,255,157,0.28)');
-    const scopeBg1 = themeVar('--radar-bg-1', '#02100a');
-    const scopeBg2 = themeVar('--radar-bg-2', '#04241a');
+    const t = performance.now() / 1000;
+    const view = currentView();
 
     ctx.clearRect(0, 0, width, height);
 
-    // Scope background
-    const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
-    bg.addColorStop(0, scopeBg2);
-    bg.addColorStop(1, scopeBg1);
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.fillStyle = bg;
-    ctx.fill();
-
-    // Range rings (4) — animated: they breathe outward subtly.
-    const t = performance.now() / 1000;
-    ctx.lineWidth = 1;
-    for (let i = 1; i <= 4; i++) {
-      const breathe = 1 + Math.sin(t * 1.2 + i) * 0.004;
-      ctx.beginPath();
-      ctx.arc(cx, cy, (radius * i / 4) * breathe, 0, Math.PI * 2);
-      ctx.strokeStyle = ringColor;
-      ctx.stroke();
-    }
-
-    // Expanding ping ring (one every ~3 s)
-    const ping = (t % 3) / 3;
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius * ping, 0, Math.PI * 2);
-    ctx.strokeStyle = intensityColorless(accent, (1 - ping) * 0.25);
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.lineWidth = 1;
-
-    // Crosshairs + bearing ticks
-    ctx.strokeStyle = ringColor;
-    ctx.beginPath();
-    ctx.moveTo(cx - radius, cy); ctx.lineTo(cx + radius, cy);
-    ctx.moveTo(cx, cy - radius); ctx.lineTo(cx, cy + radius);
-    ctx.stroke();
-    for (let deg = 0; deg < 360; deg += 15) {
-      const a = deg * Math.PI / 180;
-      const inner = deg % 45 === 0 ? radius - 12 : radius - 6;
-      ctx.beginPath();
-      ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
-      ctx.lineTo(cx + Math.cos(a) * radius, cy + Math.sin(a) * radius);
-      ctx.stroke();
-    }
-
-    // Precipitation layer (clipped to the scope circle)
     ctx.save();
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.clip();
 
-    if (state.source === 'nws' && state.frames.length) {
-      // Real reflectivity imagery. The requested bounding box is
-      // exactly 2 x rangeKm across, so it maps onto the scope's
-      // bounding square 1:1.
-      const frame = state.frames[Math.min(state.frameIndex, state.frames.length - 1)];
-      if (frame && frame.img) {
-        ctx.globalAlpha = 0.92;
-        ctx.drawImage(frame.img, cx - radius, cy - radius, radius * 2, radius * 2);
-        ctx.globalAlpha = 1;
-      }
-      drawSweep(ctx, cx, cy, radius, accent);
-      ctx.restore();
-      drawMarkerAndBezel(ctx, cx, cy, radius, accent, t);
-      return;
+    // 1. Basemap
+    const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    bg.addColorStop(0, themeVar('--radar-bg-2', '#04241a'));
+    bg.addColorStop(1, themeVar('--radar-bg-1', '#02100a'));
+    ctx.fillStyle = bg;
+    ctx.fillRect(originX, originY, size, size);
+
+    const painted = WTWMap.drawBasemap(ctx, view, size, originX, originY, () => draw());
+    if (painted) {
+      // Knock the basemap back so weather reads on top of it.
+      ctx.fillStyle = withAlpha(themeVar('--radar-bg-1', '#02100a'), 0.35);
+      ctx.fillRect(originX, originY, size, size);
     }
 
+    // 2. Precipitation
+    if (state.source === 'nws' && state.frames.length) {
+      const frame = state.frames[Math.min(state.frameIndex, state.frames.length - 1)];
+      if (frame && frame.img) {
+        ctx.globalAlpha = 0.85;
+        ctx.drawImage(frame.img, originX, originY, size, size);
+        ctx.globalAlpha = 1;
+      }
+    } else {
+      drawSimulatedCells(ctx, cx, cy, radius, t);
+    }
+
+    // 3. Alert polygons
+    drawAlerts(ctx, view, size, originX, originY);
+
+    // 4. Instrument overlay
+    drawRings(ctx, cx, cy, radius, ringColor, accent, t);
+    drawSweep(ctx, cx, cy, radius, accent);
+    ctx.restore();
+
+    drawRangeLabels(ctx, cx, cy, radius, accent);
+    drawMarker(ctx, view, size, originX, originY, accent, t);
+    drawBezel(ctx, cx, cy, radius, accent);
+  }
+
+  function drawSimulatedCells(ctx, cx, cy, radius, t) {
     const minutesBack = (cfg().frameMinutes || 60) - state.timelineMinute;
     for (const cell of state.cells) {
-      // Scrub position back along the wind drift vector.
       const px = cell.x - cell.driftX * minutesBack;
       const py = cell.y - cell.driftY * minutesBack;
       const pulse = 1 + Math.sin(t * 1.6 + cell.pulsePhase) * 0.06;
       const lit = Math.min(1, 0.55 + cell.glow * 0.7);
-
       for (const blob of cell.blobs) {
         const bx = cx + (px + blob.dx) * radius;
         const by = cy + (py + blob.dy) * radius;
@@ -336,28 +270,93 @@ const WTWRadar = (() => {
         ctx.fillStyle = grad;
         ctx.fill();
       }
-      // Sweep glow decays each frame.
       cell.glow *= 0.985;
     }
+  }
 
-    drawSweep(ctx, cx, cy, radius, accent);
+  function drawAlerts(ctx, view, size, originX, originY) {
+    if (!state.alerts.length) return;
+    const danger = themeVar('--danger', '#ff5470');
+    ctx.lineWidth = 2;
+    for (const feature of state.alerts) {
+      const geom = feature && feature.geometry;
+      if (!geom) continue;
+      const polys = geom.type === 'MultiPolygon' ? geom.coordinates
+                  : geom.type === 'Polygon' ? [geom.coordinates] : [];
+      for (const poly of polys) {
+        for (const ring of poly) {
+          if (!ring || ring.length < 3) continue;
+          ctx.beginPath();
+          ring.forEach(([lon, lat], i) => {
+            const p = WTWMap.project(lat, lon, view, size, originX, originY);
+            if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+          });
+          ctx.closePath();
+          ctx.fillStyle = withAlpha(danger, 0.16);
+          ctx.fill();
+          ctx.strokeStyle = withAlpha(danger, 0.9);
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.lineWidth = 1;
+  }
 
+  function drawRings(ctx, cx, cy, radius, ringColor, accent, t) {
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 4; i++) {
+      const breathe = 1 + Math.sin(t * 1.2 + i) * 0.004;
+      ctx.beginPath();
+      ctx.arc(cx, cy, (radius * i / 4) * breathe, 0, Math.PI * 2);
+      ctx.strokeStyle = ringColor;
+      ctx.stroke();
+    }
+    const ping = (t % 3) / 3;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius * ping, 0, Math.PI * 2);
+    ctx.strokeStyle = withAlpha(accent, (1 - ping) * 0.25);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.lineWidth = 1;
+
+    ctx.strokeStyle = ringColor;
+    ctx.beginPath();
+    ctx.moveTo(cx - radius, cy); ctx.lineTo(cx + radius, cy);
+    ctx.moveTo(cx, cy - radius); ctx.lineTo(cx, cy + radius);
+    ctx.stroke();
+    for (let deg = 0; deg < 360; deg += 15) {
+      const a = deg * Math.PI / 180;
+      const inner = deg % 45 === 0 ? radius - 12 : radius - 6;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
+      ctx.lineTo(cx + Math.cos(a) * radius, cy + Math.sin(a) * radius);
+      ctx.stroke();
+    }
+  }
+
+  // Distance labels so the rings mean something.
+  function drawRangeLabels(ctx, cx, cy, radius, accent) {
+    ctx.save();
+    ctx.font = '10px "Courier New", monospace';
+    ctx.fillStyle = withAlpha(accent, 0.75);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let i = 2; i <= 4; i += 2) {
+      const km = Math.round((state.rangeKm * i) / 4);
+      const y = cy - (radius * i) / 4;
+      ctx.fillText(`${km} km`, cx, y + 8);
+    }
     ctx.restore();
-
-    drawMarkerAndBezel(ctx, cx, cy, radius, accent, t);
   }
 
   function drawSweep(ctx, cx, cy, radius, accent) {
-    // Sweep beam (only spins while playing; frozen when paused)
     const sweep = state.sweepAngle;
     const beamWidth = Math.PI / 5;
-    const beam = ctx.createConicGradient
-      ? ctx.createConicGradient(sweep - beamWidth, cx, cy)
-      : null;
-    if (beam) {
+    if (ctx.createConicGradient) {
+      const beam = ctx.createConicGradient(sweep - beamWidth, cx, cy);
       beam.addColorStop(0, 'rgba(0,0,0,0)');
-      beam.addColorStop(0.9 * (beamWidth / (Math.PI * 2)), intensityColorless(accent, 0.05));
-      beam.addColorStop(beamWidth / (Math.PI * 2), intensityColorless(accent, 0.35));
+      beam.addColorStop(0.9 * (beamWidth / (Math.PI * 2)), withAlpha(accent, 0.05));
+      beam.addColorStop(beamWidth / (Math.PI * 2), withAlpha(accent, 0.3));
       beam.addColorStop(Math.min(1, beamWidth / (Math.PI * 2) + 0.001), 'rgba(0,0,0,0)');
       beam.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.beginPath();
@@ -367,20 +366,17 @@ const WTWRadar = (() => {
       ctx.fillStyle = beam;
       ctx.fill();
     } else {
-      // Fallback for browsers without conic gradients.
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.arc(cx, cy, radius, sweep - beamWidth, sweep);
       ctx.closePath();
-      ctx.fillStyle = intensityColorless(accent, 0.15);
+      ctx.fillStyle = withAlpha(accent, 0.15);
       ctx.fill();
     }
-
-    // Bright leading edge of the sweep
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.lineTo(cx + Math.cos(sweep) * radius, cy + Math.sin(sweep) * radius);
-    ctx.strokeStyle = intensityColorless(accent, 0.9);
+    ctx.strokeStyle = withAlpha(accent, 0.9);
     ctx.lineWidth = 2;
     ctx.shadowColor = accent;
     ctx.shadowBlur = 12;
@@ -389,46 +385,44 @@ const WTWRadar = (() => {
     ctx.lineWidth = 1;
   }
 
-  function drawMarkerAndBezel(ctx, cx, cy, radius, accent, t) {
-    // Center location marker (pulsing)
-    const markerPulse = 4 + Math.sin(t * 3) * 1.5;
+  // The marker sits on the searched location, which is not the scope
+  // centre once the user has panned.
+  function drawMarker(ctx, view, size, originX, originY, accent, t) {
+    if (!state.coords) return;
+    const p = WTWMap.project(state.coords.lat, state.coords.lon, view, size, originX, originY);
+    const cx = state.width / 2, cy = state.height / 2;
+    const radius = Math.min(state.width, state.height) / 2 - 10;
+    if (Math.hypot(p.x - cx, p.y - cy) > radius - 4) return;  // off-scope
+
+    const pulse = 4 + Math.sin(t * 3) * 1.5;
     ctx.beginPath();
-    ctx.arc(cx, cy, markerPulse + 5, 0, Math.PI * 2);
-    ctx.strokeStyle = intensityColorless(accent, 0.5);
+    ctx.arc(p.x, p.y, pulse + 5, 0, Math.PI * 2);
+    ctx.strokeStyle = withAlpha(accent, 0.5);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
     ctx.fillStyle = accent;
     ctx.shadowColor = accent;
     ctx.shadowBlur = 10;
     ctx.fill();
     ctx.shadowBlur = 0;
+  }
 
-    // Outer bezel
+  function drawBezel(ctx, cx, cy, radius, accent) {
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.strokeStyle = intensityColorless(accent, 0.6);
+    ctx.strokeStyle = withAlpha(accent, 0.6);
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.lineWidth = 1;
   }
 
-  // Apply an alpha to a hex or rgb() color string.
-  function intensityColorless(color, alpha) {
-    if (color.startsWith('#')) {
-      let hex = color.slice(1);
-      if (hex.length === 3) hex = hex.split('').map((c) => c + c).join('');
-      const r = parseInt(hex.slice(0, 2), 16);
-      const g = parseInt(hex.slice(2, 4), 16);
-      const b = parseInt(hex.slice(4, 6), 16);
-      return `rgba(${r},${g},${b},${alpha})`;
-    }
-    const m = color.match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
-    if (m) return `rgba(${m[1]},${m[2]},${m[3]},${alpha})`;
-    return color;
-  }
+  /* ================= Animation ================= */
 
-  /* ---------------- Animation loop ---------------- */
+  function angleBetween(from, to, target) {
+    if (from <= to) return target >= from && target <= to;
+    return target >= from || target <= to;
+  }
 
   function frame(now) {
     if (!state.lastFrameTime) state.lastFrameTime = now;
@@ -441,7 +435,6 @@ const WTWRadar = (() => {
       state.sweepAngle = (state.sweepAngle + (Math.PI * 2 / secsPerRev) * dt) % (Math.PI * 2);
 
       if (state.source === 'nws' && state.frames.length > 1) {
-        // Real imagery: step through the loop on a fixed cadence.
         if (!state.scrubbing) {
           state.frameAccum += dt * 1000;
           const stepMs = cfg().framePlaybackMs || 750;
@@ -452,19 +445,14 @@ const WTWRadar = (() => {
           }
         }
       } else {
-        // Simulated cells: light up the ones the sweep just crossed.
         const minutesBack = (cfg().frameMinutes || 60) - state.timelineMinute;
         for (const cell of state.cells) {
           const px = cell.x - cell.driftX * minutesBack;
           const py = cell.y - cell.driftY * minutesBack;
-          let cellAngle = Math.atan2(py, px);
-          if (cellAngle < 0) cellAngle += Math.PI * 2;
-          if (angleBetween(prev, state.sweepAngle, cellAngle)) {
-            cell.glow = 1;
-          }
+          let a = Math.atan2(py, px);
+          if (a < 0) a += Math.PI * 2;
+          if (angleBetween(prev, state.sweepAngle, a)) cell.glow = 1;
         }
-
-        // Auto-advance the timeline back to "now" while playing.
         if (!state.scrubbing && state.timelineMinute < (cfg().frameMinutes || 60)) {
           state.timelineMinute = Math.min(cfg().frameMinutes || 60, state.timelineMinute + dt * 6);
           syncTimelineUI();
@@ -476,20 +464,12 @@ const WTWRadar = (() => {
     state.rafId = requestAnimationFrame(frame);
   }
 
-  function angleBetween(from, to, target) {
-    // Did the sweep cross `target` while moving from `from` to `to`?
-    if (from <= to) return target >= from && target <= to;
-    return target >= from || target <= to; // wrapped past 2π
-  }
-
-  /* ---------------- Sizing ---------------- */
+  /* ================= Sizing ================= */
 
   function resize() {
     const canvas = state.canvas;
     if (!canvas) return;
     const rect = canvas.parentElement.getBoundingClientRect();
-    // Never exceed the container OR the viewport (minus padding),
-    // so the radar always fits on small screens.
     const viewportCap = Math.max(200, (window.innerWidth || 520) - 56);
     const size = Math.max(200, Math.min(rect.width || 300, 520, viewportCap));
     state.dpr = window.devicePixelRatio || 1;
@@ -504,7 +484,7 @@ const WTWRadar = (() => {
     draw();
   }
 
-  /* ---------------- Status + timeline UI ---------------- */
+  /* ================= Status + timeline ================= */
 
   function setStatus(text, live) {
     const el = document.getElementById('radarStatusText');
@@ -512,11 +492,8 @@ const WTWRadar = (() => {
     if (el) el.textContent = text;
     if (dot) dot.classList.toggle('live', !!live);
     updateSourceBadge();
-    if (typeof state.onStatusChange === 'function') state.onStatusChange(text);
   }
 
-  // Says plainly whether you are looking at real NWS reflectivity
-  // or the stylized fallback, so the display is never misleading.
   function updateSourceBadge() {
     const badge = document.getElementById('radarSource');
     if (!badge) return;
@@ -532,17 +509,12 @@ const WTWRadar = (() => {
     if (state.source === 'nws' && state.frames.length) {
       const i = Math.min(state.frameIndex, state.frames.length - 1);
       if (i === state.frames.length - 1) return 'NOW';
-      return state.frames[i].time.toLocaleTimeString([], {
-        hour: 'numeric',
-        minute: '2-digit',
-      });
+      return state.frames[i].time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     }
     const back = (cfg().frameMinutes || 60) - Math.round(state.timelineMinute);
     return back <= 0 ? 'NOW' : `-${back} min`;
   }
 
-  // The slider means different things per source, so re-range it
-  // whenever the source changes.
   function configureTimeline() {
     const slider = document.getElementById('radarTimeline');
     const caption = document.querySelector('.timeline-caption');
@@ -552,10 +524,8 @@ const WTWRadar = (() => {
       slider.max = String(state.frames.length - 1);
       slider.step = '1';
       slider.value = String(state.frameIndex);
-      if (caption) {
-        const first = state.frames[0].time;
-        caption.textContent = first.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-      }
+      if (caption) caption.textContent = state.frames[0].time
+        .toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     } else {
       slider.min = '0';
       slider.max = String(cfg().frameMinutes || 60);
@@ -571,13 +541,78 @@ const WTWRadar = (() => {
     const label = document.getElementById('radarTimeLabel');
     if (slider && !state.scrubbing) {
       slider.value = state.source === 'nws' && state.frames.length
-        ? String(state.frameIndex)
-        : String(Math.round(state.timelineMinute));
+        ? String(state.frameIndex) : String(Math.round(state.timelineMinute));
     }
     if (label) label.textContent = timelineLabelText();
   }
 
-  /* ---------------- Public controls ---------------- */
+  function updateRangeLabel() {
+    const el = document.getElementById('radarRange');
+    if (el) el.textContent = `${state.rangeKm} km`;
+  }
+
+  /* ================= Pan / zoom ================= */
+
+  function scheduleRefetch() {
+    clearTimeout(state.refetchTimer);
+    state.refetchTimer = setTimeout(() => { refresh(state.weatherSeed); }, 700);
+  }
+
+  function zoom(direction) {
+    const steps = mapCfg().zoomSteps || [40, 75, 150, 250, 400];
+    let i = steps.indexOf(state.rangeKm);
+    if (i === -1) {
+      // Snap to the nearest configured step first.
+      i = steps.reduce((best, v, idx) =>
+        Math.abs(v - state.rangeKm) < Math.abs(steps[best] - state.rangeKm) ? idx : best, 0);
+    }
+    // Zooming in means a smaller range.
+    const next = Math.max(0, Math.min(steps.length - 1, i + (direction === 'in' ? -1 : 1)));
+    if (steps[next] === state.rangeKm) return;
+    state.rangeKm = steps[next];
+    updateRangeLabel();
+    draw();
+    scheduleRefetch();
+  }
+
+  function recenter() {
+    if (!state.coords) return;
+    state.center = { lat: state.coords.lat, lon: state.coords.lon };
+    draw();
+    scheduleRefetch();
+  }
+
+  function initPointer(canvas) {
+    canvas.addEventListener('pointerdown', (e) => {
+      state.dragging = true;
+      state.moved = false;
+      state.dragLast = { x: e.clientX, y: e.clientY };
+      canvas.setPointerCapture(e.pointerId);
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!state.dragging || !state.dragLast || !state.center) return;
+      const dx = e.clientX - state.dragLast.x;
+      const dy = e.clientY - state.dragLast.y;
+      if (Math.abs(dx) + Math.abs(dy) < 1) return;
+      state.moved = true;
+      state.dragLast = { x: e.clientX, y: e.clientY };
+      const radius = Math.min(state.width, state.height) / 2 - 10;
+      const next = WTWMap.panCenter(state.center.lat, state.center.lon,
+        currentView(), radius * 2, dx, dy);
+      state.center = next;
+      draw();
+    });
+    const end = (e) => {
+      if (!state.dragging) return;
+      state.dragging = false;
+      if (state.moved) scheduleRefetch();
+      try { canvas.releasePointerCapture(e.pointerId); } catch (_) { /* already released */ }
+    };
+    canvas.addEventListener('pointerup', end);
+    canvas.addEventListener('pointercancel', end);
+  }
+
+  /* ================= Public API ================= */
 
   function play() {
     if (state.playing) return;
@@ -593,28 +628,25 @@ const WTWRadar = (() => {
     updatePlayButton();
   }
 
-  function toggle() {
-    state.playing ? stop() : play();
+  function toggle() { state.playing ? stop() : play(); }
+
+  function updatePlayButton() {
+    const btn = document.getElementById('radarPlayBtn');
+    if (!btn) return;
+    btn.textContent = state.playing ? '⏸ Pause' : '▶ Play';
+    btn.setAttribute('aria-pressed', state.playing ? 'true' : 'false');
   }
 
-  // Always regenerates the simulated cells first so a fallback is
-  // ready, then tries to replace them with real NWS imagery.
   async function refresh(weather) {
     generateCells(weather || state.weatherSeed || {});
     state.timelineMinute = cfg().frameMinutes || 60;
 
     let live = false;
-    if (state.coords) {
-      try {
-        live = await loadRealFrames(state.coords.lat, state.coords.lon);
-      } catch (err) {
-        console.warn('[radar] live imagery failed, using simulation', err);
-      }
+    if (state.center) {
+      try { live = await loadRealFrames(); }
+      catch (err) { console.warn('[radar] live imagery failed, using simulation', err); }
     }
-    if (!live) {
-      state.source = 'sim';
-      state.frames = [];
-    }
+    if (!live) { state.source = 'sim'; state.frames = []; }
 
     configureTimeline();
     setStatus(state.playing ? 'SCANNING' : 'REFRESHED', state.playing);
@@ -628,37 +660,28 @@ const WTWRadar = (() => {
     if (el) el.textContent = state.locationLabel;
     if (coords && typeof coords.lat === 'number' && typeof coords.lon === 'number') {
       state.coords = { lat: coords.lat, lon: coords.lon };
+      state.center = { lat: coords.lat, lon: coords.lon };
     }
     return refresh(weather);
   }
 
-  function updatePlayButton() {
-    const btn = document.getElementById('radarPlayBtn');
-    if (!btn) return;
-    btn.textContent = state.playing ? '⏸ Pause' : '▶ Play';
-    btn.setAttribute('aria-pressed', state.playing ? 'true' : 'false');
+  function setAlerts(features) {
+    state.alerts = Array.isArray(features) ? features.filter((f) => f && f.geometry) : [];
+    draw();
   }
-
-  /* ---------------- Init ---------------- */
 
   function init(canvasId) {
     state.canvas = document.getElementById(canvasId);
-    if (!state.canvas) {
-      console.warn('[radar] canvas not found:', canvasId);
-      return;
-    }
+    if (!state.canvas) { console.warn('[radar] canvas not found:', canvasId); return; }
+
+    state.rangeKm = (imgCfg().rangeKm) || 150;
     resize();
     window.addEventListener('resize', resize);
-    if (window.ResizeObserver) {
-      new ResizeObserver(resize).observe(state.canvas.parentElement);
-    }
+    if (window.ResizeObserver) new ResizeObserver(resize).observe(state.canvas.parentElement);
+    initPointer(state.canvas);
 
-    // Timeline slider
     const slider = document.getElementById('radarTimeline');
     if (slider) {
-      slider.min = '0';
-      slider.max = String(cfg().frameMinutes || 60);
-      slider.value = String(cfg().frameMinutes || 60);
       slider.addEventListener('input', () => {
         state.scrubbing = true;
         if (state.source === 'nws' && state.frames.length) {
@@ -678,13 +701,20 @@ const WTWRadar = (() => {
 
     generateCells({});
     configureTimeline();
+    updateRangeLabel();
     setStatus('STANDBY', false);
     updatePlayButton();
     state.rafId = requestAnimationFrame(frame);
     play();
   }
 
-  return { init, play, stop, toggle, refresh, setLocation };
+  // Re-draw with the theme's tile set when the theme changes.
+  function onThemeChange() {
+    WTWMap.clearCache();
+    draw();
+  }
+
+  return { init, play, stop, toggle, refresh, setLocation, setAlerts, zoom, recenter, onThemeChange };
 })();
 
 window.WTWRadar = WTWRadar;

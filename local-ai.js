@@ -1,10 +1,10 @@
 /* ============================================================
-   What the Wether V8 — local-ai.js
-   Local AI 2.0: a fully offline roast generator. No API key,
+   What the Wether V9 — local-ai.js
+   Local AI 3.0: a fully offline roast generator. No API key,
    no cloud, no network. It reacts to temperature, rain, snow,
    thunderstorms, wind, fog, extreme heat, cold and clear skies,
-   supports four personalities, and remembers its recent lines
-   so it doesn't repeat itself constantly.
+   supports six personalities, roasts any day in the forecast,
+   and remembers its recent lines so it doesn't repeat itself.
    ============================================================ */
 
 const LocalAI = (() => {
@@ -315,6 +315,127 @@ const LocalAI = (() => {
         "Flawless blue sky over {city} and you're inside reading a weather app roast you. Think about that, {name}.",
       ],
     },
+
+    deadpan: {
+      thunder: [
+        "Thunderstorm in {city}. Loud noise, bright light, water falls down. Nature is not subtle, {name}.",
+        "There is lightning. It is electricity. It does not care about your plans, {name}.",
+        "A thunderstorm is happening. This is normal. It is also very loud. Stay inside.",
+        "Sky makes noise. Ground gets wet. Repeat until further notice, {name}.",
+        "Statistically you will be fine, {name}. Emotionally, that thunder is still going to make you jump.",
+      ],
+      snow: [
+        "It is snowing in {city}. Water, but organized. {temp}°F.",
+        "Snow is falling, {name}. Every flake is unique. Collectively they are a driveway problem.",
+        "{temp}°F and snowing. The roads will be worse than you think and you will drive on them anyway.",
+        "Frozen water is descending on {city} at a steady rate. Wear the boots, {name}.",
+      ],
+      rain: [
+        "It is raining in {city}. Water is arriving from above at no charge, {name}.",
+        "Rain. {temp}°F. Your shoes will absorb more of it than you expect.",
+        "Precipitation is occurring. An umbrella would address this, {name}. You will not bring one.",
+        "The sky is releasing water over {city}. This has happened before and will happen again.",
+      ],
+      fog: [
+        "Fog in {city}. Visibility reduced. Confidence should be too, {name}.",
+        "There is fog. Things are where they were, you just cannot see them. Drive accordingly.",
+        "Suspended water droplets are limiting your vision, {name}. Slow down.",
+      ],
+      wind: [
+        "Wind at {wind} mph in {city}. Objects will move. Some of them are yours, {name}.",
+        "The air is moving quickly. Your hair has already lost this argument.",
+        "{wind} mph. Loose items become airborne items. Plan accordingly, {name}.",
+      ],
+      extremeHeat: [
+        "{temp}°F in {city}. That is hot. Not interesting-hot. Concerning-hot. Drink water, {name}.",
+        "It is {temp}°F, feels like {feels}°F. Your body will attempt to cool itself. It will lose.",
+        "{temp}°F. Shade is free and you should use it, {name}.",
+      ],
+      extremeCold: [
+        "{temp}°F in {city}. Exposed skin will become numb. This is not a metaphor, {name}.",
+        "It is {temp}°F. Your car will start eventually. Probably.",
+        "{temp}°F. Wear more clothing than you believe is necessary, {name}. You are wrong about the amount.",
+      ],
+      cold: [
+        "{temp}°F in {city}. That is jacket weather. You own a jacket, {name}. Use it.",
+        "It is {temp}°F. Cold, but survivable. Most things are.",
+        "{temp}°F. You will complain about this and then complain about summer, {name}. Consistent.",
+      ],
+      hot: [
+        "{temp}°F in {city}. Warm. Sticky. Familiar, {name}.",
+        "It is {temp}°F. You will sweat. Everyone will sweat. We do not need to discuss it further.",
+        "{temp}°F out. Sunscreen exists and works, {name}.",
+      ],
+      clouds: [
+        "Cloudy in {city}. The sun is present but unavailable, {name}.",
+        "Grey. Uniformly. All day. That is the report.",
+        "Cloud cover is total. Nothing further to add, {name}.",
+      ],
+      clear: [
+        "Clear skies in {city}, {temp}°F. Conditions are good. You may go outside, {name}. That is allowed.",
+        "No clouds. No excuses. Just a functioning sky, {name}.",
+        "The weather is fine. This is the part where you do the thing you said you would do, {name}.",
+        "{temp}°F and clear. Objectively pleasant. Act on it.",
+      ],
+    },
+
+    doomer: {
+      thunder: [
+        "Thunderstorm over {city}. The sky is finally saying out loud what we've all been thinking, {name}.",
+        "Lightning again. Every flash is just the universe taking a photo for the records, {name}.",
+        "The storm will pass. So will everything else. Anyway, don't stand under a tree, {name}.",
+        "Thunder over {city}. Somewhere a basement is flooding and it might be yours, {name}.",
+      ],
+      snow: [
+        "Snow in {city}, {temp}°F. It'll be beautiful for an hour and grey slush for a month, {name}.",
+        "It's snowing. It'll melt. It'll snow again. This is the whole thing, {name}.",
+        "{temp}°F and snowing. Somewhere under all that white is a driveway you'll never fully clear.",
+      ],
+      rain: [
+        "Rain over {city}, {name}. The sky's been doing this for four billion years and still hasn't worked it out.",
+        "It's raining. It was always going to rain. Bring the umbrella you already lost, {name}.",
+        "Rain at {temp}°F. Everything gets wet, everything dries, nothing is learned, {name}.",
+      ],
+      fog: [
+        "Fog in {city}. Can't see ahead. Honestly, {name}, that's just Tuesday with extra atmosphere.",
+        "Visibility is gone. So is the horizon. So is the plan, {name}.",
+        "Thick fog over {city}. The world shrank to about forty feet. Could be worse. Will be, probably.",
+      ],
+      wind: [
+        "{wind} mph winds in {city}. Everything unsecured is now temporary, {name}.",
+        "The wind is taking things. It always takes things. Hold onto what's left, {name}.",
+        "{wind} mph. Somewhere a patio umbrella is achieving flight and ruining someone's afternoon.",
+      ],
+      extremeHeat: [
+        "{temp}°F in {city}. We keep saying it's never been this hot, {name}, and we keep being right.",
+        "It's {temp}°F, feels like {feels}°F. Stay inside. Drink water. Try not to think about August, {name}.",
+        "{temp}°F. The pavement is soft. So is our collective resolve, {name}.",
+      ],
+      extremeCold: [
+        "{temp}°F in {city}. Cold enough that the air feels like it has opinions about you, {name}.",
+        "{temp}°F. Everything is brittle, including your patience, {name}.",
+        "It's {temp}°F. The cold gets in through gaps you didn't know you had, {name}.",
+      ],
+      cold: [
+        "{temp}°F in {city}. The kind of cold that isn't dramatic, just persistent, {name}. Like most problems.",
+        "{temp}°F. Grey, damp, unremarkable. It'll be like this for a while, {name}.",
+        "Cold again in {city}. Wear the coat. It's the one thing here you can control, {name}.",
+      ],
+      hot: [
+        "{temp}°F in {city}. Warm now, warmer later, {name}. That's the whole forecast, really.",
+        "It's {temp}°F. Sticky, slow, endless. Summer does that, {name}.",
+      ],
+      clouds: [
+        "Total cloud cover over {city}. The sun's up there somewhere, allegedly, {name}.",
+        "Grey sky, grey mood, grey day. At least it's consistent, {name}.",
+        "Overcast in {city}. No drama, no relief, just a lid on the whole thing, {name}.",
+      ],
+      clear: [
+        "Clear skies over {city}, {temp}°F. Enjoy it, {name} — days like this are the exception and they don't wait around.",
+        "Not a cloud out there. Go outside, {name}. Genuinely. The good ones are finite.",
+        "It's {temp}°F and perfect. Which means you'll spend it indoors and remember it in November, {name}.",
+      ],
+    },
   };
 
   // Occasional openers to add extra variety (used ~30% of the time).
@@ -323,6 +444,8 @@ const LocalAI = (() => {
     sassy: ['Okay so, {name}...', 'Bulletin for {name}:', 'Deep breath, {name} —', 'Girl. {name}. Listen.'],
     rude: ['Listen up, {name}.', 'Bad news, {name}.', 'Oh great, {name} —', 'Heads up, champ:'],
     brutal: ['Brace yourself, {name}.', 'No sugarcoating this, {name}:', 'Sit down for this one, {name}.', 'Condolences in advance, {name}:'],
+    deadpan: ['Weather report, {name}.', 'Facts, {name}:', 'Here it is, {name}.', 'Noted, {name}:'],
+    doomer: ['Well, {name}.', 'So, {name} —', 'Here we are, {name}.', 'Anyway, {name}:'],
   };
 
   /* ------------------------------------------------------------
@@ -388,7 +511,31 @@ const LocalAI = (() => {
     return fill(line, weather || {}, name);
   }
 
-  return { generate, detectCategory };
+  /* ------------------------------------------------------------
+     Roast a forecast day rather than current conditions.
+     The day's high drives the temperature reaction, so "Saturday"
+     gets judged on what Saturday will actually feel like.
+     ------------------------------------------------------------ */
+  function generateForDay(day, options = {}) {
+    if (!day) return generate({}, options);
+    const pseudo = {
+      city: options.city || '',
+      tempF: day.highF ?? day.lowF ?? 70,
+      feelsLikeF: day.highF ?? day.lowF ?? 70,
+      windMph: options.windMph ?? 5,
+      weatherCode: day.code ?? 0,
+      precipProb: day.precipProb ?? 0,
+    };
+    return generate(pseudo, options);
+  }
+
+  // Human label for a personality, for use in the UI.
+  function label(personality) {
+    const p = String(personality || '');
+    return p.charAt(0).toUpperCase() + p.slice(1);
+  }
+
+  return { generate, generateForDay, detectCategory, label };
 })();
 
 window.LocalAI = LocalAI;

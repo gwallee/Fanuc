@@ -43,6 +43,35 @@ const WTWStorage = (() => {
     }
   }
 
+  /* ------------------------------------------------------------
+     One-time migration from the V8 namespace.
+     V9 uses its own prefix, but upgrading must not cost anyone their
+     username, favorites or settings — so on first run we copy any
+     V8 keys across. The V8 data is left untouched so downgrading
+     still works.
+     ------------------------------------------------------------ */
+  function migrateFromV8() {
+    const OLD = 'wtw8:';
+    if (PREFIX === OLD) return;
+    try {
+      if (localStorage.getItem(key('migrated')) === 'true') return;
+      const names = ['settings', 'favorites', 'lastLocation', 'roastHistory'];
+      let moved = 0;
+      names.forEach((name) => {
+        const existing = localStorage.getItem(key(name));
+        const old = localStorage.getItem(OLD + name);
+        if (existing === null && old !== null) {
+          localStorage.setItem(key(name), old);
+          moved++;
+        }
+      });
+      localStorage.setItem(key('migrated'), 'true');
+      if (moved) console.info(`[storage] migrated ${moved} item(s) from V8`);
+    } catch (err) {
+      console.warn('[storage] V8 migration skipped', err);
+    }
+  }
+
   /* ---- Settings (username, personality, theme, autoRoast) ---- */
 
   function getSettings() {
@@ -89,8 +118,41 @@ const WTWStorage = (() => {
     set('roastHistory', Array.isArray(list) ? list.slice(-40) : []);
   }
 
+  /* ---- Roast log (Local AI 3.0) ---- */
+
+  function getRoastLog() {
+    const log = get('roastLog', []);
+    return Array.isArray(log) ? log : [];
+  }
+
+  function addRoastLog(entry) {
+    const max = (window.WTW_CONFIG && WTW_CONFIG.roastLog && WTW_CONFIG.roastLog.maxEntries) || 50;
+    const log = getRoastLog();
+    log.unshift(entry);
+    set('roastLog', log.slice(0, max));
+    return log;
+  }
+
+  function clearRoastLog() {
+    set('roastLog', []);
+  }
+
+  /* ---- Offline snapshot of the last successful load ---- */
+
+  function saveSnapshot(snapshot) {
+    set('snapshot', snapshot);
+  }
+
+  function getSnapshot() {
+    return get('snapshot', null);
+  }
+
+  migrateFromV8();
+
   return {
     get, set, remove,
+    getRoastLog, addRoastLog, clearRoastLog,
+    saveSnapshot, getSnapshot,
     getSettings, saveSettings,
     getFavorites, saveFavorites,
     getLastLocation, saveLastLocation,

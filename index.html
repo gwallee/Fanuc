@@ -4,10 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0e17" />
-  <meta name="description" content="What the Wether V8 — a neon weather app with animated radar, 7-day forecasts, favorites, themes, and a built-in local AI that roasts the weather. No API keys required." />
-  <title>What the Wether V8 ⚡🌩️</title>
+  <meta name="description" content="What the Wether V9 — a neon weather app with animated radar, 7-day forecasts, favorites, themes, and a built-in local AI that roasts the weather. No API keys required." />
+  <title>What the Wether V9 ⚡🌩️</title>
   <link rel="icon" type="image/svg+xml" href="logo.svg" />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="What the Wether" />
 </head>
 <body>
 
@@ -16,7 +21,7 @@
     <div class="brand">
       <img src="logo.svg" alt="What the Wether logo" class="brand-logo" />
       <div class="brand-text">
-        <h1>What the Wether <span class="version-badge" id="appVersion">V8</span></h1>
+        <h1>What the Wether <span class="version-badge" id="appVersion">V9</span></h1>
         <p class="brand-greeting">Yo, <strong data-username>DJTheBest</strong> ⚡</p>
       </div>
     </div>
@@ -50,6 +55,11 @@
   <!-- ================= Main content ================= -->
   <main class="app-main" id="weatherPanels" hidden>
 
+    <!-- Offline notice -->
+    <div class="offline-banner" id="offlineBanner" hidden>
+      📴 Offline — showing the last saved forecast.
+    </div>
+
     <!-- Active NWS watches / warnings -->
     <section class="alerts-panel" id="alertsPanel" aria-label="Active weather alerts" hidden></section>
 
@@ -78,17 +88,36 @@
         <div class="stat"><span class="stat-label">High / Low</span><span class="stat-value" id="wxHiLo">--° / --°</span></div>
         <div class="stat"><span class="stat-label">Rain chance</span><span class="stat-value" id="wxRain">--%</span></div>
       </div>
+      <div class="wx-detail">
+        <div class="detail"><span class="detail-label">Sunrise</span><span class="detail-value" id="wxSunrise">--</span></div>
+        <div class="detail"><span class="detail-label">Sunset</span><span class="detail-value" id="wxSunset">--</span></div>
+        <div class="detail"><span class="detail-label">UV index</span><span class="detail-value" id="wxUv">--</span></div>
+        <div class="detail"><span class="detail-label">Dew point</span><span class="detail-value" id="wxDew">--</span></div>
+        <div class="detail"><span class="detail-label">Pressure</span><span class="detail-value" id="wxPressure">--</span></div>
+        <div class="detail"><span class="detail-label">Visibility</span><span class="detail-value" id="wxVisibility">--</span></div>
+      </div>
+
       <div class="wx-updated" id="wxUpdated"></div>
 
       <!-- Built-in roast: part of the weather card, not a separate panel -->
       <div class="roast-inline">
         <div class="roast-head">
           <span class="roast-label">🤖 Wether Bot</span>
-          <span class="roast-personality" id="roastPersonality"></span>
+          <span class="roast-meta">
+            <span class="roast-context" id="roastContext">Right now</span>
+            <span class="roast-personality" id="roastPersonality"></span>
+          </span>
         </div>
         <p class="roast-text" id="roastText">Load some weather and I'll tell you what I really think, <span data-username>DJTheBest</span>.</p>
-        <button type="button" id="roastBtn" class="btn btn-primary">🔥 Roast me again</button>
-        <p class="roast-note">100% local AI — no API key, no cloud, no mercy.</p>
+        <div class="roast-actions">
+          <button type="button" id="roastBtn" class="btn btn-primary">🔥 Roast me again</button>
+          <button type="button" id="shareRoastBtn" class="btn" title="Save or share this roast as an image">📤 Share</button>
+        </div>
+        <button type="button" id="roastLogToggle" class="roast-log-toggle" aria-expanded="false">▸ Roast history</button>
+        <div class="roast-log-panel" id="roastLogPanel" hidden>
+          <ul class="roast-log-list" id="roastLogList"></ul>
+        </div>
+        <p class="roast-note">100% local AI — no API key, no cloud, no mercy. Tap any forecast day for its own roast.</p>
       </div>
     </section>
 
@@ -119,6 +148,24 @@
         <button type="button" id="radarStopBtn" class="btn">⏹ Stop</button>
         <button type="button" id="radarRefreshBtn" class="btn">🔄 Refresh</button>
         <button type="button" id="radarLocateBtn" class="btn">📍 My Location</button>
+      </div>
+      <div class="radar-controls radar-zoom-row">
+        <button type="button" id="radarZoomOut" class="btn btn-small" aria-label="Zoom out">➖</button>
+        <span class="radar-range" id="radarRange">150 km</span>
+        <button type="button" id="radarZoomIn" class="btn btn-small" aria-label="Zoom in">➕</button>
+        <button type="button" id="radarRecenter" class="btn btn-small">🎯 Recenter</button>
+      </div>
+      <p class="radar-attribution">Drag the scope to pan. Basemap © OpenStreetMap contributors © CARTO.</p>
+    </section>
+
+    <!-- Hourly outlook -->
+    <section class="card hourly-card" aria-label="48-hour outlook">
+      <div class="card-head">
+        <h2>⏱️ Next 48 Hours</h2>
+        <span class="hourly-legend"><span class="legend-line"></span> temp <span class="legend-bar"></span> rain chance</span>
+      </div>
+      <div class="hourly-wrap">
+        <canvas id="hourlyCanvas" aria-label="Hourly temperature and precipitation chart"></canvas>
       </div>
     </section>
 
@@ -172,6 +219,11 @@
       <select id="themeSelect"></select>
     </div>
 
+    <div class="setting-group">
+      <label>Roast history</label>
+      <button type="button" id="clearRoastLogBtn" class="btn btn-small">🗑️ Clear roast history</button>
+    </div>
+
     <p class="settings-footnote">Everything is stored locally in your browser. No accounts, no API keys.</p>
   </aside>
 
@@ -179,7 +231,7 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <footer class="app-footer">
-    <span>What the Wether <span id="appVersionFooter">V8</span> ⚡🌩️ — data from the
+    <span>What the Wether <span id="appVersionFooter">V9</span> ⚡🌩️ — data from the
       <a href="https://www.weather.gov/documentation/services-web-api" target="_blank" rel="noopener">National Weather Service</a>
       and <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, radar from
       <a href="https://opengeo.ncep.noaa.gov/" target="_blank" rel="noopener">NOAA</a> — no API keys needed</span>
@@ -190,6 +242,9 @@
   <script src="storage.js"></script>
   <script src="themes.js"></script>
   <script src="nws.js"></script>
+  <script src="map.js"></script>
+  <script src="hourly.js"></script>
+  <script src="share.js"></script>
   <script src="local-ai.js"></script>
   <script src="radar.js"></script>
   <script src="app.js"></script>

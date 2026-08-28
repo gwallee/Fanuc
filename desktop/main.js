@@ -12,7 +12,7 @@ function createWindow() {
     minHeight: 600,
     backgroundColor: '#0a0e17',
     autoHideMenuBar: true,
-    icon: path.join(__dirname, '..', 'logo.svg'),
+    icon: path.join(__dirname, '..', 'icons', 'icon-512.png'),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

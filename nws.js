@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V8 — nws.js
+   What the Wether V9 — nws.js
    National Weather Service (api.weather.gov) client.
 
    Free, no API key, CORS-enabled. US + territories only, so
@@ -146,6 +146,12 @@ const NWS = (() => {
             // implying dead calm.
             windMph: kmhToMph(p.windSpeed ? p.windSpeed.value : null),
             windDirDeg: p.windDirection ? p.windDirection.value : null,
+            dewPointF: cToF(p.dewpoint ? p.dewpoint.value : null),
+            // NWS reports pressure in Pa and visibility in metres.
+            pressureInHg: p.barometricPressure && p.barometricPressure.value != null
+              ? p.barometricPressure.value * 0.0002953 : null,
+            visibilityMi: p.visibility && p.visibility.value != null
+              ? p.visibility.value * 0.000621371 : null,
             description: p.textDescription || '',
             station: st.id,
             stationName: st.name,
@@ -214,7 +220,24 @@ const NWS = (() => {
   }
 
   /* ------------------------------------------------------------
+     Hourly forecast periods, for the 48-hour outlook.
+     ------------------------------------------------------------ */
+  async function getHourly(point) {
+    if (!point || !point.hourlyUrl) return null;
+    try {
+      const data = await getJSON(point.hourlyUrl);
+      const periods = (data.properties && data.properties.periods) || [];
+      return periods.length ? periods : null;
+    } catch (err) {
+      console.warn('[nws] hourly forecast failed', err.message);
+      return null;
+    }
+  }
+
+  /* ------------------------------------------------------------
      Active watches / warnings / advisories for a point.
+     Geometry is kept so the radar can outline the warned area;
+     zone-based alerts sometimes carry none, which is fine.
      ------------------------------------------------------------ */
   async function getAlerts(lat, lon) {
     try {
@@ -228,6 +251,7 @@ const NWS = (() => {
           urgency: p.urgency || '',
           areaDesc: p.areaDesc || '',
           expires: p.expires || null,
+          geometry: f.geometry || null,
         };
       });
     } catch (err) {
@@ -266,7 +290,7 @@ const NWS = (() => {
     return 0;
   }
 
-  return { getPoint, getCurrentObservation, getForecast, getAlerts, textToCode };
+  return { getPoint, getCurrentObservation, getForecast, getHourly, getAlerts, textToCode };
 })();
 
 window.NWS = NWS;

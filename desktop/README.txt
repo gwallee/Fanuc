@@ -1,4 +1,4 @@
-What the Wether V8 — Desktop Version
+What the Wether V9 — Desktop Version
 ====================================
 
 This folder prepares the project to be packaged as a desktop app with
@@ -37,4 +37,7 @@ NOTES
 -----
 - No API keys are required for the desktop build either.
 - localStorage works the same in Electron, so settings, favorites,
-  username, and theme all persist.
+  username, theme and roast history all persist.
+- The service worker is a browser feature; the desktop build loads
+  from disk and does not need it. Everything else, including the
+  radar, hourly chart and local AI, works identically.
