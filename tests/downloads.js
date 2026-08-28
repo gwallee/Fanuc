@@ -11,15 +11,19 @@ const RELEASE = {
   name: 'What the Wether v13.0.0',
   published_at: '2026-08-28T12:00:00Z',
   html_url: 'https://github.com/gwallee/What-The-Weather/releases/tag/v13.0.0',
+  // These are the real asset names from the published v13.0.0 release.
   assets: [
-    { name: 'WhatTheWether-Setup-13.0.0.exe', size: 82_100_000, browser_download_url: 'https://example.test/setup.exe' },
-    { name: 'WhatTheWether-Portable-13.0.0.exe', size: 81_000_000, browser_download_url: 'https://example.test/portable.exe' },
-    { name: 'WhatTheWether-13.0.0-arm64.dmg', size: 95_000_000, browser_download_url: 'https://example.test/arm.dmg' },
-    { name: 'WhatTheWether-13.0.0-x64.dmg', size: 99_000_000, browser_download_url: 'https://example.test/x64.dmg' },
-    { name: 'WhatTheWether-13.0.0.AppImage', size: 108_000_000, browser_download_url: 'https://example.test/app.AppImage' },
-    { name: 'what-the-wether_13.0.0_amd64.deb', size: 74_000_000, browser_download_url: 'https://example.test/app.deb' },
-    { name: 'what-the-wether-13.0.0.rpm', size: 75_000_000, browser_download_url: 'https://example.test/app.rpm' },
-    { name: 'SHA256SUMS.txt', size: 900, browser_download_url: 'https://example.test/SHA256SUMS.txt' },
+    { name: 'WhatTheWether-Setup-13.0.0.exe', size: 78_405_146, browser_download_url: 'https://example.test/setup.exe' },
+    { name: 'WhatTheWether-Portable-13.0.0.exe', size: 78_193_738, browser_download_url: 'https://example.test/portable.exe' },
+    { name: 'WhatTheWether-13.0.0-arm64.dmg', size: 95_225_893, browser_download_url: 'https://example.test/arm.dmg' },
+    { name: 'WhatTheWether-13.0.0-x64.dmg', size: 101_269_879, browser_download_url: 'https://example.test/x64.dmg' },
+    { name: 'What.the.Wether-13.0.0-arm64-mac.zip', size: 91_950_679, browser_download_url: 'https://example.test/arm.zip' },
+    { name: 'What.the.Wether-13.0.0-mac.zip', size: 98_005_693, browser_download_url: 'https://example.test/x64.zip' },
+    { name: 'WhatTheWether-13.0.0.AppImage', size: 107_191_000, browser_download_url: 'https://example.test/app.AppImage' },
+    { name: 'what-the-wether_13.0.0_amd64.deb', size: 74_353_300, browser_download_url: 'https://example.test/app.deb' },
+    { name: 'what-the-wether-13.0.0.rpm', size: 75_011_725, browser_download_url: 'https://example.test/app.rpm' },
+    { name: 'what-the-wether-13.0.0.tar.gz', size: 101_697_572, browser_download_url: 'https://example.test/app.tar.gz' },
+    { name: 'SHA256SUMS.txt', size: 973, browser_download_url: 'https://example.test/SHA256SUMS.txt' },
     // Noise electron-builder also uploads; must not be offered as downloads.
     { name: 'latest.yml', size: 400, browser_download_url: 'https://example.test/latest.yml' },
     { name: 'WhatTheWether-Setup-13.0.0.exe.blockmap', size: 90_000, browser_download_url: 'https://example.test/bm' },
@@ -98,7 +102,7 @@ function omBody() {
   });
   await check('real release assets are listed', async () => {
     await page.waitForSelector('.dl-asset', { timeout: 8000 });
-    return (await page.locator('.dl-asset').count()) === 7;   // checksums excluded
+    return (await page.locator('.dl-asset').count()) === 10;  // checksums + build noise excluded
   });
   await check('build noise (latest.yml, blockmap) is not offered', async () => {
     const text = await page.textContent('#downloadBody');
@@ -111,6 +115,11 @@ function omBody() {
   await check('installer vs portable is spelled out', async () => {
     const text = await page.textContent('#downloadBody');
     return /Installer/.test(text) && /Portable/.test(text);
+  });
+  await check('both mac architectures are distinguished', async () => {
+    const kinds = await page.locator('.dl-kind').allInnerTexts();
+    return kinds.filter((k) => /Apple Silicon/.test(k)).length === 2 &&
+           kinds.filter((k) => /Intel/.test(k)).length === 2;
   });
   await check('sizes are shown', async () =>
     /\d+\.\d MB/.test(await page.textContent('#downloadBody')));

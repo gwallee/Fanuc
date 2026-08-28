@@ -43,7 +43,9 @@ const WTWDownloads = (() => {
     if (n.endsWith('.dmg')) {
       return { platform: 'mac', kind: n.includes('arm64') ? 'Apple Silicon' : 'Intel' };
     }
-    if (n.endsWith('.zip') && n.includes('mac')) return { platform: 'mac', kind: 'Zip' };
+    if (n.endsWith('.zip') && n.includes('mac')) {
+      return { platform: 'mac', kind: n.includes('arm64') ? 'Zip (Apple Silicon)' : 'Zip (Intel)' };
+    }
     if (n.endsWith('.appimage')) return { platform: 'linux', kind: 'AppImage (portable)' };
     if (n.endsWith('.deb')) return { platform: 'linux', kind: 'Debian / Ubuntu' };
     if (n.endsWith('.rpm')) return { platform: 'linux', kind: 'Fedora / RHEL' };
