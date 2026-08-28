@@ -1,0 +1,148 @@
+Func       Date      Time    Tick       NavID              Text
+HOME 104 07-JUL-26 05:23:42  a75c flexuif_home_c Hardkey 
+ERR  104 07-JUL-26 05:23:42  a75c [fluitpmm_setpath] Null context 
+HOME 105 07-JUL-26 05:25:06  4aec flexuif_home_c Hardkey 
+ERR  105 07-JUL-26 05:25:06  4aec [fluitpmm_setpath] Null context 
+ERR  105 07-JUL-26 05:25:06  4af0 [fluitpmm_setpath] Null context 
+HOME 104 07-JUL-26 05:25:08  4e88 flexuif_home_c Hardkey 
+ERR  104 07-JUL-26 05:25:08  4e88 [fluitpmm_setpath] Null context 
+POWR  72 14-JUL-26 00:33:00  343e Power Cycle 
+KEY   72 14-JUL-26 00:33:02  35a2 /nav/core/tohome HOME
+KEY   72 14-JUL-26 00:33:04  3739 /nav/core/tohome HOME
+KEY   72 14-JUL-26 00:34:38  f095 /nav/core/tohome HOME
+EXIT  72 14-JUL-26 00:34:38  f096 381 5 
+POWR  72 14-JUL-26 00:35:18  3442 Power Cycle 
+KEY   72 14-JUL-26 00:35:20  35b7 /nav/core/tohome HOME
+KEY   72 14-JUL-26 00:35:20  379d /nav/core/tohome HOME
+KEY   72 14-JUL-26 00:35:24  3d1e /nav/core/homekeys/f3 
+KEY   72 14-JUL-26 00:35:34  51ba /nav/core/homekeys/f3 
+EXIT  72 14-JUL-26 00:35:34  51bb 955 1 
+POWR  72 16-JUL-26 04:05:24  33fc Power Cycle 
+POWR  72 16-JUL-26 04:08:22  5448 Power Cycle 
+POWR  72 16-JUL-26 04:11:12  3344 Power Cycle 
+KEY   72 16-JUL-26 04:11:16  3780 /wizard/gripper/steps EOAT Setup
+KEY   72 16-JUL-26 04:11:16  384a /wizard/gripper/steps EOAT Setup
+KEY   72 16-JUL-26 04:11:22  4233 /wizard/gripper/steps EOAT Setup
+EXIT  72 16-JUL-26 04:11:22  4234 1631 3 
+KEY   72 16-JUL-26 04:11:22  4336 /nav/core/tohome HOME
+KEY   72 16-JUL-26 04:11:22  43ae /nav/core/tohome HOME
+KEY   72 16-JUL-26 04:11:32  5573 /nav/core/tohome HOME
+EXIT  72 16-JUL-26 04:11:32  5574 1193 1 
+POWR  72 16-JUL-26 04:55:30  54e9 Power Cycle 
+POWR  72 16-JUL-26 04:57:30  368b Power Cycle 
+KEY   72 16-JUL-26 04:57:30  37f0 /wizard/gripper/steps EOAT Setup
+KEY   72 16-JUL-26 04:57:30  37f1 /wizard/gripper/steps EOAT Setup
+EXIT  72 16-JUL-26 04:57:30  37f1 1133 1 
+POWR  72 16-JUL-26 22:22:22  3446 Power Cycle 
+POWR  72 16-JUL-26 22:24:56  3436 Power Cycle 
+POWR  72 16-JUL-26 22:29:30  342b Power Cycle 
+KEY  104 16-JUL-26 22:29:58  6764 /wizard/gripper/steps EOAT Setup
+EXIT 104 16-JUL-26 22:29:58  6765 1631 3 
+KEY  104 16-JUL-26 22:29:58  679f /wizard/gripper/steps EOAT Setup
+KEY  104 16-JUL-26 22:29:58  6946 /wizard/gripper/steps EOAT Setup
+EXIT 104 16-JUL-26 22:29:58  6947 1631 3 
+KEY  104 16-JUL-26 22:29:58  6995 /wizard/gripper/steps EOAT Setup
+KEY  104 16-JUL-26 22:30:00  6d3b /wizard/gripper/steps EOAT Setup
+EXIT 104 16-JUL-26 22:30:00  6d3d 1631 3 
+KEY  104 16-JUL-26 22:30:00  6d8a /wizard/gripper/steps EOAT Setup
+KEY  104 16-JUL-26 22:30:02  6f36 /wizard/gripper/steps EOAT Setup
+EXIT 104 16-JUL-26 22:30:02  6f36 1631 3 
+KEY  104 16-JUL-26 22:30:02  6f7d /wizard/gripper/steps EOAT Setup
+KEY  104 16-JUL-26 22:30:02  712a /wizard/gripper/steps EOAT Setup
+EXIT 104 16-JUL-26 22:30:02  712b 1631 3 
+KEY  104 16-JUL-26 22:30:02  716d /wizard/gripper/steps EOAT Setup
+KEY  104 16-JUL-26 22:30:08  7bda /wizard/gripper/steps EOAT Setup
+KEY  104 16-JUL-26 22:30:08  7bde /wizard/gripper/steps EOAT Setup
+EXIT 104 16-JUL-26 22:30:08  7bdf 34 4 
+POWR  72 16-JUL-26 22:51:40  3472 Power Cycle 
+KEY  104 16-JUL-26 23:04:22   521 /wizard/gripper/steps EOAT Setup
+KEY  104 16-JUL-26 23:04:24   566 /wizard/gripper/steps EOAT Setup
+EXIT 104 16-JUL-26 23:04:24   566 1631 3 
+KEY  104 16-JUL-26 23:04:24   5ab /wizard/gripper/steps EOAT Setup
+KEY  104 16-JUL-26 23:04:28   fbd /wizard/gripper/steps EOAT Setup
+KEY  104 16-JUL-26 23:04:28   fc1 /wizard/gripper/steps EOAT Setup
+EXIT 104 16-JUL-26 23:04:28   fc1 166 1 
+POWR  72 17-JUL-26 04:59:10  36db Power Cycle 
+POWR  72 17-JUL-26 20:10:58  4036 Power Cycle 
+POWR  72 17-JUL-26 20:24:42  3407 Power Cycle 
+KEY  104 23-JUL-26 02:39:34  b027 /wizard/gripper/steps EOAT Setup
+KEY  104 23-JUL-26 02:39:46  c630 /wizard/gripper/steps EOAT Setup
+KEY  104 23-JUL-26 02:39:46  c635 /wizard/gripper/steps EOAT Setup
+EXIT 104 23-JUL-26 02:39:46  c635 98 1 
+POWR  72 24-JUL-26 20:50:34  38f2 Power Cycle 
+KEY  104 24-JUL-26 22:25:40  c049 /wizard/gripper/steps EOAT Setup
+KEY  104 24-JUL-26 22:26:26  191f /wizard/gripper/steps EOAT Setup
+KEY  104 24-JUL-26 22:26:26  1922 /wizard/gripper/steps EOAT Setup
+EXIT 104 24-JUL-26 22:26:26  1923 166 1 
+POWR  72 24-JUL-26 22:36:14  34ca Power Cycle 
+POWR  72 24-JUL-26 22:38:48  34a9 Power Cycle 
+KEY   72 24-JUL-26 22:38:50  361f /nav/core/tohome HOME
+KEY   72 24-JUL-26 22:38:52  389d /nav/core/tohome HOME
+KEY   72 24-JUL-26 22:38:58  44b5 /nav/core/tohome HOME
+EXIT  72 24-JUL-26 22:38:58  44b6 64 1 
+KEY  104 24-JUL-26 22:44:36  d7ca /wizard/gripper/steps EOAT Setup
+KEY  104 24-JUL-26 22:44:36  d8a4 /wizard/gripper/steps EOAT Setup
+EXIT 104 24-JUL-26 22:44:36  d8a5 1631 3 
+KEY  104 24-JUL-26 22:44:36  d8e8 /wizard/gripper/steps EOAT Setup
+KEY  104 24-JUL-26 22:44:42  e41d /wizard/gripper/steps EOAT Setup
+KEY  104 24-JUL-26 22:44:42  e421 /wizard/gripper/steps EOAT Setup
+EXIT 104 24-JUL-26 22:44:42  e422 18 1 
+POWR  72 24-JUL-26 23:03:56  34ae Power Cycle 
+KEY   72 24-JUL-26 23:03:58  361e /nav/core/tohome HOME
+KEY   72 24-JUL-26 23:03:58  3737 /nav/core/tohome HOME
+KEY   72 24-JUL-26 23:04:16  57e1 /nav/core/tohome HOME
+EXIT  72 24-JUL-26 23:04:16  57e2 71 1 
+KEY  104 24-JUL-26 23:14:12  e4c2 /wizard/gripper/steps EOAT Setup
+KEY  104 24-JUL-26 23:14:12  e59d /wizard/gripper/steps EOAT Setup
+EXIT 104 24-JUL-26 23:14:12  e59e 1631 3 
+KEY  104 24-JUL-26 23:14:12  e5d6 /wizard/gripper/steps EOAT Setup
+KEY  104 24-JUL-26 23:14:16  eaed /wizard/gripper/steps EOAT Setup
+EXIT 104 24-JUL-26 23:14:16  eaed 381 5 
+KEY  104 24-JUL-26 23:57:24  abf3 /wizard/gripper/steps EOAT Setup
+KEY  104 24-JUL-26 23:57:24  acf7 /wizard/gripper/steps EOAT Setup
+EXIT 104 24-JUL-26 23:57:24  acf8 1631 3 
+KEY  104 24-JUL-26 23:57:24  ad4b /wizard/gripper/steps EOAT Setup
+KEY  104 24-JUL-26 23:57:30  b69a /wizard/gripper/steps EOAT Setup
+EXIT 104 24-JUL-26 23:57:30  b69b 992 1 
+POWR  72 03-AUG-26 23:34:54  3f9f Power Cycle 
+KEY   72 03-AUG-26 23:34:54  410e /nav/core/tohome HOME
+KEY   72 03-AUG-26 23:34:56  420f /nav/core/tohome HOME
+KEY   72 03-AUG-26 23:58:34  14a1 /nav/core/tohome HOME
+EXIT  72 03-AUG-26 23:58:34  14a2 64 1 
+KEY  104 04-AUG-26 03:35:58  9a49 /wizard/gripper/steps EOAT Setup
+EXIT 104 04-AUG-26 03:35:58  9a4a 71 1 
+POWR  72 11-AUG-26 09:24:08  3e9a Power Cycle 
+KEY   72 11-AUG-26 09:24:10  4006 /nav/core/tohome HOME
+KEY   72 11-AUG-26 09:24:12  4111 /nav/core/tohome HOME
+KEY   72 11-AUG-26 10:24:10  b779 /nav/core/tohome HOME
+KEY   72 11-AUG-26 11:03:50  dc8c /nav/core/tohome HOME
+EXIT  72 11-AUG-26 11:03:50  dc8d 23 1 
+KEY  104 11-AUG-26 12:14:32  3b80 /wizard/gripper/steps EOAT Setup
+KEY  104 11-AUG-26 12:14:32  3c2f /wizard/gripper/steps EOAT Setup
+EXIT 104 11-AUG-26 12:14:32  3c30 1631 3 
+KEY  104 11-AUG-26 12:14:34  3f2c /wizard/gripper/steps EOAT Setup
+EXIT 104 11-AUG-26 12:14:34  3f2e 71 1 
+KEY  105 12-AUG-26 15:53:50  c383 /wizard/gripper/steps EOAT Setup
+EXIT 105 12-AUG-26 15:53:50  c384 1631 3 
+KEY  105 12-AUG-26 15:53:50  c3fc /wizard/gripper/steps EOAT Setup
+KEY  105 12-AUG-26 15:53:52  c7a6 /wizard/gripper/steps EOAT Setup
+EXIT 105 12-AUG-26 15:53:52  c7a7 71 1 
+POWR  72 26-AUG-26 08:47:22  4461 Power Cycle 
+KEY   72 26-AUG-26 08:47:24  45db /nav/core/tohome HOME
+KEY   72 26-AUG-26 08:47:26  46d1 /nav/core/tohome HOME
+KEY   72 26-AUG-26 09:47:24  bd6b /nav/core/tohome HOME
+KEY   72 26-AUG-26 10:25:56  5f93 /nav/core/tohome HOME
+KEY   72 26-AUG-26 10:25:56  6113 /nav/core/tohome HOME
+KEY   72 26-AUG-26 10:25:58  61e8 /nav/core/tohome HOME
+KEY   72 26-AUG-26 10:25:58  628f /nav/core/tohome HOME
+KEY   72 26-AUG-26 10:25:58  6337 /nav/core/tohome HOME
+KEY   72 26-AUG-26 10:25:58  63b7 /nav/core/tohome HOME
+KEY   72 26-AUG-26 10:26:00  651f /nav/core/tohome HOME
+KEY   72 26-AUG-26 10:26:00  65db /nav/core/tohome HOME
+KEY   72 26-AUG-26 10:26:00  6713 /nav/core/tohome HOME
+KEY   72 26-AUG-26 10:26:04  6e7e /nav/core/tohome HOME
+KEY   72 26-AUG-26 10:26:12  8042 /nav/core/tohome HOME
+KEY   72 26-AUG-26 10:47:24  34d6 /nav/core/tohome HOME
+KEY   72 26-AUG-26 11:47:26  ac41 /nav/core/tohome HOME
+KEY   72 26-AUG-26 11:50:50  3e09 /nav/core/tohome HOME
+EXIT  72 26-AUG-26 11:50:50  3e0a 955 1 

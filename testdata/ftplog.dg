@@ -1,0 +1,62 @@
+F Number: F333543
+VERSION : HandlingTool         
+$VERSION: V9.40526     12/12/2025
+DATE:     27-AUG-26 13:14 
+Columns: Date, (U)pload/(D)ownload, File, Status, IPaddress
+
+AUG 27 2026 13:14:00 U ACCNTG.DG    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:00 U ATERRJOB.VA  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:00 U ATERRJOB.VR  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:00 U AXIS.DG      226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:00 U BACKCONT.DG  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:00 U BACKDATE.DT  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:00 U BICSETUP.VA  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:00 U BICSETUP.VR  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:00 U CBPARAM.VA   226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:00 U CBPARAM.VR   226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:02 U CELLIO.SV    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:02 U CELLIO.VA    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:02 U COMSET.VA    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:02 U COMSET.VR    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:02 U CONSLOG.DG   226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:02 U CONSTAIL.DG  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:02 U CRXLIB.VA    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:02 U CRXLIB.VR    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:02 U CS8F.DT      226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:02 U CTMENU.DG    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:02 U CTQMENU.DG   226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:02 U CURPOS.DG    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:02 U DCSCHG01.DG  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:02 U DCSCHG02.DG  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:02 U DCSCHG03.DG  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:02 U DCSDIFF.DG   226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:04 U DCSPOS.SV    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:04 U DCSPOS.VA    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U DCSVRFY.DG   226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U DF_LOGI1.DF  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U DF_LOGI2.DF  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U DF_LOGI3.DF  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U DF_LOGI4.DF  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U DF_LOGI5.DF  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U DF_LOGI6.DF  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U DF_MOTN0.DF  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U DIOCFGSV.IO  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U DIOCFGSV.VA  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U EIPCFG.XML   226 ASCII Transfer complete.  10.5.6.3                                                     
+AUG 27 2026 13:14:06 U EIPLOG.DG    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U EMAIL.DG     226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U ERRACT.LS    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U ERRALL.LS    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U ERRAPP.LS    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U ERRCOMM.LS   226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U ERRCURR.LS   226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U ERREXT.LS    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U ERRHIST.LS   226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U ERRMOT.LS    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U ERRPWD.LS    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U ERRSYS.LS    226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U ETHERNET.DG  226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:06 U FLEXEVENT.DG 226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:10 U FLEXUIF.XML  226 ASCII Transfer complete.  10.5.6.3                                                     
+AUG 27 2026 13:14:10 U FRAME.DG     226 Binary Transfer complete. 10.5.6.3                                                     
+AUG 27 2026 13:14:10 U FRAMEVAR.VR  226 Binary Transfer complete. 10.5.6.3                                                     

@@ -1,0 +1,38 @@
+F Number: F333543
+VERSION : HandlingTool         
+$VERSION: V9.40526     12/12/2025
+DATE:     27-AUG-26 13:14 
+
+CURRENT ROBOT POSITION::
+Group #:  1
+ 
+CURRENT JOINT POSITION:
+Joint   1:    -35.00
+Joint   2:    -42.00
+Joint   3:    -30.00
+Joint   4:    -42.00
+Joint   5:     40.00
+Joint   6:     35.00
+
+
+Frame #:   3  Tool #:   1
+CURRENT USER FRAME POSITION:
+CFG: F U T, 0, 0, 0
+X:    466.50
+Y:   -789.17
+Z:   -902.43
+W:       .32
+P:     -1.30
+R:     90.18
+
+
+Tool #:   1
+CURRENT WORLD POSITION:
+CFG: F U T, 0, 0, 0
+X:    827.46
+Y:   -820.43
+Z:     72.96
+W:       .43
+P:     -1.76
+R:    -60.49
+

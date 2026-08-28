@@ -1,0 +1,136 @@
+/PROG  _INSPECT_POST
+/ATTR
+OWNER		= MNEDITOR;
+COMMENT		= "Post-Dump Inspct";
+PROG_SIZE	= 2203;
+CREATE		= DATE 26-07-13  TIME 10:43:52;
+MODIFIED	= DATE 26-08-24  TIME 15:48:36;
+FILE_NAME	= _INSPECT;
+VERSION		= 0;
+LINE_COUNT	= 108;
+MEMORY_SIZE	= 2691;
+PROTECT		= READ_WRITE;
+TCD:  STACK_SIZE	= 0,
+      TASK_PRIORITY	= 50,
+      TIME_SLICE	= 0,
+      BUSY_LAMP_OFF	= 0,
+      ABORT_REQUEST	= 0,
+      PAUSE_REQUEST	= 0;
+DEFAULT_GROUP	= 1,*,*,*,*;
+CONTROL_CODE	= 00000000 00000000;
+LOCAL_REGISTERS	= 0,0,0;
+/APPL
+
+AUTO_SINGULARITY_HEADER;
+  ENABLE_SINGULARITY_AVOIDANCE   : FALSE;
+/MN
+   1:  !*****INSPECT TOTE POST-DUMP***** ;
+   2:  LBL[100] ;
+   3:  IF (!F[1:ON :Part in Grip]),JMP LBL[999] ;
+   4:  R[44:*CamDnTries]=0    ;
+   5:  R[45:*Pre/Post Inspct]=2    ;
+   6:   ;
+   7:  !***Setup Inspect Chk************ ;
+   8:  LBL[110] ;
+   9:  F[45:OFF:PreInspect-Set]=(OFF) ;
+  10:  CALL _SET_INSPECT(2) ;
+  11:  IF (F[45:OFF:PreInspect-Set]),JMP LBL[150] ;
+  12:  JMP LBL[999] ;
+  13:   ;
+  14:  !***Appr Cam (Hopper Appr)******* ;
+  15:  LBL[150] ;
+  16:  IF (DO[205:OFF:At Hopper Appr]),JMP LBL[200] ;
+  17:  IF (DO[204:OFF:At Inspct Pos]),JMP LBL[250] ;
+  18:  CALL _APPR_HOPPER(1) ;
+  19:  IF (F[700:OFF:Appr Error]),JMP LBL[700] ;
+  20:  JMP LBL[150] ;
+  21:   ;
+  22:   ;
+  23:  !***Move to Inspect Pos********** ;
+  24:  LBL[200] ;
+  25:  UFRAME_NUM=0 ;
+  26:  UTOOL_NUM=1 ;
+  27:J PR[41:Hopper Appr] R[104:ToteSpd-J]% CNT50    ;
+  28:   ;
+  29:  CALL _SET_OFFS((-800),0,(-8),61) ;
+  30:L PR[43:Orig-Hopper-Nrml] R[103:ToteSpd-L]mm/sec CNT50 Tool_Offset    ;
+  31:  CALL _SET_OFFS((-600),0,(-8),61) ;
+  32:L PR[43:Orig-Hopper-Nrml] R[103:ToteSpd-L]mm/sec CNT100 Tool_Offset    ;
+  33:  CALL _SET_OFFS(0,0,(-8),61) ;
+  34:L PR[43:Orig-Hopper-Nrml] R[103:ToteSpd-L]mm/sec CNT25 Tool_Offset    ;
+  35:  JMP LBL[250] ;
+  36:   ;
+  37:  !**Final Move to Inspect Pos ;
+  38:  LBL[250] ;
+  39:  UFRAME_NUM=0 ;
+  40:  UTOOL_NUM=1 ;
+  41:L PR[45:Inspect Pos] R[103:ToteSpd-L]mm/sec FINE    ;
+  42:  WAIT (DO[204:OFF:At Inspct Pos])    ;
+  43:  R[44:*CamDnTries]=0    ;
+  44:  JMP LBL[300] ;
+  45:   ;
+  46:   ;
+  47:  !***First Image****************** ;
+  48:  LBL[300] ;
+  49:  DO[30:OFF:Inspect Trigger]=OFF ;
+  50:  DO[31:OFF:Inspect Ack]=OFF ;
+  51:  WAIT    .25(sec) ;
+  52:  WAIT (!DI[30:OFF:Inspect Pass] AND !DI[31:OFF:Inspect Fail])    ;
+  53:   ;
+  54:  !**Trigger Inspect ;
+  55:  CALL _SET_WAIT(R[47:*WaitTm x100]) ;
+  56:  DO[30:OFF:Inspect Trigger]=ON ;
+  57:  !Wait for Pass/Fail ;
+  58:  //WAIT (DI[30:OFF:Inspect Pass] OR DI[31:OFF:Inspect Fail]) TIMEOUT,LBL[307] ;
+  59:  WAIT (DI[30:OFF:Inspect Pass] OR DI[31:OFF:Inspect Fail])    ;
+  60:  !**Inspect Done, Chk Pass/Fail ;
+  61:  IF (DI[30:OFF:Inspect Pass]),JMP LBL[310] ;
+  62:  IF (DI[31:OFF:Inspect Fail]),JMP LBL[320] ;
+  63:  JMP LBL[307] ;
+  64:   ;
+  65:  !**Inspect Not Done ;
+  66:  LBL[307] ;
+  67:  R[44:*CamDnTries]=R[44:*CamDnTries]+1    ;
+  68:  IF (R[44:*CamDnTries]<2),JMP LBL[300] ;
+  69:  !Too Many Done Tries ;
+  70:  DO[30:OFF:Inspect Trigger]=OFF ;
+  71:  DO[31:OFF:Inspect Ack]=OFF ;
+  72:  DO[57:OFF:Inspect Err]=ON ;
+  73:  PAUSE ;
+  74:  DO[57:OFF:Inspect Err]=OFF ;
+  75:  JMP LBL[100] ;
+  76:   ;
+  77:  !***Inspect Passed*** ;
+  78:  LBL[310] ;
+  79:  R[100:*Tote-Sts ID]=50    ;
+  80:  JMP LBL[500] ;
+  81:   ;
+  82:  !***Inspect Failed*** ;
+  83:  LBL[320] ;
+  84:  !TEMP-dont retry, just reject ;
+  85:  R[100:*Tote-Sts ID]=72    ;
+  86:  JMP LBL[500] ;
+  87:   ;
+  88:   ;
+  89:  !***Inspect Complete************* ;
+  90:  LBL[500] ;
+  91:  DO[30:OFF:Inspect Trigger]=OFF ;
+  92:  !**Inspect Ack hs ;
+  93:  DO[31:OFF:Inspect Ack]=ON ;
+  94:  WAIT    .25(sec) ;
+  95:  WAIT (!DI[30:OFF:Inspect Pass] AND !DI[31:OFF:Inspect Fail])    ;
+  96:  DO[31:OFF:Inspect Ack]=OFF ;
+  97:  JMP LBL[600] ;
+  98:   ;
+  99:   ;
+ 100:  !***Inspect Done***************** ;
+ 101:  LBL[600] ;
+ 102:  F[46:OFF:PostInspect-Set]=(OFF) ;
+ 103:  R[44:*CamDnTries]=0    ;
+ 104:  R[45:*Pre/Post Inspct]=0    ;
+ 105:  JMP LBL[999] ;
+ 106:   ;
+ 107:   ;
+ 108:  LBL[999] ;
+/POS
+/END

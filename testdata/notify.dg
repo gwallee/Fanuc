@@ -1,0 +1,41 @@
+</pre><table width=100%>
+<style>
+table {
+  border-collapse:collapse;
+}
+tr td
+{
+  border-bottom: 2px solid black;
+}
+  .btnTitle {
+    font-size: large;
+    color: black;
+    text-align: left;
+   }
+  .btnTitleGray {
+    font-size: large;
+    color: #d3d3d3;
+    text-align: left;
+   }
+  .btnDesc {
+    font-size: small;
+    color: black;
+    text-align: left;
+  }
+  .btnDescGray {
+    font-size: small;
+    color: #d3d3d3;
+    text-align: left;
+  }
+</style>
+<tr>
+<td><img src='/frh/gui/warn_white.png' width='41' height='41'></img></td>
+<td><div>
+<div class='btnTitle'>Ref. Pos. for Quick Mastering Not Set</div>
+<div class='btnDesc'>Reference position for quick mastering has not been set yet. Set reference position for quick mastering in case SRVO-062 BZAL (Battery Zero) alarm or SRVO-065 BLAL (Battery Low) alarm occurs.</div>
+</div></td>
+<td><div>
+<img src='/frh/gui/clear_icon.png' width='41' height='41' border='0' /></div>
+</td>
+</tr>
+<pre>

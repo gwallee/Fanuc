@@ -1,0 +1,64 @@
+[mfredampid] [d:1 da:1 g:1 ga:1] amp_svm:A06B-6400-H102        amp_psm:                     (ps:0) amp_svmsrl:Y23513840   amp_psmsrl:            amp_svmver:9H1601.0 amp_psmver:9G0608.0
+[mfredampid] [d:1 da:2 g:1 ga:2] amp_svm:A06B-6400-H102        amp_psm:                     (ps:0) amp_svmsrl:Y23513840   amp_psmsrl:            amp_svmver:9H1601.0 amp_psmver:9G0608.0
+[mfredampid] [d:1 da:3 g:1 ga:3] amp_svm:A06B-6400-H102        amp_psm:                     (ps:0) amp_svmsrl:Y23513840   amp_psmsrl:            amp_svmver:9H1601.0 amp_psmver:9G0608.0
+[mfredampid] [d:1 da:4 g:1 ga:4] amp_svm:A06B-6400-H102        amp_psm:                     (ps:0) amp_svmsrl:Y23513840   amp_psmsrl:            amp_svmver:9H1601.0 amp_psmver:9G0608.0
+[mfredampid] [d:1 da:5 g:1 ga:5] amp_svm:A06B-6400-H102        amp_psm:                     (ps:0) amp_svmsrl:Y23513840   amp_psmsrl:            amp_svmver:9H1601.0 amp_psmver:9G0608.0
+[mfredampid] [d:1 da:6 g:1 ga:6] amp_svm:A06B-6400-H102        amp_psm:                     (ps:0) amp_svmsrl:Y23513840   amp_psmsrl:            amp_svmver:9H1601.0 amp_psmver:9G0608.0
+[SYINISUB] Checking $repower.$flag
+[syinisub] TICK_OFFSET 11fdd374 to 10c
+[quiccrcv] TICK_OFFSET 117dc374 to 10c
+[vmshadow_cleanup] Redirected from task 72 to TID_VMSC
+STRT_NSLC 0
+[CIPCONCB] Fast UDP in use (0)
+[syinisub] TPID = 0x36 !!!!!!!!!!!!!!!!!!!!!!!!!
+[syinit] waiting for EVF_ENB_PWF...
+[syinit] osconflg(EVF_ENB_PWF) $16a
+[syinit] oswaiflg(EVF_ENB_PWF) $0
+[syinit] syrset(), status = $0
+[syinisub] Starting C shell 0x0
+[Shxsp] Ref positions in use
+[syinisub]starting shell $0
+[Shxsp] Initialize extension
+"cold2.com for V9.40P/83 (FD V9.40458)"
+"cold2cus.com complete"
+"cold2.com complete"
+[syinisub] Ready to run ATSHELL
+Ready to run SHELL
+[syinisub] Start Karel shell 0x0
+[SYINISUB] restored user device UT1:
+[syinit] Setting VMGR for in-line calls
+[syinit] end
+[set_load_device] stat good device = MC:, BMON 
+[set_load_device]setting $LOAD_DEVICE to UD1:
+[vcamdrvr_init_cxp] CXP status(3) : 00000000
+[symonutl] Getting data (0, 1)
+[vmshadow_cleanup] Redirected from task 72 to TID_VMSC
+SYINISUB TOTAL TIME 10721
+[SYINISUB] restored user device UT1:
+[TPSPART] Found KAREL ATMSKCHG 200
+[TPSPART] Found KAREL EOATMENU 216
+[TPSPART] Found KAREL ATPRGADJ 930
+[TPSPART] Found KAREL ATWAITRL 931
+[TPSPART] Found KAREL ATPRSCRN 932
+[TPSPART] Found KAREL ATPASWRD 935
+[TPSPART] Found KAREL ATINSTAL 936
+[TPKSINIT] dname -K943- not found devstat = 0 cfg $1337a3f8
+[TPSPART] Found KAREL ATCELLIO 955
+[TPSPART] Found KAREL ACTPSS 958
+[TPKSINIT] dname -K972- not found devstat = 0 cfg $1337a108
+[TPKSINIT] dname -K973- not found devstat = 0 cfg $1337a04c
+[TPSPART] Found KAREL ATSOFTPA 992
+Result size = 596
+[vmfndvar] [*SYSTEM*]$SYSTEM_TIMER truncated to $SYSTEM_TIME
+[syinmpc] received new password config
+[tpmains] Waiting at 35150ms
+[sfstpsl] init $SEL_HOTSTRT
+[tpmains] ready at 26-AUG-26 08:47:24 
+[tpmains] Ready at 35206ms Total Startup Time ~ 42 seconds
+[syin]status after mktsk = 0
+[sfstpsl] init $SEL_HOTSTRT
+[tpmains] ready at 26-AUG-26 08:47:24 
+[vcamdrvr_init_cxp] CXP status(4) : 00000000
+[vcamdrvr_init_cxp] power off
+[vcamdrvr_initialize] time : 13308.687500ms
+[vuifblock_add_vision_commands] get_root_vision_device()=$750062

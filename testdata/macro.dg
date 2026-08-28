@@ -1,0 +1,31 @@
+F Number: F333543
+VERSION : HandlingTool         
+$VERSION: V9.40526     12/12/2025
+DATE:     27-AUG-26 13:14 
+
+MACRO DEFINIIION::
+
+[  1]NAME       :Open hand 1
+     PROG NAME  :_GRP_CLMP_MACRO
+     Assign type:UK
+     Assign ID  :1
+[  2]NAME       :Close hand 1
+     PROG NAME  :_GRP_HOOK_MACRO
+     Assign type:UK
+     Assign ID  :2
+[  3]NAME       :Relax hand 1
+     PROG NAME  : 
+     Assign type:MF
+     Assign ID  :3
+[  4]NAME       :Open hand 2
+     PROG NAME  : 
+     Assign type:MF
+     Assign ID  :11
+[  5]NAME       :Close hand 2
+     PROG NAME  : 
+     Assign type:MF
+     Assign ID  :12
+[  6]NAME       :Relax hand 2
+     PROG NAME  : 
+     Assign type:MF
+     Assign ID  :13

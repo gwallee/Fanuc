@@ -1,0 +1,804 @@
+[X_DTCOPY]ACT_TYPE  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]ACT_TYPE2  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]INS_OPTION  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]DATA_TYPE  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]LST_DT_TYPE  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]FILE_NAME  Storage: CMOS  Access: RW  : STRING[12] = 'cp_rbdt.csv'
+
+[X_DTCOPY]F_NUMBER  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]F_LEN  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]F_STR  Storage: DRAM  Access: RW  : STRING[4] = Uninitialized
+
+[X_DTCOPY]FILL_ZERO  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]VERSION  Storage: DRAM  Access: RW  : STRING[25] = Uninitialized
+
+[X_DTCOPY]PRG_TBL  Storage: UNINIT_DRAM  Access: RW  : ARRAY[150] OF STRING[40]
+  [1] = Uninitialized
+  [2] = Uninitialized
+  [3] = Uninitialized
+  [4] = Uninitialized
+  [5] = Uninitialized
+  [6] = Uninitialized
+  [7] = Uninitialized
+  [8] = Uninitialized
+  [9] = Uninitialized
+  [10] = Uninitialized
+  [11] = Uninitialized
+  [12] = Uninitialized
+  [13] = Uninitialized
+  [14] = Uninitialized
+  [15] = Uninitialized
+  [16] = Uninitialized
+  [17] = Uninitialized
+  [18] = Uninitialized
+  [19] = Uninitialized
+  [20] = Uninitialized
+  [21] = Uninitialized
+  [22] = Uninitialized
+  [23] = Uninitialized
+  [24] = Uninitialized
+  [25] = Uninitialized
+  [26] = Uninitialized
+  [27] = Uninitialized
+  [28] = Uninitialized
+  [29] = Uninitialized
+  [30] = Uninitialized
+  [31] = Uninitialized
+  [32] = Uninitialized
+  [33] = Uninitialized
+  [34] = Uninitialized
+  [35] = Uninitialized
+  [36] = Uninitialized
+  [37] = Uninitialized
+  [38] = Uninitialized
+  [39] = Uninitialized
+  [40] = Uninitialized
+  [41] = Uninitialized
+  [42] = Uninitialized
+  [43] = Uninitialized
+  [44] = Uninitialized
+  [45] = Uninitialized
+  [46] = Uninitialized
+  [47] = Uninitialized
+  [48] = Uninitialized
+  [49] = Uninitialized
+  [50] = Uninitialized
+  [51] = Uninitialized
+  [52] = Uninitialized
+  [53] = Uninitialized
+  [54] = Uninitialized
+  [55] = Uninitialized
+  [56] = Uninitialized
+  [57] = Uninitialized
+  [58] = Uninitialized
+  [59] = Uninitialized
+  [60] = Uninitialized
+  [61] = Uninitialized
+  [62] = Uninitialized
+  [63] = Uninitialized
+  [64] = Uninitialized
+  [65] = Uninitialized
+  [66] = Uninitialized
+  [67] = Uninitialized
+  [68] = Uninitialized
+  [69] = Uninitialized
+  [70] = Uninitialized
+  [71] = Uninitialized
+  [72] = Uninitialized
+  [73] = Uninitialized
+  [74] = Uninitialized
+  [75] = Uninitialized
+  [76] = Uninitialized
+  [77] = Uninitialized
+  [78] = Uninitialized
+  [79] = Uninitialized
+  [80] = Uninitialized
+  [81] = Uninitialized
+  [82] = Uninitialized
+  [83] = Uninitialized
+  [84] = Uninitialized
+  [85] = Uninitialized
+  [86] = Uninitialized
+  [87] = Uninitialized
+  [88] = Uninitialized
+  [89] = Uninitialized
+  [90] = Uninitialized
+  [91] = Uninitialized
+  [92] = Uninitialized
+  [93] = Uninitialized
+  [94] = Uninitialized
+  [95] = Uninitialized
+  [96] = Uninitialized
+  [97] = Uninitialized
+  [98] = Uninitialized
+  [99] = Uninitialized
+  [100] = Uninitialized
+  [101] = Uninitialized
+  [102] = Uninitialized
+  [103] = Uninitialized
+  [104] = Uninitialized
+  [105] = Uninitialized
+  [106] = Uninitialized
+  [107] = Uninitialized
+  [108] = Uninitialized
+  [109] = Uninitialized
+  [110] = Uninitialized
+  [111] = Uninitialized
+  [112] = Uninitialized
+  [113] = Uninitialized
+  [114] = Uninitialized
+  [115] = Uninitialized
+  [116] = Uninitialized
+  [117] = Uninitialized
+  [118] = Uninitialized
+  [119] = Uninitialized
+  [120] = Uninitialized
+  [121] = Uninitialized
+  [122] = Uninitialized
+  [123] = Uninitialized
+  [124] = Uninitialized
+  [125] = Uninitialized
+  [126] = Uninitialized
+  [127] = Uninitialized
+  [128] = Uninitialized
+  [129] = Uninitialized
+  [130] = Uninitialized
+  [131] = Uninitialized
+  [132] = Uninitialized
+  [133] = Uninitialized
+  [134] = Uninitialized
+  [135] = Uninitialized
+  [136] = Uninitialized
+  [137] = Uninitialized
+  [138] = Uninitialized
+  [139] = Uninitialized
+  [140] = Uninitialized
+  [141] = Uninitialized
+  [142] = Uninitialized
+  [143] = Uninitialized
+  [144] = Uninitialized
+  [145] = Uninitialized
+  [146] = Uninitialized
+  [147] = Uninitialized
+  [148] = Uninitialized
+  [149] = Uninitialized
+  [150] = Uninitialized
+
+[X_DTCOPY]PRG_LOADED  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]PRG_INIT  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]DATA_NAME  Storage: UNINIT_DRAM  Access: RW  : ARRAY[150] OF STRING[40]
+  [1] = Uninitialized
+  [2] = Uninitialized
+  [3] = Uninitialized
+  [4] = Uninitialized
+  [5] = Uninitialized
+  [6] = Uninitialized
+  [7] = Uninitialized
+  [8] = Uninitialized
+  [9] = Uninitialized
+  [10] = Uninitialized
+  [11] = Uninitialized
+  [12] = Uninitialized
+  [13] = Uninitialized
+  [14] = Uninitialized
+  [15] = Uninitialized
+  [16] = Uninitialized
+  [17] = Uninitialized
+  [18] = Uninitialized
+  [19] = Uninitialized
+  [20] = Uninitialized
+  [21] = Uninitialized
+  [22] = Uninitialized
+  [23] = Uninitialized
+  [24] = Uninitialized
+  [25] = Uninitialized
+  [26] = Uninitialized
+  [27] = Uninitialized
+  [28] = Uninitialized
+  [29] = Uninitialized
+  [30] = Uninitialized
+  [31] = Uninitialized
+  [32] = Uninitialized
+  [33] = Uninitialized
+  [34] = Uninitialized
+  [35] = Uninitialized
+  [36] = Uninitialized
+  [37] = Uninitialized
+  [38] = Uninitialized
+  [39] = Uninitialized
+  [40] = Uninitialized
+  [41] = Uninitialized
+  [42] = Uninitialized
+  [43] = Uninitialized
+  [44] = Uninitialized
+  [45] = Uninitialized
+  [46] = Uninitialized
+  [47] = Uninitialized
+  [48] = Uninitialized
+  [49] = Uninitialized
+  [50] = Uninitialized
+  [51] = Uninitialized
+  [52] = Uninitialized
+  [53] = Uninitialized
+  [54] = Uninitialized
+  [55] = Uninitialized
+  [56] = Uninitialized
+  [57] = Uninitialized
+  [58] = Uninitialized
+  [59] = Uninitialized
+  [60] = Uninitialized
+  [61] = Uninitialized
+  [62] = Uninitialized
+  [63] = Uninitialized
+  [64] = Uninitialized
+  [65] = Uninitialized
+  [66] = Uninitialized
+  [67] = Uninitialized
+  [68] = Uninitialized
+  [69] = Uninitialized
+  [70] = Uninitialized
+  [71] = Uninitialized
+  [72] = Uninitialized
+  [73] = Uninitialized
+  [74] = Uninitialized
+  [75] = Uninitialized
+  [76] = Uninitialized
+  [77] = Uninitialized
+  [78] = Uninitialized
+  [79] = Uninitialized
+  [80] = Uninitialized
+  [81] = Uninitialized
+  [82] = Uninitialized
+  [83] = Uninitialized
+  [84] = Uninitialized
+  [85] = Uninitialized
+  [86] = Uninitialized
+  [87] = Uninitialized
+  [88] = Uninitialized
+  [89] = Uninitialized
+  [90] = Uninitialized
+  [91] = Uninitialized
+  [92] = Uninitialized
+  [93] = Uninitialized
+  [94] = Uninitialized
+  [95] = Uninitialized
+  [96] = Uninitialized
+  [97] = Uninitialized
+  [98] = Uninitialized
+  [99] = Uninitialized
+  [100] = Uninitialized
+  [101] = Uninitialized
+  [102] = Uninitialized
+  [103] = Uninitialized
+  [104] = Uninitialized
+  [105] = Uninitialized
+  [106] = Uninitialized
+  [107] = Uninitialized
+  [108] = Uninitialized
+  [109] = Uninitialized
+  [110] = Uninitialized
+  [111] = Uninitialized
+  [112] = Uninitialized
+  [113] = Uninitialized
+  [114] = Uninitialized
+  [115] = Uninitialized
+  [116] = Uninitialized
+  [117] = Uninitialized
+  [118] = Uninitialized
+  [119] = Uninitialized
+  [120] = Uninitialized
+  [121] = Uninitialized
+  [122] = Uninitialized
+  [123] = Uninitialized
+  [124] = Uninitialized
+  [125] = Uninitialized
+  [126] = Uninitialized
+  [127] = Uninitialized
+  [128] = Uninitialized
+  [129] = Uninitialized
+  [130] = Uninitialized
+  [131] = Uninitialized
+  [132] = Uninitialized
+  [133] = Uninitialized
+  [134] = Uninitialized
+  [135] = Uninitialized
+  [136] = Uninitialized
+  [137] = Uninitialized
+  [138] = Uninitialized
+  [139] = Uninitialized
+  [140] = Uninitialized
+  [141] = Uninitialized
+  [142] = Uninitialized
+  [143] = Uninitialized
+  [144] = Uninitialized
+  [145] = Uninitialized
+  [146] = Uninitialized
+  [147] = Uninitialized
+  [148] = Uninitialized
+  [149] = Uninitialized
+  [150] = Uninitialized
+
+[X_DTCOPY]SKIP_FLAG  Storage: UNINIT_DRAM  Access: RW  : ARRAY[150] OF BOOLEAN
+  [1] = Uninitialized
+  [2] = Uninitialized
+  [3] = Uninitialized
+  [4] = Uninitialized
+  [5] = Uninitialized
+  [6] = Uninitialized
+  [7] = Uninitialized
+  [8] = Uninitialized
+  [9] = Uninitialized
+  [10] = Uninitialized
+  [11] = Uninitialized
+  [12] = Uninitialized
+  [13] = Uninitialized
+  [14] = Uninitialized
+  [15] = Uninitialized
+  [16] = Uninitialized
+  [17] = Uninitialized
+  [18] = Uninitialized
+  [19] = Uninitialized
+  [20] = Uninitialized
+  [21] = Uninitialized
+  [22] = Uninitialized
+  [23] = Uninitialized
+  [24] = Uninitialized
+  [25] = Uninitialized
+  [26] = Uninitialized
+  [27] = Uninitialized
+  [28] = Uninitialized
+  [29] = Uninitialized
+  [30] = Uninitialized
+  [31] = Uninitialized
+  [32] = Uninitialized
+  [33] = Uninitialized
+  [34] = Uninitialized
+  [35] = Uninitialized
+  [36] = Uninitialized
+  [37] = Uninitialized
+  [38] = Uninitialized
+  [39] = Uninitialized
+  [40] = Uninitialized
+  [41] = Uninitialized
+  [42] = Uninitialized
+  [43] = Uninitialized
+  [44] = Uninitialized
+  [45] = Uninitialized
+  [46] = Uninitialized
+  [47] = Uninitialized
+  [48] = Uninitialized
+  [49] = Uninitialized
+  [50] = Uninitialized
+  [51] = Uninitialized
+  [52] = Uninitialized
+  [53] = Uninitialized
+  [54] = Uninitialized
+  [55] = Uninitialized
+  [56] = Uninitialized
+  [57] = Uninitialized
+  [58] = Uninitialized
+  [59] = Uninitialized
+  [60] = Uninitialized
+  [61] = Uninitialized
+  [62] = Uninitialized
+  [63] = Uninitialized
+  [64] = Uninitialized
+  [65] = Uninitialized
+  [66] = Uninitialized
+  [67] = Uninitialized
+  [68] = Uninitialized
+  [69] = Uninitialized
+  [70] = Uninitialized
+  [71] = Uninitialized
+  [72] = Uninitialized
+  [73] = Uninitialized
+  [74] = Uninitialized
+  [75] = Uninitialized
+  [76] = Uninitialized
+  [77] = Uninitialized
+  [78] = Uninitialized
+  [79] = Uninitialized
+  [80] = Uninitialized
+  [81] = Uninitialized
+  [82] = Uninitialized
+  [83] = Uninitialized
+  [84] = Uninitialized
+  [85] = Uninitialized
+  [86] = Uninitialized
+  [87] = Uninitialized
+  [88] = Uninitialized
+  [89] = Uninitialized
+  [90] = Uninitialized
+  [91] = Uninitialized
+  [92] = Uninitialized
+  [93] = Uninitialized
+  [94] = Uninitialized
+  [95] = Uninitialized
+  [96] = Uninitialized
+  [97] = Uninitialized
+  [98] = Uninitialized
+  [99] = Uninitialized
+  [100] = Uninitialized
+  [101] = Uninitialized
+  [102] = Uninitialized
+  [103] = Uninitialized
+  [104] = Uninitialized
+  [105] = Uninitialized
+  [106] = Uninitialized
+  [107] = Uninitialized
+  [108] = Uninitialized
+  [109] = Uninitialized
+  [110] = Uninitialized
+  [111] = Uninitialized
+  [112] = Uninitialized
+  [113] = Uninitialized
+  [114] = Uninitialized
+  [115] = Uninitialized
+  [116] = Uninitialized
+  [117] = Uninitialized
+  [118] = Uninitialized
+  [119] = Uninitialized
+  [120] = Uninitialized
+  [121] = Uninitialized
+  [122] = Uninitialized
+  [123] = Uninitialized
+  [124] = Uninitialized
+  [125] = Uninitialized
+  [126] = Uninitialized
+  [127] = Uninitialized
+  [128] = Uninitialized
+  [129] = Uninitialized
+  [130] = Uninitialized
+  [131] = Uninitialized
+  [132] = Uninitialized
+  [133] = Uninitialized
+  [134] = Uninitialized
+  [135] = Uninitialized
+  [136] = Uninitialized
+  [137] = Uninitialized
+  [138] = Uninitialized
+  [139] = Uninitialized
+  [140] = Uninitialized
+  [141] = Uninitialized
+  [142] = Uninitialized
+  [143] = Uninitialized
+  [144] = Uninitialized
+  [145] = Uninitialized
+  [146] = Uninitialized
+  [147] = Uninitialized
+  [148] = Uninitialized
+  [149] = Uninitialized
+  [150] = Uninitialized
+
+[X_DTCOPY]HEAD_ID  Storage: UNINIT_DRAM  Access: RW  : ARRAY[150] OF STRING[8]
+  [1] = Uninitialized
+  [2] = Uninitialized
+  [3] = Uninitialized
+  [4] = Uninitialized
+  [5] = Uninitialized
+  [6] = Uninitialized
+  [7] = Uninitialized
+  [8] = Uninitialized
+  [9] = Uninitialized
+  [10] = Uninitialized
+  [11] = Uninitialized
+  [12] = Uninitialized
+  [13] = Uninitialized
+  [14] = Uninitialized
+  [15] = Uninitialized
+  [16] = Uninitialized
+  [17] = Uninitialized
+  [18] = Uninitialized
+  [19] = Uninitialized
+  [20] = Uninitialized
+  [21] = Uninitialized
+  [22] = Uninitialized
+  [23] = Uninitialized
+  [24] = Uninitialized
+  [25] = Uninitialized
+  [26] = Uninitialized
+  [27] = Uninitialized
+  [28] = Uninitialized
+  [29] = Uninitialized
+  [30] = Uninitialized
+  [31] = Uninitialized
+  [32] = Uninitialized
+  [33] = Uninitialized
+  [34] = Uninitialized
+  [35] = Uninitialized
+  [36] = Uninitialized
+  [37] = Uninitialized
+  [38] = Uninitialized
+  [39] = Uninitialized
+  [40] = Uninitialized
+  [41] = Uninitialized
+  [42] = Uninitialized
+  [43] = Uninitialized
+  [44] = Uninitialized
+  [45] = Uninitialized
+  [46] = Uninitialized
+  [47] = Uninitialized
+  [48] = Uninitialized
+  [49] = Uninitialized
+  [50] = Uninitialized
+  [51] = Uninitialized
+  [52] = Uninitialized
+  [53] = Uninitialized
+  [54] = Uninitialized
+  [55] = Uninitialized
+  [56] = Uninitialized
+  [57] = Uninitialized
+  [58] = Uninitialized
+  [59] = Uninitialized
+  [60] = Uninitialized
+  [61] = Uninitialized
+  [62] = Uninitialized
+  [63] = Uninitialized
+  [64] = Uninitialized
+  [65] = Uninitialized
+  [66] = Uninitialized
+  [67] = Uninitialized
+  [68] = Uninitialized
+  [69] = Uninitialized
+  [70] = Uninitialized
+  [71] = Uninitialized
+  [72] = Uninitialized
+  [73] = Uninitialized
+  [74] = Uninitialized
+  [75] = Uninitialized
+  [76] = Uninitialized
+  [77] = Uninitialized
+  [78] = Uninitialized
+  [79] = Uninitialized
+  [80] = Uninitialized
+  [81] = Uninitialized
+  [82] = Uninitialized
+  [83] = Uninitialized
+  [84] = Uninitialized
+  [85] = Uninitialized
+  [86] = Uninitialized
+  [87] = Uninitialized
+  [88] = Uninitialized
+  [89] = Uninitialized
+  [90] = Uninitialized
+  [91] = Uninitialized
+  [92] = Uninitialized
+  [93] = Uninitialized
+  [94] = Uninitialized
+  [95] = Uninitialized
+  [96] = Uninitialized
+  [97] = Uninitialized
+  [98] = Uninitialized
+  [99] = Uninitialized
+  [100] = Uninitialized
+  [101] = Uninitialized
+  [102] = Uninitialized
+  [103] = Uninitialized
+  [104] = Uninitialized
+  [105] = Uninitialized
+  [106] = Uninitialized
+  [107] = Uninitialized
+  [108] = Uninitialized
+  [109] = Uninitialized
+  [110] = Uninitialized
+  [111] = Uninitialized
+  [112] = Uninitialized
+  [113] = Uninitialized
+  [114] = Uninitialized
+  [115] = Uninitialized
+  [116] = Uninitialized
+  [117] = Uninitialized
+  [118] = Uninitialized
+  [119] = Uninitialized
+  [120] = Uninitialized
+  [121] = Uninitialized
+  [122] = Uninitialized
+  [123] = Uninitialized
+  [124] = Uninitialized
+  [125] = Uninitialized
+  [126] = Uninitialized
+  [127] = Uninitialized
+  [128] = Uninitialized
+  [129] = Uninitialized
+  [130] = Uninitialized
+  [131] = Uninitialized
+  [132] = Uninitialized
+  [133] = Uninitialized
+  [134] = Uninitialized
+  [135] = Uninitialized
+  [136] = Uninitialized
+  [137] = Uninitialized
+  [138] = Uninitialized
+  [139] = Uninitialized
+  [140] = Uninitialized
+  [141] = Uninitialized
+  [142] = Uninitialized
+  [143] = Uninitialized
+  [144] = Uninitialized
+  [145] = Uninitialized
+  [146] = Uninitialized
+  [147] = Uninitialized
+  [148] = Uninitialized
+  [149] = Uninitialized
+  [150] = Uninitialized
+
+[X_DTCOPY]HEAD_STR  Storage: DRAM  Access: RW  : STRING[8] = Uninitialized
+
+[X_DTCOPY]ITEM_NO  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]NUM_STR  Storage: DRAM  Access: RW  : STRING[5] = Uninitialized
+
+[X_DTCOPY]WRK_STR  Storage: DRAM  Access: RW  : STRING[5] = Uninitialized
+
+[X_DTCOPY]TERM_ID  Storage: DRAM  Access: RW  : STRING[4] = Uninitialized
+
+[X_DTCOPY]TERM_STR  Storage: DRAM  Access: RW  : STRING[4] = Uninitialized
+
+[X_DTCOPY]STATUS  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]DMY_STAT  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]DMY_STAT2  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]DMY_INT  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]DMY_SPACE  Storage: DRAM  Access: RW  : STRING[4] = Uninitialized
+
+[X_DTCOPY]I  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]J  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]NUM_GROUP  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]GP_NO  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]GP_NO_STR  Storage: DRAM  Access: RW  : STRING[3] = Uninitialized
+
+[X_DTCOPY]FOUND  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]ENTRY  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]VAR_NAME  Storage: DRAM  Access: RW  : STRING[40] = Uninitialized
+
+[X_DTCOPY]ENB_ID  Storage: DRAM  Access: RW  : ARRAY[2] OF STRING[7]
+  [1] = Uninitialized
+  [2] = Uninitialized
+
+[X_DTCOPY]ENB_STR  Storage: DRAM  Access: RW  : STRING[7] = Uninitialized
+
+[X_DTCOPY]TF_ID  Storage: DRAM  Access: RW  : ARRAY[2] OF STRING[5]
+  [1] = Uninitialized
+  [2] = Uninitialized
+
+[X_DTCOPY]TF_STR  Storage: DRAM  Access: RW  : STRING[5] = Uninitialized
+
+[X_DTCOPY]SPACE_7  Storage: DRAM  Access: RW  : STRING[7] = Uninitialized
+
+[X_DTCOPY]SPACE_8  Storage: DRAM  Access: RW  : STRING[8] = Uninitialized
+
+[X_DTCOPY]SPACE_10  Storage: DRAM  Access: RW  : STRING[10] = Uninitialized
+
+[X_DTCOPY]SPACE_13  Storage: DRAM  Access: RW  : STRING[13] = Uninitialized
+
+[X_DTCOPY]SPACE_14  Storage: DRAM  Access: RW  : STRING[14] = Uninitialized
+
+[X_DTCOPY]SPACE_16  Storage: DRAM  Access: RW  : STRING[16] = Uninitialized
+
+[X_DTCOPY]SPACE_19  Storage: DRAM  Access: RW  : STRING[19] = Uninitialized
+
+[X_DTCOPY]SPACE_24  Storage: DRAM  Access: RW  : STRING[24] = Uninitialized
+
+[X_DTCOPY]SPACE_28  Storage: DRAM  Access: RW  : STRING[28] = Uninitialized
+
+[X_DTCOPY]TP_DEFPROG  Storage: DRAM  Access: RW  : STRING[36] = Uninitialized
+
+[X_DTCOPY]NO_PAUS_V  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]PROG_INDEX  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]RD_NEXT  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]RD_DONE  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]RD_SKIP  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]RD_LINE_NO  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]RD_STR  Storage: DRAM  Access: RW  : STRING[254] = Uninitialized
+
+[X_DTCOPY]RD_STR_CP  Storage: DRAM  Access: RW  : STRING[254] = Uninitialized
+
+[X_DTCOPY]LINE_END  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]CMND_TYPE  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]CMND_FOUND  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]DEL_FILE  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]DIGIT_LEN  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]IDX  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]INT_OK  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]D_START  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]D_END  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]D_CHR  Storage: DRAM  Access: RW  : STRING[1] = Uninitialized
+
+[X_DTCOPY]SHORT_LEN  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]STR_ARY  Storage: DRAM  Access: RW  : ARRAY[1] OF STRING[80]
+  [1] = Uninitialized
+
+[X_DTCOPY]VAL_ARY  Storage: DRAM  Access: RW  : ARRAY[1] OF STRING[30]
+  [1] = Uninitialized
+
+[X_DTCOPY]TMP_STR  Storage: DRAM  Access: RW  : STRING[100] = Uninitialized
+
+[X_DTCOPY]ITIMER  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]SCURDEV  Storage: DRAM  Access: RW  : STRING[20] = Uninitialized
+
+[X_DTCOPY]SCURPATH  Storage: DRAM  Access: RW  : STRING[168] = Uninitialized
+
+[X_DTCOPY]SCURDEVPATH  Storage: DRAM  Access: RW  : STRING[188] = Uninitialized
+
+[X_DTCOPY]SORGPATHNAME  Storage: DRAM  Access: RW  : STRING[188] = Uninitialized
+
+[X_DTCOPY]IDEBUGWRTCTR  Storage: UNINIT_DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]DBG_WRT1TYP  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]T_DATATYPE  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]DBG_MSK  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]DBG_FLAG  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]IILLEGAL_IDX  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]SILLDATA  Storage: DRAM  Access: RW  : STRING[100] = Uninitialized
+
+[X_DTCOPY]SILLTERM  Storage: DRAM  Access: RW  : STRING[100] = Uninitialized
+
+[X_DTCOPY]SILL_PROG  Storage: DRAM  Access: RW  : STRING[36] = Uninitialized
+
+[X_DTCOPY]SERRPARAM  Storage: DRAM  Access: RW  : STRING[102] = Uninitialized
+
+[X_DTCOPY]SERRTEXT  Storage: DRAM  Access: RW  : STRING[102] = Uninitialized
+
+[X_DTCOPY]IMIN_IDX  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]IMAX_IDX  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]IILL_PR_IDX  Storage: DRAM  Access: RW  : INTEGER = Uninitialized
+
+[X_DTCOPY]BFIRSTDOASG  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]BFIRSTDIASG  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]BFIRSTUIASG  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]BFIRSTUOASG  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]BFIRSTGIASG  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]BFIRSTGOASG  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]BFIRSTAIASG  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+
+[X_DTCOPY]BFIRSTAOASG  Storage: DRAM  Access: RW  : BOOLEAN = Uninitialized
+

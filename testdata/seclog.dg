@@ -1,0 +1,49 @@
+Security Log for F333543 at 27-AUG-26 13:14:18 
+
+02-JUN-26 22:58 SEC -001 Security Config Mismatch
+02-JUN-26 23:04 SEC -001 Security Config Mismatch
+02-JUN-26 23:07 SEC -001 Security Config Mismatch
+02-JUN-26 23:25 SEC -001 Security Config Mismatch
+02-JUN-26 23:29 SEC -001 Security Config Mismatch
+02-JUN-26 23:30 SEC -001 Security Config Mismatch
+02-JUN-26 23:43 SEC -001 Security Config Mismatch
+04-JUN-26 23:19 SEC -001 Security Config Mismatch
+05-JUN-26 06:41 SEC -001 Security Config Mismatch
+06-JUN-26 03:58 SEC -001 Security Config Mismatch
+24-JUN-26 23:51 SEC -001 Security Config Mismatch
+25-JUN-26 01:03 SEC -001 Security Config Mismatch
+25-JUN-26 01:05 SEC -001 Security Config Mismatch
+25-JUN-26 02:31 SEC -001 Security Config Mismatch
+25-JUN-26 02:32 SEC -001 Security Config Mismatch
+30-JUN-26 00:45 SEC -001 Security Config Mismatch
+30-JUN-26 21:36 SEC -001 Security Config Mismatch
+30-JUN-26 21:44 SEC -001 Security Config Mismatch
+01-JUL-26 01:46 SEC -001 Security Config Mismatch
+14-JUL-26 00:32 SEC -001 Security Config Mismatch
+14-JUL-26 00:35 SEC -001 Security Config Mismatch
+16-JUL-26 04:05 SEC -001 Security Config Mismatch
+16-JUL-26 04:07 SEC -001 Security Config Mismatch
+16-JUL-26 04:11 SEC -001 Security Config Mismatch
+16-JUL-26 04:55 SEC -001 Security Config Mismatch
+16-JUL-26 04:57 SEC -001 Security Config Mismatch
+16-JUL-26 22:22 SEC -001 Security Config Mismatch
+16-JUL-26 22:24 SEC -001 Security Config Mismatch
+16-JUL-26 22:29 SEC -001 Security Config Mismatch
+16-JUL-26 22:51 SEC -001 Security Config Mismatch
+17-JUL-26 04:59 SEC -001 Security Config Mismatch
+17-JUL-26 20:10 SEC -001 Security Config Mismatch
+17-JUL-26 20:24 SEC -001 Security Config Mismatch
+24-JUL-26 20:50 SEC -001 Security Config Mismatch
+24-JUL-26 22:36 SEC -001 Security Config Mismatch
+24-JUL-26 22:38 SEC -001 Security Config Mismatch
+24-JUL-26 23:03 SEC -001 Security Config Mismatch
+03-AUG-26 23:34 SEC -001 Security Config Mismatch
+11-AUG-26 09:24 SEC -001 Security Config Mismatch
+26-AUG-26 08:47 SEC -001 Security Config Mismatch
+
+
+MAIN Security Log Filter:
+26-AUG-26 08:47:14  Task: SYIN logged error: SEC -001 occurred 1 times in 2147483.750000 seconds from 0.0.0.0
+
+
+COMM Security Log Filter is empty.

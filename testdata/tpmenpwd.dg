@@ -1,0 +1,305 @@
+<strong><font size=3>Read-Write Access</font><br><fontsize=2>(LEVEL7, LEVEL6, LEVEL5, LEVEL4, LEVEL3, SETUP, PROGRAM, OPERATOR)</font></strong>
+</pre><TABLE BORDER=1 width=100%> 
+<tr><th width=28% align=center><font size=+1>Top Level Menus</font></th><th width=28% align=center><font size=+1>Sub Level Menus</font></th><th width=20% align=center><font size=+1>Read-Write Access</font></th><th width=12% align=center><font size=+1>Soft Part ID</font></th><th width=12% align=center><font size=+1>Scrn ID</font></th></tr> 
+<TR>
+<TD align=center>UTILITIES</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1631,1");'>Home</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1631</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,153,1");'>Hints</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>153</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1463,1");'>iRCalibration</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1463</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1196,4");'>Robot Condition</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1196</TD><TD align=center>4</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,930,1");'>Prog Adjust</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>930</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,151,1");'>Program Shift</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>151</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,150,1");'>Mirror Image Shif</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>150</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,155,1");'>Tool Offset</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>155</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,191,1");'>Frame Offset</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>191</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,254,1");'>Angle entry shift</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>254</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1200,1");'>Group Exchg</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1200</TD><TD align=center>1</TD>
+
+<TR>
+<TD align=center>TEST CYCLE</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,69,1");'>Setup</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>69</TD><TD align=center>1</TD>
+
+<TR>
+<TD align=center>MANUAL FCTNS</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,138,2");'>Macros</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>138</TD><TD align=center>2</TD>
+
+<TR>
+<TD align=center>ALARM</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,18,1");'>Alarm Log</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>18</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,18,2");'>Motion Log</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>18</TD><TD align=center>2</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,18,3");'>System Log</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>18</TD><TD align=center>3</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,18,4");'>Appl Log</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>18</TD><TD align=center>4</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,18,6");'>Comm Log</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>18</TD><TD align=center>6</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,18,8");'>Haptic Log</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>18</TD><TD align=center>8</TD>
+
+<TR>
+<TD align=center>I/O</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,955,1");'>Cell Intface</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>955</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,992,1");'>Custom</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>992</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,98,1");'>Digital</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>98</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,97,1");'>Analog</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>97</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,99,1");'>Group</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>99</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,107,1");'>Robot</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>107</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,108,1");'>UOP</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>108</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,109,1");'>SOP</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>109</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,157,1");'>Interconnect</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>157</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,299,1");'>Link Device</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>299</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1111,1");'>Flag</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1111</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1062,1");'>EtherNet/IP</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1062</TD><TD align=center>1</TD>
+
+<TR>
+<TD align=center>SETUP</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,166,1");'>Prog Select</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>166</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1985,1");'>ZDT Client</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1985</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,68,1");'>General</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>68</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1087,1");'>Coll Guard</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1087</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,154,1");'>Frames</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>154</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,140,1");'>Macro</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>140</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,147,1");'>Ref Position</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>147</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,163,1");'>Port Init</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>163</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,181,1");'>Ovrd Select</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>181</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,31,1");'>User Alarm</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>31</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,456,1");'>Error Table</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>456</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1304,1");'>iPendant Setup</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1304</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1111,6");'>BG Logic</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1111</TD><TD align=center>6</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1337,1");'>Resume Offset</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1337</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,420,1");'>Resume Tol. </a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>420</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,197,1");'>Stroke limit</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>197</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1625,1");'>Haptic</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1625</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,195,1");'>Host Comm</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>195</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1216,1");'>ZDT EOAT Setup</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1216</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1193,1");'>Sys Dsn Tool</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1193</TD><TD align=center>1</TD>
+
+<TR>
+<TD align=center>FILE</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,74,1");'>File</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>74</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,253,1");'>File Memory</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>253</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,936,1");'>S/W Install</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>936</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1008,1");'>Auto Backup</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1008</TD><TD align=center>1</TD>
+
+<TR>
+
+<TR>
+<TD align=center>USER</TD><TD>&nbsp;</TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>37</TD><TD align=center>1</TD>
+
+<TR>
+<TD align=center>SELECT </TD><TD>&nbsp;</TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>71</TD><TD align=center>1</TD>
+
+<TR>
+<TD align=center>EDIT</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD>
+<TR>
+<TD align=center>DATA</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,23,1");'>Registers</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>23</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,148,2");'>Position Reg     </a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>148</TD><TD align=center>2</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1471,3");'>String Reg</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1471</TD><TD align=center>3</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,34,2");'>KAREL Vars</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>34</TD><TD align=center>2</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,34,3");'>KAREL Posns</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>34</TD><TD align=center>3</TD>
+
+<TR>
+<TD align=center>STATUS</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,32,2");'>Axis</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>32</TD><TD align=center>2</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,70,1");'>Version ID</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>70</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,173,1");'>Stop Signal</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>173</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,226,1");'>Exec-hist</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>226</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,174,1");'>Memory</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>174</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1196,3");'>Robot Condition</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1196</TD><TD align=center>3</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,152,1");'>Prg Timer</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>152</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,152,2");'>Sys Timer</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>152</TD><TD align=center>2</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,296,1");'>Condition</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>296</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,932,1");'>Program</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>932</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1827,1");'>Reminder</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1827</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1711,1");'>Power Consumption</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1711</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1621,1");'>Notifications</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1621</TD><TD align=center>1</TD>
+
+<TR>
+<TD align=center>4D GRAPHICS</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1388,1");'>4D Display</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1388</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,33,1");'>Position Display</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>33</TD><TD align=center>1</TD>
+
+<TR>
+<TD align=center>SYSTEM</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,34,4");'>Clock</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>34</TD><TD align=center>4</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,34,1");'>Variables</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>34</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,35,1");'>Master/Cal</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>35</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,66,1");'>OT Release</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>66</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,162,1");'>Axis Limits</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>162</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,34,6");'>Config</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>34</TD><TD align=center>6</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,290,1");'>Motion</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>290</TD><TD align=center>1</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,1133,1");'>DCS</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>1133</TD><TD align=center>1</TD>
+
+<TR>
+<TD align=center>USER2</TD><TD>&nbsp;</TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>190</TD><TD align=center>1</TD>
+
+<TR>
+<TD align=center>BROWSER</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TD>&nbsp;</TD><TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,381,1");'>Browser</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>381</TD><TD align=center>1</TD>
+
+<TR>
+
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,381,22");'>HMI Menu</a></TD><TD align=center>(1,1,1,1,1,1,1,1)</TD>
+<TD align=center>381</TD><TD align=center>22</TD>
+<TR>
+<TD>&nbsp;</TD><TD align=center><a href='javascript:genlink_url("current=menupage,381,23");'>Top Menu</a></TD><TD align=center>F1<br>(1,1,1,1,1,1,1,1)<br>F2<br>(1,1,1,1,1,1,1,1)<br>F3<br>(1,1,1,1,1,1,1,1)<br>F4<br>(1,1,1,1,1,1,1,1)<br>F5<br>(1,1,1,1,1,1,1,1)<br>F6<br>(1,1,1,1,1,1,1,1)<br>F7<br>(1,1,1,1,1,1,1,1)<br>F8<br>(1,1,1,1,1,1,1,1)<br>F9<br>(1,1,1,1,1,1,1,1)<br>F10<br>(1,1,1,1,1,1,1,1)<br></TD>
+<TD align=center>381</TD><TD align=center>23</TD>
+</TR></TABLE> 
+</font></body></html><pre>

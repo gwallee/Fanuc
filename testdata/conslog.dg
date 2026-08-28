@@ -1,0 +1,376 @@
+Console Monitor (comm)
+[ostkinit] TPWDOG_CHK $1000
+comm bus clock 65
+[sydiag] PPS monitoring start...
+[ksinitsk] syin continues
+[syin] enter
+[syinmpc] PCI setup
+[spinit] featuremod ptrs
+[syin] after spinit
+[syin] after osmktsk
+[dpinit] setting cur lang to NULL
+[dpinit] setting cur lang to DEFAULT     
+[vmicrepg_init] cacheing *pipe* 0x3fe5e220  0x0
+[DIAG]cpreadvr fails $10c
+[ksinitsk] 196 signaling event flag
+Console Monitor (main)
+[TPUC] Started
+{df} dma_wrt_buf @ 0x3fe09e80, size: 0x820
+[ksinitsk] syin continues
+[TPUC] Exit.
+{df} dma_rd_buf @ 0x3fe09660, size: 0x820
+[syinit] bootrom time: 10026 ms
+main bus clock 133
+ [EXIT] Task 164 exiting with code 0
+main PCB version 4
+
+[drideata] Journaling is enabled for B_DRV
+[syinit] ** COLD START **
+[DSFL] COMM V8.00 dfdevtbl@0x110172B8
+[DSFL] MAIN V8.90 PCMCIA-ATA USB RD@0x0 (-256) dfdevtbl@0x3FE4CD58
+[syinit] System Version V9.40526     12/12/2025
+[ERLOG] Waiting for UIF to start up
+[syinisb0] Load table id=0x36 typ=0x1d baud=0x34
+[syinisb0] osxsndpkt F_INIT packet 0x0
+[syinisb0] F_INIT complete 0x0
+[ostkinit] ID $36 type 1d baud 34 version p
+[syinit] ** COLD START **
+[ostkinit] Set g_wired = TRUE
+[ostkinit] TP Baud Rate 115200
+[ostkinit] sending F_WRIT to 244
+[ostkinit] TPWDOG_CHK+2 $1000
+[ostkinit] sending F_READ to 244
+{comm} got start mode 2
+[spinit] featuremod ptrs
+[dpinit] setting cur lang to NULL
+[dpsetlng] setting cur lang to DEFAULT     
+[tppascon_config] wait for EVB_SPINITDONE
+[syinmpc] setting LANG_SUFFIX to eg
+[syinmpc] setting cur lang to DEFAULT     
+[syinit] start at 26-AUG-26 08:46:50 
+[sycfgmen] cfgmenu_p 0x845c5fe8
+[ostkey] F_INIT from MTSL
+[sycfgmen] syi2cmem stat 0, [0]=0, [1]=e0, [2]=e4
+[sycfgmen]redirecting MED: to UD1:
+[syinisb0] tpid check ltp = 0x11fdf000, tpid = 54
+VMGR for R-30iB V8.30
+[syinmpc] received new seclvl config
+[vminit] Loading 2 temp 262066416 remaining of 263087484
+[vmshadow_periodic] Normal power shutdown state = 0
+[vmshadow_periodic] def2isr status = 0x0
+[vminit_loadctx] Loaded FRB:\S-SYSTEM.PRV only
+[vminit_loadctx] Loaded FRB:\S-INTERN.PRV only
+[vminit_loadctx] Done Loading Time = 3556282us
+[vminit] after 2 temp 259717172 remaining of 263087484, took 3554ms
+[set_load_device] stat good device = UD1:, BMON 
+[set_load_device]setting $LOAD_DEVICE to UD1:
+
+{comm} SYIN_VMGR_READY_C
+[TCPIP] IP Forwarding Disabled
+[TCPIP] Hardware multicast filtering enabled
+[TCPIP] Classless addressing enabled
+[TCPIP]lock_p 0x116967c4 0x11696ad0 0x11696cdc 0x11696ee8 0x116970f4 0x11697300 0x1169750c 0x11697718
+[TCPIP] IP Forwarding Disabled
+[TCPIP] Hardware multicast filtering enabled
+[TCPIP] Classless addressing enabled
+[TCPIP]lock_p 0x12065a8 0x12067b4 0x12069c0 0x1206bcc 0x1206dd8 0x1206fe4 0x12071f0 0x12073fc
+[NEC] stats : fe20c6c
+ETH_FLTR : 7 137 138 0 0 0
+ETH_FLTR : 7 137 138 0 0 0
+[qoriq] Uploading ucode vers 106.4.14, size 0x7ac0
+[qoriq] phy sysvars, stat1 0, stat2 0, speed 2, duplex 1
+HOSTENT[22].H_ADDR 192.168.1.10, 0xc0a8010a
+HOSTENT[23].H_ADDR 192.168.1.10, 0xc0a8010a
+TMI_SNMASK[3] 255.255.255.0, 0xffffff00
+Ethernet Address qoriq: 00:e0:e4:66:be:f7
+[qoriq] mode 3006, status 2000, spd=a
+[qoriq] eth_open stat 0x0
+ll_config : 0x0
+ll_route : 0x0
+[syinit] spmk2tsk(HTCG), status = $0
+[syinit] spmk2tsk(HTTP), status = $0
+[PMON] PC Monitor Task
+[rpcm] sending ping packet to 16 87
+[cmt_main] Comet server extension starting
+[TX] Start
+[HTCG] CGTP WEB Server starting
+[syinisb0] Graphic 1
+[HTTP] WEB Server starting
+[pmon] error read dblovrd_enb
+Web Enhancements installed
+[dpsetlng] setting cur lang to DEFAULT     
+[tppascon_config] wait for EVB_SPINITDONE
+Web Enhancements installed
+[PMON] Connecting to COMET
+[dpimage_restctx] Loading DEFAULT      dictionaries pool_avail = 258425384
+[PMON] Connect ID is 3B7BABB8
+[cmt_main_init] PMON connected $3b7babb8
+g_stRecvDscp : 10f6c400, g_pPhyRecvBuff : 10f78dc0
+[NEC] stats : 10feb1e4
+ETH_FLTR : 7 137 138 0 0 0
+[RSEL] INIT 7f000001
+[si87] sending ping packet to 1 171
+[rpcm] create TCP/IP RPC service
+[HTCG] ready for connections, calling HCFC_STARTUP_C
+[HTTP] ready for connections
+[svctcp_create] RPCMAIN Server ready for connections on 3002
+[rpcm] call softparts to register service
+[rpcdaqs] register RPCDAQS service
+[ETH] Quicc0 not configured 43006c
+[rpcm] wait for connection
+[Quiccrcv] Error Quicc0 didn't come up 43006c
+[QRINTR] sending 10f6359c 10f6359c
+[QKER] received isrcomm addr 0x10f6359c
+[ETH] Quicc1 Host IP: a0506a4    [10.5.6.164]
+[syinmpc] setting LANG_SUFFIX to eg
+[syinmpc] setting cur lang to DEFAULT     
+[ETH] Quicc1 Subnet Mask: ffffff00 [255.255.255.0]
+[ETH] Router Name: ROUTER
+[ETH] Router IP: a0506fe   [10.5.6.254]
+[ENET] FCC2 throttle disabled
+Ethernet Address Quicc1: 00:e0:e4:66:be:f6
+[ETH] switch to full duplex 1
+[PSMR] 1 14000080
+Ethernet Address necd: 00:e0:e4:66:be:f8
+ll_config : 0x0
+[ostksock_timeout] g_ce_mode 1
+[ostksock_timeout] F_SHUTDOWN packet sent to MTSL
+[mtcomslv] Send BOOT_END
+[ostksock_timeout] F_SHUTDOWN packet received from MTSL
+[mtcomslv] Wait 60 seconds for F_WAIT from TKEY
+[ostksock_create] Socket 6 binding to IP port # 60004
+[ostksock_create] T-X IP address <001.001.000.011>
+[ostksock_timeout] F_WAIT packet sent to MTSL
+[ostkey] F_INIT from MTSL
+[mtcomslv] got F_WAIT pkt from TKEY 6ms
+[dpimage_restctx] Ref time cached:120ms nocache:620ms, Numfiles = 282 Time 2164ms
+[dpimage_restctx] Dictionaries loaded pool_avail = 257021800
+[dpsetlng] setting cur lang to DEFAULT     
+[tppascon_config] wait for EVB_SPINITDONE
+[syinmpc] setting LANG_SUFFIX to eg
+[SYINISB0] Loading main system softparts please wait ...
+[syinmpc] setting cur lang to DEFAULT     
+[ostksock_recvfrom] starting TP watchdog
+[syinmpc]785,spmktsk(SID_WOLFSSH) 380001
+[DHCP] start, tid 305
+[RSEL] Ethernet event flag received.
+[CIP] CIP Messaging Server V8.20P/03 @0x10281e60
+[TELNET] start
+[TELNET] debug address 10ebc0dc
+[TELNET] Ethernet event flag received.
+[FTP] FTP Interface V5.10
+[FTP] FTP debug addr = 10eb2bc8
+[FTP] Ethernet event flag received.
+[SKMG] Socket Messaging Interface V5.22 @0x1032fb38
+[PRXY] Proxy Server Starting
+[RDM] Robot Discovery Method V6.2003 @0x102f7230
+[SMTP] Ethernet event flag received.
+[SNTP] V6.3126 @0x1032c5b0
+[PRXY] HTTP Proxy Server ready for connections on 8080
+[syinit] spmk2tsk(FTP1), status = $0
+[syinit] spmk2tsk(FTP2), status = $0
+[FTP] FTP Interface V5.10
+[FTP] FTP debug addr = 10e85e48
+[FTP] Ethernet event flag received.
+[FTP] FTP Interface V5.10
+[FTP] FTP debug addr = 10e7dc38
+[FTP] Ethernet event flag received.
+[PXPMON] PMON Proxy Server ready for connections on 60005
+[PXRPCM] RPCM Proxy Server ready for connections on 60009
+[SNTP] getsys temp_ip: 0xa05069a
+[RDM] Robot Discovery Method ready on port 60007
+[rosip] Entering baseinit, waiting on packet rate =2
+[HTTC] COMM WEB Server starting
+[syin] spmktsk(TID_HTTC), status = $0
+[rcmsrv] ZDT COMM Server 0x102f5744
+[COMM HTTC] ready for connections
+[SYSINISB0] spspload reference time 44355 ms, This Time 6648ms
+[vminit] Loading 3 temp 271062944 remaining of 277140836
+[vminit_loadctx] Loading all files (VMGR/PVAR Suspended)
+[VMINIT_LOADCTX] Resume VMGR/PVAR
+[vminit_loadctx] Done Loading Time = 1463569us
+[vmshadow_cleanup] Redirected from task 187 to TID_VMSC
+[vmimage_bakfile] FRB:s-numreg.PRV at 26-AUG-26 08:47:04  (322)
+[vmimage_bakfile] FRB:s-posreg.PRV at 26-AUG-26 08:47:04  (322)
+[vmimage_bakfile] FRB:tpfdef.PRV at 26-AUG-26 08:47:04  (322)
+[vmimage_bakfile] FRB:s-system.PRV at 26-AUG-26 08:47:04  (322)
+[sfcgtp] request PMON connect to 1.1.0.11:60005
+[sfcgtp] ip 101000b, port ea65
+[PMON] Connecting to <001.001.000.011:60005>
+[PMON] Sent iPendant socket 33 to TKEY
+[ostkey] recevied iPendant socket 33 from PMON
+[PMON] Connect ID is 3B7B91B0
+[PMEV_CONNECT_ID]S501 is not ordered
+[ostkey_ftpdevice] Connect FTP 
+[PXTLNT] rosip not initialized
+[vminit] after 3 temp 268219148 remaining of 277140836, took 9816ms
+[txproc]'H': TW
+[TXPROC] version of iPendant V9.4526
+[TXPROC] core version of iPendant V9.40P/83
+[TXPROC]'G' received
+[TXPROC]'G' NETF_VER:1.2.0.0
+[TXPROC]'G' OS_VER:01.55/7.0
+[syin]status after spmktsk = 380001
+[Syin] Mobo start 0x380001
+[SYINISB)] total time 22556
+[SYINISUB] Saving user device UT1:
+[syinit] : calling iosetup
+[vcam] wake up
+[vcam] oschggrp(111, 4, 0) 0x00000000
+[vcamvstk_get_sysvars] vmgtsysv('$VSTK_TRIG') 0x00100006
+Loading... shipl.ld0 (address:0x94200000 size:0x2000)
+[vcamdrvr_init_cxp] CXP status(0) : 00000000
+Loading... ps2o.ld0 (address:0x95000000 size:0x100000)
+[CIP] CIP I/O Server 0x106a2bd0
+[EIPXML] Loading FRS:\EIPCFG.XML...
+[vcamdrvr_init_cxp] CXP status(1) : 00000000
+[EIPXML] Loading FRS:\EIPCFG.XML...
+[CIP] CIP I/O Consumer V8.20P/03 @0x102800e0
+[CIP] CIP I/O Producer V8.20P/03 @0x102a3f00
+[CIPP] FAST UDP ENABLED
+CMND_SET_GRPNUM_TO_SLV1
+[ionslc] Gp0/1, E, Cate:C2/3F, PCB:02/02
+IOBLDMLS: RSTT failed
+[ripini] Initializing
+[ripini] Found 0 0xa0506a4 10.5.6.164
+[ripini] Subnet Mask 255.255.255.0
+[ripini] Sending init packet 1, 392, 0x136b51a8
+[rosip] Initialization not successful
+pmgr-sector set 100
+[syinisub] Memory manager started
+[vmfndvar] [*SYSTEM*]$AUTOMODE_OV  truncated to $AUTOMODE_OV
+[vmfndvar] [*SYSTEM*]$AP_AUTOMODE_DO truncated to $AP_AUTOMODE
+[syinit] mosetvpr status <0>
+[SMTP] $SYS_TIME not available
+[ERLOG] continue stat = 0x0
+[rcmplg] RCMCFG_BASE $11fdd3f0, rcmcfg_p $139d400c
+[rcmutl] Remote Connect Manager V1.2@0x10a7bcec
+[syinisub] VMGR called to register program with MEMO
+[rcmlib_parseurl] Added forward slash
+[rcmlib_parseurl] Error not in format method
+[vmshadow_cleanup] Redirected from task 72 to TID_VMSC
+[TPGL_InstID] allocated instance 0 1 0 255 
+[sytimque]: trigger loaded 0
+[TPGL_InstID] allocated instance 1 2 0 255 
+[CHND] Low Priority Condition Handler started.
+[vcamdrvr_init_cxp] CXP status(2) : 00000000
+[TPGL_InstID] allocated instance 2 3 0 255 
+[CHND] init done. starting scanning
+syopinsp-Jog in Auto used: 1
+[SYINIT] OCTK started 380001
+"cold1.com for V9.40P/83 (FD V9.40458)"
+"menu.com for V9.40P/83 (FD V9.40458)"
+"menucus.com complete"
+"menu.com complete"
+[SPRUNCMDF] status = 10B; "RUNTSK SID_HTTP" : COLD1.COM
+[spruncmdf] +++ no abort
+[ASBN] started
+"cold1cus.com complete"
+[KCL] failed to locate DEV_KCL_C but continuing
+"cold1.com complete"
+[vdat] wake up
+[vexe] wake up
+[vlog] oschggrp(115, 4, 0) $00000000
+[vtrn] wake up
+[vxmn] wake up
+[vzdt] oschggrp(341, 4, 0) $00000000
+Failed to initialize Publisher (status 0x80340000).
+[vdat] oschggrp(112, 4, 0) 0x00000000
+[vexe] oschggrp(113, 4, 0) 0x00000000
+[vtrn] oschggrp(136, 4, 0) 0x00000000
+[vxmn] VXMNPKT_T 132, PKT_SIZ7 272
+[SYINISUB] restored user device UT1:
+[vdat] $vis_homing vmsetlim error $100006
+[vxmn] oschggrp(114, 4, 0) 0x00000000
+[SYINISUB] Saving user device UT1:
+[vdat] $vp2n_cfg vmsetlim error $100006
+[DEBUG] Entering moinit
+[vdat] vision pool size = 0
+[sfmdest] null_flg_p:11c0d7dc
+[PMPT] Not Required
+[SRIF] Not Need
+[miinit][1] posted init PKT <133ACC78> to task<72> (0)
+[miinit] Mount $SPL_MOR_GRP[1] fail. stat = 100006 
+ [mpinit] initialize mb_fp
+[mpinit] after mpdyinit
+[mpinit] Mount $SPL_MOR_GRP[1] fail. stat = 100006 
+[mpinit] ossndpkt <0>
+[mpinit] done mpinit
+[mfinit] start
+[mfinit] normal main svcard mode
+[mfinit] brd=1: aux axis board not found
+[mfinit] brd=2: aux axis board not found
+[syin]status after mktsk = 0
+[tbjtkini] finish wake up stat = 0
+[ottask] eoat_p fff066c
+[nectkini] finish wake up  stat = 0
+[moinit] done
+[mfinidsp] --- enable FSSB ATR init ---
+[mfinidsp] --- start ITP ---
+[miinit] done 
+[mfinidsp] waiting for SSTB...
+[mfinidsp] all SSTB become 1
+[mfredampid] [d:1 da:1 g:1 ga:1] amp_svm:A06B-6400-H102        amp_psm:                     (ps:0) amp_svmsrl:Y23513840   amp_psmsrl:            amp_svmver:9H1601.0 amp_psmver:9G0608.0
+[mfredampid] [d:1 da:2 g:1 ga:2] amp_svm:A06B-6400-H102        amp_psm:                     (ps:0) amp_svmsrl:Y23513840   amp_psmsrl:            amp_svmver:9H1601.0 amp_psmver:9G0608.0
+[mfredampid] [d:1 da:3 g:1 ga:3] amp_svm:A06B-6400-H102        amp_psm:                     (ps:0) amp_svmsrl:Y23513840   amp_psmsrl:            amp_svmver:9H1601.0 amp_psmver:9G0608.0
+[mfredampid] [d:1 da:4 g:1 ga:4] amp_svm:A06B-6400-H102        amp_psm:                     (ps:0) amp_svmsrl:Y23513840   amp_psmsrl:            amp_svmver:9H1601.0 amp_psmver:9G0608.0
+[mfredampid] [d:1 da:5 g:1 ga:5] amp_svm:A06B-6400-H102        amp_psm:                     (ps:0) amp_svmsrl:Y23513840   amp_psmsrl:            amp_svmver:9H1601.0 amp_psmver:9G0608.0
+[mfredampid] [d:1 da:6 g:1 ga:6] amp_svm:A06B-6400-H102        amp_psm:                     (ps:0) amp_svmsrl:Y23513840   amp_psmsrl:            amp_svmver:9H1601.0 amp_psmver:9G0608.0
+[SYINISUB] Checking $repower.$flag
+[syinisub] TICK_OFFSET 11fdd374 to 10c
+[quiccrcv] TICK_OFFSET 117dc374 to 10c
+[vmshadow_cleanup] Redirected from task 72 to TID_VMSC
+STRT_NSLC 0
+[CIPCONCB] Fast UDP in use (0)
+[syinisub] TPID = 0x36 !!!!!!!!!!!!!!!!!!!!!!!!!
+[syinit] waiting for EVF_ENB_PWF...
+[syinit] osconflg(EVF_ENB_PWF) $16a
+[syinit] oswaiflg(EVF_ENB_PWF) $0
+[syinit] syrset(), status = $0
+[syinisub] Starting C shell 0x0
+[Shxsp] Ref positions in use
+[syinisub]starting shell $0
+[Shxsp] Initialize extension
+"cold2.com for V9.40P/83 (FD V9.40458)"
+"cold2cus.com complete"
+"cold2.com complete"
+[syinisub] Ready to run ATSHELL
+Ready to run SHELL
+[syinisub] Start Karel shell 0x0
+[SYINISUB] restored user device UT1:
+[syinit] Setting VMGR for in-line calls
+[syinit] end
+[set_load_device] stat good device = MC:, BMON 
+[set_load_device]setting $LOAD_DEVICE to UD1:
+[vcamdrvr_init_cxp] CXP status(3) : 00000000
+[symonutl] Getting data (0, 1)
+[vmshadow_cleanup] Redirected from task 72 to TID_VMSC
+SYINISUB TOTAL TIME 10721
+[SYINISUB] restored user device UT1:
+[TPSPART] Found KAREL ATMSKCHG 200
+[TPSPART] Found KAREL EOATMENU 216
+[TPSPART] Found KAREL ATPRGADJ 930
+[TPSPART] Found KAREL ATWAITRL 931
+[TPSPART] Found KAREL ATPRSCRN 932
+[TPSPART] Found KAREL ATPASWRD 935
+[TPSPART] Found KAREL ATINSTAL 936
+[TPKSINIT] dname -K943- not found devstat = 0 cfg $1337a3f8
+[TPSPART] Found KAREL ATCELLIO 955
+[TPSPART] Found KAREL ACTPSS 958
+[TPKSINIT] dname -K972- not found devstat = 0 cfg $1337a108
+[TPKSINIT] dname -K973- not found devstat = 0 cfg $1337a04c
+[TPSPART] Found KAREL ATSOFTPA 992
+Result size = 596
+[vmfndvar] [*SYSTEM*]$SYSTEM_TIMER truncated to $SYSTEM_TIME
+[syinmpc] received new password config
+[tpmains] Waiting at 35150ms
+[sfstpsl] init $SEL_HOTSTRT
+[tpmains] ready at 26-AUG-26 08:47:24 
+[tpmains] Ready at 35206ms Total Startup Time ~ 42 seconds
+[syin]status after mktsk = 0
+[sfstpsl] init $SEL_HOTSTRT
+[tpmains] ready at 26-AUG-26 08:47:24 
+[vcamdrvr_init_cxp] CXP status(4) : 00000000
+[vcamdrvr_init_cxp] power off
+[vcamdrvr_initialize] time : 13308.687500ms
+[vuifblock_add_vision_commands] get_root_vision_device()=$750062

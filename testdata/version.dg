@@ -1,0 +1,220 @@
+F Number: F333543
+VERSION : HandlingTool         
+$VERSION: V9.40526     12/12/2025
+DATE:     27-AUG-26 13:14 
+
+VERSION INFORMATION::
+SOFTWARE:              ID:
+HandlingTool          7DF5/83
+S/W Serial No.      : 7579620001
+Controller ID       : 6733557   
+Robot No.           : F333543
+Manufacturing ID    : 
+R-1000iA/80F, HandlingTool    
+R-1000iA/80F          V9.40P/83 
+Servo Code          : V15.02    
+Cart. Mot. Parameter: V3.00
+JNT. Mot. Parameter : V3.00
+DCS                 : V4.5.15
+Stop pattern        : A
+Software Edition No.: V9.40P/83 
+Update Version      : None
+Customization Ver.  : None
+Root Version        : V9.40526  
+Boot MONITOR        : V9.40P/32
+Teach Pendant       : 7D0A/01P
+Browser Plugins     : V9.40526
+TP Core Firmware    : V9.40P/83
+TP Operating System : 01.55/7.0
+HTML5 Browser       : 1.2.0.0
+FPGA Version        : 15
+Media from FRA        12/18/2025
+
+CONFIG::
+FEATURE:              ORD NO:
+HandlingTool          H552
+English Dictionary    H521
+4D Standard           R782
+Analog I/O            H550
+Angle Shift           J614
+Auto Software Update  ATUP
+Automatic Backup      J545
+Background Editing    J616
+Camera I/F            VCAM
+CnrRndImp             CRIM
+Common calib UIF      CUIF
+Condition Monitor     J628
+Control Reliable      CNRE
+DHCP                  R526
+Data Acquisition      R631
+Diagnostic log        RSCH
+Displaying License    LICE
+Document Viewer       DOCV
+Dual Check Safety UIF DCSU
+Enhanced UIF          R869
+Enhanced User Frame   J604
+Ext. DIO Config       EIOC
+Extended Error Log    R542
+Extended User Frames  R696
+External DI BWD       ESET
+FCTN Menu Save        J516
+FTP Interface         J716
+GigE Interface        R681
+Group Mask Exchange   MASK
+HTTP Proxy Svr        PRXY
+High-Speed Skip       J627
+Host Communications   HOCO
+Hour Meter            J513
+I/O Interconnect 2    J542
+Incr Instruction      J510
+Incremental Jog       J637
+KAREL Cmd. Language   J650
+KAREL Run-Time Env    J539
+Kernel + Basic S/W    H510
+License Checker       LCHK
+LogBook(System)       OPLG
+MACROs, Skip/Offset   J503
+MH Core               MHCR
+MMR Motion log        PSLG
+MechStop Protection   MCSP
+Mirror Shift          J506
+Mixed logic           J554
+Mode Switch           MDSW
+Motion Diag. Core     MDCO
+Motion Optm. Core     OPCO
+Motion Profiler       MPRO
+Motion logger         R637
+Multi-Tasking         J600
+PCM function          PCMF
+Position Checking     R000
+Position Registers    J514
+Print Function        J507
+Prog Num Selection    J515
+Program Adjust        J517
+Program Shift         J505
+Program Status        PRST
+Program Viewer        J697
+RDM Robot Discovery   FRDM
+Realtime Freq Anlys   FREQ
+Remote Conn Standard  RMCN
+Robot Servo Code      H930
+SNPX basic            SNBA
+SNTP Client           R610
+Shift Library         SHLB
+Shift and Mirror Lib  SMLB
+Socket Messaging      R636
+TCP Auto Set          J520
+TCP/IP Interface      HTCP
+TMILIB Interface      TMIL
+TP Firmware           R789
+TP Menu Accounting    TPAC
+TPTX                  TPTX
+Telnet Interface      TELN
+Tool Offset           J509
+Torque Simulator I/F  J882
+Touch Panel           R781
+Trouble Diag. & Prev. J958
+Tutorial              TUTO
+USB port on iPendant  J957
+USR EVNT              UEVT
+Unexcepted motn Check UECK
+User Frame            UFRM
+VCalibration Common   VCCM
+Vision Core           VCOR
+Vision Library        VIPL
+Vision SP CSCX        CSCX
+Vision SP CSGE        CSGE
+Vision SP CSUI        CSUI
+Web Plus              WEBP
+Web Server            HTTP
+Web Svr Enhancements  R626
+ZDT Application       R882
+ZDT EOAT Setup        ATUI
+iPendant              CGTP
+iPendant Grid Display IGUI
+iPendant Setup        IPGS
+iRCalib. Standard     IRCL
+iRDiag Core           DGCO
+R-1000iA/80F          H661
+ADV-CP Path Ctrl      R806
+ADV-CP Speed Ctrl     R805
+Advanced EIP ADP Pkg  R860
+Alarm Cause/Remedy    R665
+AutoSingularityAvoidM R512
+Collision Guard       R534
+Collision Guard Pack  J684
+Constant Path         R663
+Cycle Time Priority   J523
+DCS Pos./Speed check  J567
+Ethernet/IP Adapter   R784
+Ethernet/IP EDA       R822
+FRA Params            R650
+HMI Device (SNPX)     R553
+Jog in Auto Mode      R694
+Math Function         J593
+Motion Interface      R583
+Motion Package        R809
+NRTL                  J547
+Online Help           R664
+PC Remote iPendant    R850
+Persistent Strg       NVDT
+ROS Ethernet Packets  R603
+Remote iPendant       R843
+Singularity Avoidance R792
+System Design Tool    J738
+iPendant Haptic       R848
+64MB DRAM             D064
+64MB FROM             F064
+Auto SingularityAvoid RTSA
+Cell I/O              CLIO
+Commet set            SICM
+Common shell          R645
+Common shell core     CMSC
+Common softpanel      CMSP
+Common style select   STYL
+Corner Region         R654
+Cycle time Opt.       CTOP
+DCS Pos./speed common DCSC
+Demo Control          R769
+Email Client          JNN7
+Enhanced Rob Serv Req ORSR
+Enhanced T1 Mode      R680
+Ethernet/IP I/O Adp.  R538
+HapticMotion          HPMO
+Include Remote TP     JCGT
+Linear Distance       R633
+MR Standard           MRST
+Max Speed             R634
+OPC-UA                OPCU
+OPT TP Ins            OPIS
+Process Speed         R644
+Requires CP           CPRQ
+Robot Library Setup   RLCM
+Robot Service Request SRSR
+Servo Schedule        SVSH
+Soft Limit            SLMT
+Sys Dsn Menu          SMNU
+Sys Dsn Tool          SDST
+Trig Function         TRGM
+
+CONFIG2::
+DEMO. FEATURE:        ORD NO:
+
+MOTOR::
+    GR: AX:     MOTOR ID AND INFO:
+     1   1     aiSR30/3000 80A H1 DSP1-S1
+     1   2     aiSR30/3000 80A H2 DSP1-S2
+     1   3     aiSR30/3000 80A H3 DSP1-S3
+     1   4       aiS8/4000 40A H4 DSP1-S4
+     1   5       aiS8/4000 40A H5 DSP1-S5
+     1   6       aiS8/4000 40A H6 DSP1-S6
+
+SERVO::
+GROUP: AXIS:  SERVO PARAM ID:
+     1   1    P01.05
+     1   2    P01.05
+     1   3    P01.05
+     1   4    P01.05
+     1   5    P01.05
+     1   6    P01.05
+

@@ -1,0 +1,43 @@
+/PROG  _SET_OFFS
+/ATTR
+OWNER		= MNEDITOR;
+COMMENT		= "Set Offset";
+PROG_SIZE	= 425;
+CREATE		= DATE 19-07-11  TIME 10:03:24;
+MODIFIED	= DATE 19-07-11  TIME 10:03:24;
+FILE_NAME	= ;
+VERSION		= 0;
+LINE_COUNT	= 15;
+MEMORY_SIZE	= 769;
+PROTECT		= READ_WRITE;
+TCD:  STACK_SIZE	= 0,
+      TASK_PRIORITY	= 50,
+      TIME_SLICE	= 0,
+      BUSY_LAMP_OFF	= 0,
+      ABORT_REQUEST	= 0,
+      PAUSE_REQUEST	= 0;
+DEFAULT_GROUP	= 1,*,*,*,*;
+CONTROL_CODE	= 00000000 00000000;
+LOCAL_REGISTERS	= 0,0,0;
+/APPL
+
+AUTO_SINGULARITY_HEADER;
+  ENABLE_SINGULARITY_AVOIDANCE   : TRUE;
+/MN
+   1:  $SSR.$STEPSTMTTYP=1 ;
+   2:   ;
+   3:  OFFSET CONDITION PR[60:User Offset]    ;
+   4:  TOOL_OFFSET CONDITION PR[61:Tool Offset]    ;
+   5:   ;
+   6:  R[99:*temp]=AR[4]    ;
+   7:   ;
+   8:  PR[R[99],1]=AR[1]    ;
+   9:  PR[R[99],2]=AR[2]    ;
+  10:  PR[R[99],3]=AR[3]    ;
+  11:  PR[R[99],4]=0    ;
+  12:  PR[R[99],5]=0    ;
+  13:  PR[R[99],6]=0    ;
+  14:   ;
+  15:  $SSR.$STEPSTMTTYP=3 ;
+/POS
+/END

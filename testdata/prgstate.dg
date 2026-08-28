@@ -1,0 +1,1733 @@
+F Number: F333543
+VERSION : HandlingTool         
+$VERSION: V9.40526     12/12/2025
+DATE:     27-AUG-26 13:14 
+
+TASK STATES:
+
+1     ATCELLIO RUNNING @ 477 in MAIN of ATCELLIO
+
+******  History Data  ******
+Routine depth: 1  Routine: MAIN                                
+Line:   477       Program: ATCELLIO                              Type: PC    
+
+Routine depth: 0  Routine: ATCELLIO                            
+Line:   603       Program: ATCELLIO                              Type: PC    
+
+2  ZDTMSGTYPES status = ABORTED
+
+******  History Data  ******
+Routine depth: 0  Routine: ZDTMSGTYPES                         
+Line:   604       Program: ZDTMSGTYPES                           Type: PC    
+
+3     USR_EVT2 status = ABORTED
+
+******  History Data  ******
+Routine depth: 0  Routine: USR_EVT2                            
+Line:   223       Program: USR_EVT2                              Type: PC    
+
+4       PSCOLD status = ABORTED
+
+******  History Data  ******
+Routine depth: 0  Routine: PSCOLD                              
+Line:    93       Program: PSCOLD                                Type: PC    
+
+5     SYRSRUTL status = ABORTED
+
+******  History Data  ******
+Routine depth: 0  Routine: SYRSRUTL                            
+Line:    63       Program: SYRSRUTL                              Type: PC    
+
+6      ATSHELL RUNNING @ 1069 in ATSHELL of ATSHELL
+
+******  History Data  ******
+Routine depth: 0  Routine: ATSHELL                             
+Line:  1069       Program: ATSHELL                               Type: PC    
+
+7      SWIMSET status = ABORTED
+
+******  History Data  ******
+Routine depth: 0  Routine: SWIMSET                             
+Line:   348       Program: SWIMSET                               Type: PC    
+
+
+PROGRAM STATES:
+-BCKED2-      TP    
+Task: no   
+Size:  132  
+Lines:    0  
+Program name:    -BCKED2-  
+Comment:         
+Program size:    132 bytes
+Created time:    06-JUN-26 03:59 
+Last modified:   06-JUN-26 03:59 
+Allocated size:  376 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+-BCKED8-      TP    
+Task: no   
+Size:  132  
+Lines:    0  
+Program name:    -BCKED8-  
+Comment:         
+Program size:    132 bytes
+Created time:    02-JUN-26 22:57 
+Last modified:   02-JUN-26 22:57 
+Allocated size:  376 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+-BCKED9-      TP    
+Task: no   
+Size:  132  
+Lines:    0  
+Program name:    -BCKED9-  
+Comment:         
+Program size:    132 bytes
+Created time:    02-JUN-26 22:57 
+Last modified:   02-JUN-26 22:57 
+Allocated size:  376 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+-BCKEDT-      TP    
+Task: no   
+Size:  132  
+Lines:    0  
+Program name:    -BCKEDT-  
+Comment:         
+Program size:    132 bytes
+Created time:    13-AUG-26 16:49 
+Last modified:   13-AUG-26 16:49 
+Allocated size:  376 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+AAVMFREEPOS   VR    
+Task: no   
+Size:    0  
+Vars:     3  
+Types:     0  
+Program name:    AAVMFREEPOS  
+Comment:         
+Program size:    0 bytes
+Created time:    00-0-80 00:00   
+Last modified:   00-0-80 00:00   
+Allocated size:  244 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        0
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+AAVMMAIN      PC    
+Task: no   
+Size: 17771  
+Vars:    82  
+Types:     0  
+Program name:    AAVMMAIN  
+Comment:         
+Program size:    17771 bytes
+Created time:    02-JUN-26 22:59 
+Last modified:   02-JUN-26 22:59 
+Source file:     FRS:AAVMMAIN.PC
+Allocated size:  20514 bytes
+Protection:      OFF
+Stack size:      500 words
+Priority:        50
+Time slice:      256
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+Checksum:        42344
+
+ATERRJOB      VR    
+Task: no   
+Size:    0  
+Vars:     1  
+Types:     0  
+Program name:    ATERRJOB  
+Comment:         
+Program size:    0 bytes
+Created time:    00-0-80 00:00   
+Last modified:   00-0-80 00:00   
+Allocated size:  308 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        0
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+BICSETUP      VR    
+Task: no   
+Size:    0  
+Vars:     1  
+Types:     0  
+Program name:    BICSETUP  
+Comment:         
+Program size:    0 bytes
+Created time:    00-0-80 00:00   
+Last modified:   00-0-80 00:00   
+Allocated size:  244 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        0
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+CBPARAM       VR    
+Task: no   
+Size:    0  
+Vars:    44  
+Types:     0  
+Program name:    CBPARAM  
+Comment:         
+Program size:    0 bytes
+Created time:    00-0-80 00:00   
+Last modified:   00-0-80 00:00   
+Allocated size:  244 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        0
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+COMSET        PC    
+Task: no   
+Size: 17527  
+Vars:    23  
+Types:     0  
+Program name:    COMSET  
+Comment:         
+Program size:    17527 bytes
+Created time:    02-JUN-26 22:50 
+Last modified:   02-JUN-26 22:50 
+Source file:     PRODUCT\HTTPD\COMSET.PC
+Allocated size:  20349 bytes
+Protection:      OFF
+Stack size:      1000 words
+Priority:        50
+Time slice:      256
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+Checksum:        52193
+
+CRXLIB        VR    
+Task: no   
+Size:    0  
+Vars:     3  
+Types:     0  
+Program name:    CRXLIB  
+Comment:         
+Program size:    0 bytes
+Created time:    00-0-80 00:00   
+Last modified:   00-0-80 00:00   
+Allocated size:  1460 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        0
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+GET_HOME      PC    
+Task: no   
+Size: 1767  
+Vars:    17  
+Types:     0  
+Program name:    GET_HOME  
+Comment:         Get Home Pos
+Program size:    1767 bytes
+Created time:    02-JUN-26 22:50 
+Last modified:   02-JUN-26 22:50 
+Source file:     PRODUCT\CMSHCORE\GET_HOME.PC
+Allocated size:  2316 bytes
+Protection:      OFF
+Stack size:      500 words
+Priority:        50
+Time slice:      256
+Busy lamp:       1
+Ignore abort:    3
+Ignore pause:    7
+Checksum:        36234
+
+HTCOLREC      VR    
+Task: no   
+Size:    0  
+Vars:     4  
+Types:     0  
+Program name:    HTCOLREC  
+Comment:         
+Program size:    0 bytes
+Created time:    00-0-80 00:00   
+Last modified:   00-0-80 00:00   
+Allocated size:  244 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        0
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+HTTPKCL       VR    
+Task: no   
+Size:    0  
+Vars:     8  
+Types:     0  
+Program name:    HTTPKCL  
+Comment:         
+Program size:    0 bytes
+Created time:    00-0-80 00:00   
+Last modified:   00-0-80 00:00   
+Allocated size:  244 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        0
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+IPRNGSET      PC    
+Task: no   
+Size: 1429  
+Vars:    15  
+Types:     0  
+Program name:    IPRNGSET  
+Comment:         
+Program size:    1429 bytes
+Created time:    02-JUN-26 22:50 
+Last modified:   02-JUN-26 22:50 
+Source file:     PRODUCT\ROSIP\IPRNGSET.PC
+Allocated size:  1937 bytes
+Protection:      OFF
+Stack size:      500 words
+Priority:        50
+Time slice:      256
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    7
+Checksum:        39420
+
+IPRNGSHO      PC    
+Task: no   
+Size: 2098  
+Vars:    15  
+Types:     0  
+Program name:    IPRNGSHO  
+Comment:         
+Program size:    2098 bytes
+Created time:    02-JUN-26 22:50 
+Last modified:   02-JUN-26 22:50 
+Source file:     PRODUCT\ROSIP\IPRNGSHO.PC
+Allocated size:  2606 bytes
+Protection:      OFF
+Stack size:      500 words
+Priority:        50
+Time slice:      256
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    7
+Checksum:        42394
+
+IRC_COUNTER   PC    
+Task: no   
+Size: 1474  
+Vars:    14  
+Types:     0  
+Program name:    IRC_COUNTER  
+Comment:         Send Custom Mess
+Program size:    1474 bytes
+Created time:    02-JUN-26 22:50 
+Last modified:   02-JUN-26 22:50 
+Source file:     PRODUCT\RMCNSTD\IRC_COUNTER.PC
+Allocated size:  2338 bytes
+Protection:      OFF
+Stack size:      500 words
+Priority:        50
+Time slice:      256
+Busy lamp:       0
+Ignore abort:    5
+Ignore pause:    7
+Checksum:        29723
+
+IRC_MSG       PC    
+Task: no   
+Size: 1589  
+Vars:    13  
+Types:     0  
+Program name:    IRC_MSG  
+Comment:         Send Custom Mess
+Program size:    1589 bytes
+Created time:    02-JUN-26 22:50 
+Last modified:   02-JUN-26 22:50 
+Source file:     PRODUCT\RMCNSTD\IRC_MSG.PC
+Allocated size:  2443 bytes
+Protection:      OFF
+Stack size:      500 words
+Priority:        50
+Time slice:      256
+Busy lamp:       0
+Ignore abort:    5
+Ignore pause:    7
+Checksum:        39525
+
+IRC_STATUS    PC    
+Task: no   
+Size: 1671  
+Vars:    13  
+Types:     0  
+Program name:    IRC_STATUS  
+Comment:         Send Status Mess
+Program size:    1671 bytes
+Created time:    02-JUN-26 22:50 
+Last modified:   02-JUN-26 22:50 
+Source file:     PRODUCT\RMCNSTD\IRC_STATUS.PC
+Allocated size:  2525 bytes
+Protection:      OFF
+Stack size:      500 words
+Priority:        50
+Time slice:      256
+Busy lamp:       0
+Ignore abort:    5
+Ignore pause:    7
+Checksum:        4883
+
+IRC_STLABEL   PC    
+Task: no   
+Size: 2097  
+Vars:    13  
+Types:     0  
+Program name:    IRC_STLABEL  
+Comment:         Send Status Mess
+Program size:    2097 bytes
+Created time:    02-JUN-26 22:50 
+Last modified:   02-JUN-26 22:50 
+Source file:     PRODUCT\RMCNSTD\IRC_STLABEL.PC
+Allocated size:  2957 bytes
+Protection:      OFF
+Stack size:      500 words
+Priority:        50
+Time slice:      256
+Busy lamp:       0
+Ignore abort:    5
+Ignore pause:    7
+Checksum:        3143
+
+IRVTYPE       VR    
+Task: no   
+Size:    0  
+Vars:     0  
+Types:     3  
+Program name:    IRVTYPE  
+Comment:         
+Program size:    0 bytes
+Created time:    00-0-80 00:00   
+Last modified:   00-0-80 00:00   
+Allocated size:  244 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        0
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+PLUGSTAT      VR    
+Task: no   
+Size:    0  
+Vars:     3  
+Types:     0  
+Program name:    PLUGSTAT  
+Comment:         
+Program size:    0 bytes
+Created time:    00-0-80 00:00   
+Last modified:   00-0-80 00:00   
+Allocated size:  244 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        0
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+RASTSGRD      PC    
+Task: no   
+Size:  565  
+Vars:    13  
+Types:     0  
+Program name:    RASTSGRD  
+Comment:         Set Sngrlty Rad
+Program size:    565 bytes
+Created time:    02-JUN-26 22:50 
+Last modified:   02-JUN-26 22:50 
+Source file:     PRODUCT\R792\RASTSGRD.PC
+Allocated size:  966 bytes
+Protection:      OFF
+Stack size:      500 words
+Priority:        50
+Time slice:      256
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+Checksum:        48403
+
+RSR0001       TP    
+Task: no   
+Size:  195  
+Lines:    2  
+Program name:    RSR0001  
+Comment:         
+Program size:    195 bytes
+Created time:    24-JUL-26 22:53 
+Last modified:   24-JUL-26 22:53 
+Allocated size:  567 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+SET_RACK_TEST  TP    
+Task: no   
+Size: 3305  
+Lines:  136  
+Program name:    SET_RACK_TEST  
+Comment:         
+Program size:    3305 bytes
+Created time:    16-JUL-26 10:43 
+Last modified:   16-JUL-26 23:59 
+Source file:     TEST_SET_BIN
+Allocated size:  3785 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+SV_ADJST      MACRO 
+Task: no   
+Size:  160  
+Lines:    1  
+Program name:    SV_ADJST  
+Comment:         Adjst srvo param
+Program size:    160 bytes
+Created time:    01-JAN-80 07:04 
+Last modified:   12-JUN-06 17:31 
+Allocated size:  536 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+SWIUPDT       VR    
+Task: no   
+Size:    0  
+Vars:     1  
+Types:     0  
+Program name:    SWIUPDT  
+Comment:         
+Program size:    0 bytes
+Created time:    00-0-80 00:00   
+Last modified:   00-0-80 00:00   
+Allocated size:  308 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        0
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+TEST_RACKS    TP    
+Task: no   
+Size: 4003  
+Lines:  188  
+Program name:    TEST_RACKS  
+Comment:         
+Program size:    4003 bytes
+Created time:    16-JUL-26 10:44 
+Last modified:   17-JUL-26 03:30 
+Source file:     TEST_RACK2HOP
+Allocated size:  4583 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+TEST_RACKS_HOPPER  TP    
+Task: no   
+Size: 5285  
+Lines:  252  
+Program name:    TEST_RACKS_HOPPER  
+Comment:         
+Program size:    5285 bytes
+Created time:    16-JUL-26 14:47 
+Last modified:   17-JUL-26 04:40 
+Source file:     TEST_RACK2HOP
+Allocated size:  5881 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+TPSNAP        PC    
+Task: no   
+Size: 1478  
+Vars:    23  
+Types:     0  
+Program name:    TPSNAP  
+Comment:         
+Program size:    1478 bytes
+Created time:    02-JUN-26 22:50 
+Last modified:   02-JUN-26 22:50 
+Source file:     PRODUCT\CMSHCORE\TPSNAP.PC
+Allocated size:  2123 bytes
+Protection:      OFF
+Stack size:      500 words
+Priority:        50
+Time slice:      256
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    7
+Checksum:        29587
+
+VCMRINIT      PC    
+Task: no   
+Size: 1393  
+Vars:    13  
+Types:     0  
+Program name:    VCMRINIT  
+Comment:         
+Program size:    1393 bytes
+Created time:    02-JUN-26 22:50 
+Last modified:   02-JUN-26 22:50 
+Source file:     PRODUCT\CVIRCAL\VCMRINIT.PC
+Allocated size:  2636 bytes
+Protection:      OFF
+Stack size:      500 words
+Priority:        50
+Time slice:      256
+Busy lamp:       1
+Ignore abort:    0
+Ignore pause:    0
+Checksum:        5285
+
+VC_MOVE       PC    
+Task: no   
+Size: 1395  
+Vars:     1  
+Types:     0  
+Program name:    VC_MOVE  
+Comment:         
+Program size:    1395 bytes
+Created time:    02-JUN-26 22:50 
+Last modified:   02-JUN-26 22:50 
+Source file:     PRODUCT\VCCM\VC_MOVE.PC
+Allocated size:  2261 bytes
+Protection:      OFF
+Stack size:      500 words
+Priority:        50
+Time slice:      256
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+Checksum:        27668
+
+X_DTCOPY      PC    
+Task: no   
+Size: 23625  
+Vars:   102  
+Types:     0  
+Program name:    X_DTCOPY  
+Comment:         Main:SetupAssist
+Program size:    23625 bytes
+Created time:    16-JUL-26 03:58 
+Last modified:   16-JUL-26 03:58 
+Source file:     FRS:\X_DTCOPY.PC
+Allocated size:  27240 bytes
+Protection:      OFF
+Stack size:      500 words
+Priority:        50
+Time slice:      256
+Busy lamp:       0
+Ignore abort:    1
+Ignore pause:    7
+Checksum:        58315
+
+X_DYNDAT      PC    
+Task: no   
+Size: 9574  
+Vars:    29  
+Types:     0  
+Program name:    X_DYNDAT  
+Comment:         Main:Set PR
+Program size:    9574 bytes
+Created time:    16-JUL-26 03:58 
+Last modified:   16-JUL-26 03:58 
+Source file:     FRS:\X_DYNDAT.PC
+Allocated size:  11070 bytes
+Protection:      OFF
+Stack size:      500 words
+Priority:        50
+Time slice:      256
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+Checksum:        178
+
+X_SETCMT      PC    
+Task: no   
+Size: 1192  
+Vars:    11  
+Types:     0  
+Program name:    X_SETCMT  
+Comment:         Main:Set Comment
+Program size:    1192 bytes
+Created time:    16-JUL-26 03:58 
+Last modified:   16-JUL-26 03:58 
+Source file:     FRS:\X_SETCMT.PC
+Allocated size:  2264 bytes
+Protection:      OFF
+Stack size:      500 words
+Priority:        50
+Time slice:      256
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+Checksum:        41763
+
+_APPR_CONVS   TP    
+Task: no   
+Size: 3697  
+Lines:  183  
+Program name:    _APPR_CONVS  
+Comment:         Appr InOut Convs
+Program size:    3697 bytes
+Created time:    07-JUL-26 14:47 
+Last modified:   24-JUL-26 15:44 
+Source file:     _APPR_RACKS
+Allocated size:  4265 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_APPR_HOPPER  TP    
+Task: no   
+Size: 2401  
+Lines:  122  
+Program name:    _APPR_HOPPER  
+Comment:         Appr Hopper
+Program size:    2401 bytes
+Created time:    08-JUL-26 11:16 
+Last modified:   24-AUG-26 15:33 
+Source file:     _APPR_RACKS
+Allocated size:  2825 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_APPR_RACKS   TP    
+Task: no   
+Size: 4483  
+Lines:  234  
+Program name:    _APPR_RACKS  
+Comment:         Appr Rack 1-6
+Program size:    4483 bytes
+Created time:    26-JUN-26 10:14 
+Last modified:   24-AUG-26 14:55 
+Allocated size:  5103 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_BGLOGIC      TP    
+Task: no   
+Size: 1675  
+Lines:   53  
+Program name:    _BGLOGIC  
+Comment:         Background Logic
+Program size:    1675 bytes
+Created time:    24-SEP-19 04:34 
+Last modified:   07-AUG-26 15:34 
+Source file:     _BGLOGIC
+Allocated size:  2027 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_BGL_STANDARD  TP    
+Task: no   
+Size: 1659  
+Lines:   63  
+Program name:    _BGL_STANDARD  
+Comment:         BGLogic Standard
+Program size:    1659 bytes
+Created time:    27-SEP-19 22:19 
+Last modified:   13-JUL-26 11:10 
+Source file:     _BGLOGIC
+Allocated size:  1971 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_BGL_TASKLOG  TP    
+Task: no   
+Size:  387  
+Lines:    8  
+Program name:    _BGL_TASKLOG  
+Comment:         BGL Lane Data
+Program size:    387 bytes
+Created time:    28-MAY-26 15:37 
+Last modified:   13-JUL-26 11:10 
+Source file:     _BGL_LANE_DATA
+Allocated size:  727 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_CLAMP_DOWN   TP    
+Task: no   
+Size:  229  
+Lines:    2  
+Program name:    _CLAMP_DOWN  
+Comment:         
+Program size:    229 bytes
+Created time:    02-JUL-26 23:46 
+Last modified:   02-JUL-26 23:46 
+Source file:     _CLAMPDO
+Allocated size:  593 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_CLAMP_IN     TP    
+Task: no   
+Size:  191  
+Lines:    2  
+Program name:    _CLAMP_IN  
+Comment:         
+Program size:    191 bytes
+Created time:    12-JUN-26 05:45 
+Last modified:   12-JUN-26 05:48 
+Allocated size:  555 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_CLAMP_OUT    TP    
+Task: no   
+Size:  229  
+Lines:    2  
+Program name:    _CLAMP_OUT  
+Comment:         
+Program size:    229 bytes
+Created time:    12-JUN-26 05:50 
+Last modified:   12-JUN-26 05:51 
+Source file:     _CLAMP_IN
+Allocated size:  593 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_CLAMP_UP     TP    
+Task: no   
+Size:  191  
+Lines:    2  
+Program name:    _CLAMP_UP  
+Comment:         
+Program size:    191 bytes
+Created time:    12-JUN-26 05:52 
+Last modified:   12-JUN-26 05:52 
+Allocated size:  555 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_FIND_TASK    TP    
+Task: no   
+Size: 5211  
+Lines:  259  
+Program name:    _FIND_TASK  
+Comment:         Find Next Task
+Program size:    5211 bytes
+Created time:    04-NOV-22 14:42 
+Last modified:   25-AUG-26 12:05 
+Allocated size:  5967 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_GRIP_OPEN    TP    
+Task: no   
+Size:  983  
+Lines:   42  
+Program name:    _GRIP_OPEN  
+Comment:         Grip-Full Open
+Program size:    983 bytes
+Created time:    21-AUG-26 15:11 
+Last modified:   21-AUG-26 15:11 
+Source file:     _GRIP_PL
+Allocated size:  1455 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_GRIP_PK      TP    
+Task: no   
+Size: 1207  
+Lines:   54  
+Program name:    _GRIP_PK  
+Comment:         Clamp-PK Tote
+Program size:    1207 bytes
+Created time:    24-JUN-26 13:10 
+Last modified:   25-AUG-26 10:30 
+Source file:     _GRIP_CLS_2
+Allocated size:  1631 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_GRIP_PL      TP    
+Task: no   
+Size: 1165  
+Lines:   53  
+Program name:    _GRIP_PL  
+Comment:         Clamp-PL Tote
+Program size:    1165 bytes
+Created time:    24-JUN-26 13:26 
+Last modified:   15-JUL-26 15:00 
+Source file:     _GRIP_PK
+Allocated size:  1593 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_GRP_CLMP_MACRO  MACRO 
+Task: no   
+Size:  203  
+Lines:    2  
+Program name:    _GRP_CLMP_MACRO  
+Comment:         
+Program size:    203 bytes
+Created time:    24-JUN-26 14:07 
+Last modified:   24-JUN-26 14:07 
+Allocated size:  567 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_GRP_HOOK_MACRO  MACRO 
+Task: no   
+Size:  253  
+Lines:    2  
+Program name:    _GRP_HOOK_MACRO  
+Comment:         
+Program size:    253 bytes
+Created time:    24-JUN-26 14:07 
+Last modified:   24-JUN-26 14:08 
+Source file:     _GRP_CLMP_MACRO
+Allocated size:  617 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_HOPPER_DUMP  TP    
+Task: no   
+Size: 2067  
+Lines:  103  
+Program name:    _HOPPER_DUMP  
+Comment:         Chk Tote Empty
+Program size:    2067 bytes
+Created time:    10-JUL-26 15:08 
+Last modified:   24-AUG-26 16:20 
+Source file:     _INSPECT_EMPTY
+Allocated size:  2575 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_INIT         TP    
+Task: no   
+Size:  868  
+Lines:   41  
+Program name:    _INIT  
+Comment:         Initialize Run
+Program size:    868 bytes
+Created time:    23-MAY-24 14:00 
+Last modified:   15-JUL-26 14:54 
+Allocated size:  1352 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_INIT_ALM     TP    
+Task: no   
+Size:  509  
+Lines:   18  
+Program name:    _INIT_ALM  
+Comment:         Init Alarms
+Program size:    509 bytes
+Created time:    18-JAN-19 16:47 
+Last modified:   15-JUL-26 14:54 
+Source file:     _INIT_AL
+Allocated size:  809 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_INIT_EOAT    TP    
+Task: no   
+Size: 1575  
+Lines:   70  
+Program name:    _INIT_EOAT  
+Comment:         Init Grip Clamp
+Program size:    1575 bytes
+Created time:    13-DEC-23 02:48 
+Last modified:   04-AUG-26 21:09 
+Source file:     _INIT_REGRIP
+Allocated size:  2071 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_INIT_POS     TP    
+Task: no   
+Size:  273  
+Lines:    7  
+Program name:    _INIT_POS  
+Comment:         Init Positions
+Program size:    273 bytes
+Created time:    15-DEC-22 10:15 
+Last modified:   02-DEC-24 13:42 
+Allocated size:  749 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_INSPECT_POST  TP    
+Task: no   
+Size: 2203  
+Lines:  108  
+Program name:    _INSPECT_POST  
+Comment:         Post-Dump Inspct
+Program size:    2203 bytes
+Created time:    13-JUL-26 10:43 
+Last modified:   24-AUG-26 15:48 
+Source file:     _INSPECT_PRE
+Allocated size:  2691 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_INSPECT_PRE  TP    
+Task: no   
+Size: 2547  
+Lines:  125  
+Program name:    _INSPECT_PRE  
+Comment:         Pre-Dump Inspect
+Program size:    2547 bytes
+Created time:    13-JUL-26 10:14 
+Last modified:   24-AUG-26 15:42 
+Source file:     _SCAN_TOTE
+Allocated size:  2975 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_PK_CONV      TP    
+Task: no   
+Size: 2789  
+Lines:  134  
+Program name:    _PK_CONV  
+Comment:         Pick Infd Convs
+Program size:    2789 bytes
+Created time:    07-JUL-26 14:46 
+Last modified:   24-JUL-26 15:53 
+Source file:     _PK_RACK
+Allocated size:  3441 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_PK_RACK      TP    
+Task: no   
+Size: 1875  
+Lines:   88  
+Program name:    _PK_RACK  
+Comment:         Pick Buffer Rack
+Program size:    1875 bytes
+Created time:    29-JUN-26 15:37 
+Last modified:   14-JUL-26 15:15 
+Source file:     _PL_RACK
+Allocated size:  2323 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_PL_CONV      TP    
+Task: no   
+Size: 1899  
+Lines:   92  
+Program name:    _PL_CONV  
+Comment:         PL on OutfdConvs
+Program size:    1899 bytes
+Created time:    08-JUL-26 14:12 
+Last modified:   24-AUG-26 15:09 
+Source file:     _PK_CONV
+Allocated size:  2323 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_PL_RACK      TP    
+Task: no   
+Size: 3045  
+Lines:  150  
+Program name:    _PL_RACK  
+Comment:         PL in BufferRack
+Program size:    3045 bytes
+Created time:    24-JUL-26 23:00 
+Last modified:   25-AUG-26 11:24 
+Source file:     _BOX_PK
+Allocated size:  3493 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_PL_REJECT    TP    
+Task: no   
+Size: 3315  
+Lines:  175  
+Program name:    _PL_REJECT  
+Comment:         PL in RejectNest
+Program size:    3315 bytes
+Created time:    13-JUL-26 11:26 
+Last modified:   24-JUL-26 03:33 
+Source file:     _PL_RACK
+Allocated size:  3931 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_RECOVER      TP    
+Task: no   
+Size: 2103  
+Lines:  102  
+Program name:    _RECOVER  
+Comment:         Recover to Home
+Program size:    2103 bytes
+Created time:    20-JAN-21 23:36 
+Last modified:   24-JUL-26 16:59 
+Allocated size:  2607 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_RECOV_REFPOS  TP    
+Task: no   
+Size: 1669  
+Lines:   90  
+Program name:    _RECOV_REFPOS  
+Comment:         
+Program size:    1669 bytes
+Created time:    10-MAR-24 08:57 
+Last modified:   10-MAR-24 09:42 
+Allocated size:  2069 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_RECOV_REF_POS  TP    
+Task: no   
+Size: 3371  
+Lines:  180  
+Program name:    _RECOV_REF_POS  
+Comment:         At Reference Pos
+Program size:    3371 bytes
+Created time:    29-DEC-20 00:06 
+Last modified:   24-AUG-26 15:50 
+Allocated size:  3803 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_SAFE         TP    
+Task: no   
+Size:  691  
+Lines:   30  
+Program name:    _SAFE  
+Comment:         Go to Safe Pos
+Program size:    691 bytes
+Created time:    09-OCT-23 08:36 
+Last modified:   13-JUL-26 10:59 
+Source file:     _TOOL_MAINT
+Allocated size:  1091 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_SCAN_TOTE    TP    
+Task: no   
+Size: 1905  
+Lines:   96  
+Program name:    _SCAN_TOTE  
+Comment:         Scan Tote BC
+Program size:    1905 bytes
+Created time:    10-JUL-26 09:28 
+Last modified:   24-JUL-26 02:35 
+Source file:     _PK_CONV
+Allocated size:  2433 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_SET_CONV_PK  TP    
+Task: no   
+Size: 1305  
+Lines:   63  
+Program name:    _SET_CONV_PK  
+Comment:         
+Program size:    1305 bytes
+Created time:    07-JUL-26 14:46 
+Last modified:   08-JUL-26 09:22 
+Source file:     _SET_RACK_PK
+Allocated size:  1685 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_SET_CONV_PL  TP    
+Task: no   
+Size: 1113  
+Lines:   52  
+Program name:    _SET_CONV_PL  
+Comment:         
+Program size:    1113 bytes
+Created time:    08-JUL-26 15:03 
+Last modified:   08-JUL-26 15:41 
+Source file:     _SET_CONV_PK
+Allocated size:  1537 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_SET_HOPPER   TP    
+Task: no   
+Size: 1255  
+Lines:   58  
+Program name:    _SET_HOPPER  
+Comment:         
+Program size:    1255 bytes
+Created time:    13-JUL-26 09:46 
+Last modified:   25-JUL-26 02:11 
+Source file:     _SET_CONV_PL
+Allocated size:  1655 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_SET_INSPECT  TP    
+Task: no   
+Size: 1475  
+Lines:   62  
+Program name:    _SET_INSPECT  
+Comment:         
+Program size:    1475 bytes
+Created time:    10-JUL-26 10:35 
+Last modified:   24-JUL-26 23:35 
+Source file:     _SET_SCAN
+Allocated size:  1859 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_SET_OFFS     TP    
+Task: no   
+Size:  425  
+Lines:   15  
+Program name:    _SET_OFFS  
+Comment:         Set Offset
+Program size:    425 bytes
+Created time:    11-JUL-19 10:03 
+Last modified:   11-JUL-19 10:03 
+Allocated size:  769 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_SET_PAYLOAD  TP    
+Task: no   
+Size:  681  
+Lines:   27  
+Program name:    _SET_PAYLOAD  
+Comment:         Save Speed Vars
+Program size:    681 bytes
+Created time:    13-DEC-23 02:36 
+Last modified:   15-JUL-26 14:58 
+Source file:     _SET_SPD_VARS
+Allocated size:  1077 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_SET_RACK_PK  TP    
+Task: no   
+Size: 1493  
+Lines:   69  
+Program name:    _SET_RACK_PK  
+Comment:         
+Program size:    1493 bytes
+Created time:    29-JUN-26 15:38 
+Last modified:   24-AUG-26 15:10 
+Source file:     _SET_RACK_PL
+Allocated size:  1985 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_SET_RACK_PL  TP    
+Task: no   
+Size: 1495  
+Lines:   69  
+Program name:    _SET_RACK_PL  
+Comment:         Set Rack SlotPos
+Program size:    1495 bytes
+Created time:    29-JUN-26 11:17 
+Last modified:   24-AUG-26 15:10 
+Source file:     TEST_SET_BIN
+Allocated size:  1987 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_SET_RACK_SLOT  TP    
+Task: no   
+Size: 6875  
+Lines:  333  
+Program name:    _SET_RACK_SLOT  
+Comment:         
+Program size:    6875 bytes
+Created time:    16-JUL-26 09:15 
+Last modified:   17-JUL-26 00:46 
+Allocated size:  7591 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_SET_SCAN     TP    
+Task: no   
+Size: 1183  
+Lines:   49  
+Program name:    _SET_SCAN  
+Comment:         
+Program size:    1183 bytes
+Created time:    10-JUL-26 09:59 
+Last modified:   15-JUL-26 14:13 
+Source file:     _SET_CONV_PK
+Allocated size:  1619 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_SET_WAIT     TP    
+Task: no   
+Size:  378  
+Lines:    9  
+Program name:    _SET_WAIT  
+Comment:         Set-WAITTMOUT
+Program size:    378 bytes
+Created time:    05-APR-22 09:41 
+Last modified:   29-JUN-26 14:54 
+Allocated size:  746 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_SYSVAR_CFG   TP    
+Task: no   
+Size:  453  
+Lines:    8  
+Program name:    _SYSVAR_CFG  
+Comment:         Initial Setup
+Program size:    453 bytes
+Created time:    27-OCT-23 05:42 
+Last modified:   10-MAR-24 11:36 
+Allocated size:  857 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_SYS_CHECKS   TP    
+Task: no   
+Size:  603  
+Lines:   23  
+Program name:    _SYS_CHECKS  
+Comment:         Pause/RTE Check
+Program size:    603 bytes
+Created time:    18-JAN-19 16:47 
+Last modified:   14-JUL-26 10:03 
+Source file:     _SYS_CHE
+Allocated size:  1023 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_TESTMG       TP    
+Task: no   
+Size: 1194  
+Lines:   26  
+Program name:    _TESTMG  
+Comment:         
+Program size:    1194 bytes
+Created time:    12-JUN-26 05:43 
+Last modified:   25-JUN-26 01:39 
+Allocated size:  1626 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_TOOL_MAINT   TP    
+Task: no   
+Size:  531  
+Lines:   22  
+Program name:    _TOOL_MAINT  
+Comment:         Go to TL Maint
+Program size:    531 bytes
+Created time:    19-NOV-22 01:39 
+Last modified:   13-JUL-26 11:00 
+Allocated size:  955 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_TRANSIT      TP    
+Task: no   
+Size:  277  
+Lines:    6  
+Program name:    _TRANSIT  
+Comment:         Go to Transit
+Program size:    277 bytes
+Created time:    28-DEC-20 23:47 
+Last modified:   29-JUN-26 14:39 
+Allocated size:  757 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+_ZERO         TP    
+Task: no   
+Size:  557  
+Lines:   23  
+Program name:    _ZERO  
+Comment:         Go to Zero Pos
+Program size:    557 bytes
+Created time:    09-OCT-23 08:38 
+Last modified:   13-JUL-26 11:02 
+Source file:     _SAFE
+Allocated size:  977 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+__AUTO        TP    
+Task: no   
+Size: 2221  
+Lines:  105  
+Program name:    __AUTO  
+Comment:         Auto Task Loop
+Program size:    2221 bytes
+Created time:    09-AUG-18 15:40 
+Last modified:   23-JUL-26 23:46 
+Allocated size:  2785 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+__MAIN        TP    
+Task: no   
+Size:  291  
+Lines:    8  
+Program name:    __MAIN  
+Comment:         MAIN PROG CALL
+Program size:    291 bytes
+Created time:    11-NOV-24 10:41 
+Last modified:   11-NOV-24 10:41 
+Allocated size:  779 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
+__MANUAL      TP    
+Task: no   
+Size:  847  
+Lines:   34  
+Program name:    __MANUAL  
+Comment:         Manual Task Loop
+Program size:    847 bytes
+Created time:    17-OCT-23 11:37 
+Last modified:   17-OCT-23 11:37 
+Source file:     __MANUAL
+Allocated size:  1375 bytes
+Protection:      OFF
+Stack size:      0 words
+Priority:        50
+Time slice:      0
+Busy lamp:       0
+Ignore abort:    0
+Ignore pause:    0
+
