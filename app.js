@@ -1039,9 +1039,23 @@
     // but unregistered.
     if (location.protocol !== 'https:' && location.hostname !== 'localhost' &&
         location.hostname !== '127.0.0.1') return;
+    // When a new worker takes over, reload once so the running page is
+    // never left on the previous version's scripts.
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloading) return;
+      reloading = true;
+      console.info('[pwa] new version activated, reloading');
+      window.location.reload();
+    });
+
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('sw.js')
-        .then((reg) => console.info('[pwa] service worker registered', reg && reg.scope))
+        .then((reg) => {
+          console.info('[pwa] service worker registered', reg && reg.scope);
+          // Check for a newer deploy on every launch.
+          if (reg && reg.update) reg.update().catch(() => { /* offline */ });
+        })
         .catch((err) => console.warn('[pwa] registration failed', err));
     });
   }

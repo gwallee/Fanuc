@@ -8,7 +8,7 @@
    is deleted on activate.
    ============================================================ */
 
-const CACHE_VERSION = 'wtw-v11-1';
+const CACHE_VERSION = 'wtw-v11-2';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 
@@ -93,6 +93,26 @@ self.addEventListener('fetch', (event) => {
 
   // Radar imagery and basemap tiles: always live, never cached.
   if (url.hostname.includes('ncep.noaa.gov') || url.hostname.includes('cartocdn.com')) return;
+
+  // The page itself is network-first. Cache-first on the document is how
+  // a deployed update can go unseen for a whole session: the browser
+  // keeps handing back the old HTML, which pulls the old scripts with it.
+  if (request.mode === 'navigate' || request.destination === 'document') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response && response.ok) {
+            const copy = response.clone();
+            caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        })
+        .catch(async () => (await caches.match(request)) ||
+                          (await caches.match('./index.html')) ||
+                          offlineResponse())
+    );
+    return;
+  }
 
   // App shell: cache first, refreshed in the background.
   if (url.origin === self.location.origin) {

@@ -688,6 +688,10 @@ body.radar-fullscreen { overflow: hidden; }
 .radar-card.fullscreen {
   position: fixed;
   inset: 0;
+  /* iOS Safari overlays its toolbars on top of inset:0; dvh tracks the
+     visible viewport instead. */
+  height: 100vh;
+  height: 100dvh;
   z-index: 120;
   margin: 0;
   border: none;
@@ -716,7 +720,8 @@ body.radar-fullscreen { overflow: hidden; }
 .radar-card.fullscreen .radar-wrap { padding: 0; }
 
 /* Native fullscreen paints its own backdrop black by default. */
-.radar-card:fullscreen {
+.radar-card:fullscreen,
+.radar-card:-webkit-full-screen {
   background: radial-gradient(900px 600px at 50% 0%, var(--bg-2), var(--bg));
 }
 

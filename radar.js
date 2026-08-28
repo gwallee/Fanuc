@@ -685,8 +685,9 @@ const WTWRadar = (() => {
     // iOS Safari supports for non-video elements. Where the real
     // Fullscreen API exists, use it too so browser chrome hides.
     const el = card();
-    if (el && el.requestFullscreen) {
-      try { await el.requestFullscreen(); }
+    const request = el && (el.requestFullscreen || el.webkitRequestFullscreen);
+    if (request) {
+      try { await request.call(el); }
       catch (err) { console.info('[radar] native fullscreen unavailable, using overlay', err && err.message); }
     }
     resize();
@@ -696,8 +697,10 @@ const WTWRadar = (() => {
     if (!state.fullscreen) return;
     state.fullscreen = false;
     updateFullscreenUI();
-    if (document.fullscreenElement && document.exitFullscreen) {
-      try { await document.exitFullscreen(); } catch (_) { /* already exited */ }
+    const active = document.fullscreenElement || document.webkitFullscreenElement;
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (active && exit) {
+      try { await exit.call(document); } catch (_) { /* already exited */ }
     }
     resize();
   }
@@ -708,9 +711,12 @@ const WTWRadar = (() => {
 
   function initFullscreen() {
     // Esc, or the browser's own exit, must keep our state in sync.
-    document.addEventListener('fullscreenchange', () => {
-      if (!document.fullscreenElement && state.fullscreen) exitFullscreen();
-    });
+    const onChange = () => {
+      const active = document.fullscreenElement || document.webkitFullscreenElement;
+      if (!active && state.fullscreen) exitFullscreen();
+    };
+    document.addEventListener('fullscreenchange', onChange);
+    document.addEventListener('webkitfullscreenchange', onChange);
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && state.fullscreen) exitFullscreen();
     });
