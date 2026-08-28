@@ -102,6 +102,11 @@ async function stubOpenMeteo(page) {
   console.log('\n=== Scenario 1: NWS available, radar imagery available ===');
   let ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' });
   let page = await ctx.newPage();
+  // Deny every external host by default. Routes registered after this one
+  // win, so each suite still stubs what it needs - but anything a suite
+  // forgot fails closed instead of quietly reaching the real internet,
+  // which is what made these suites pass locally and fail in CI.
+  await page.route('https://**', (r) => r.abort());
   const errors = [];
   page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
   page.on('console', (m) => {
@@ -225,6 +230,11 @@ async function stubOpenMeteo(page) {
   console.log('\n=== Scenario 2: outside NWS coverage, no radar imagery ===');
   ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' });
   page = await ctx.newPage();
+  // Deny every external host by default. Routes registered after this one
+  // win, so each suite still stubs what it needs - but anything a suite
+  // forgot fails closed instead of quietly reaching the real internet,
+  // which is what made these suites pass locally and fail in CI.
+  await page.route('https://**', (r) => r.abort());
   page.on('pageerror', (e) => errors.push('PAGEERROR(2): ' + e.message));
 
   await page.route('https://opengeo.ncep.noaa.gov/**', (r) => r.abort());

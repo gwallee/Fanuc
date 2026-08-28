@@ -33,6 +33,11 @@ function stub(page) {
   console.log('=== Native fullscreen actually engages ===');
   let ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' });
   let page = await ctx.newPage();
+  // Deny every external host by default. Routes registered after this one
+  // win, so each suite still stubs what it needs - but anything a suite
+  // forgot fails closed instead of quietly reaching the real internet,
+  // which is what made these suites pass locally and fail in CI.
+  await page.route('https://**', (r) => r.abort());
   stub(page);
   await page.goto(BASE_URL + '/index.html');
   await page.fill('#searchInput','Austin'); await page.click('#searchBtn');
@@ -82,6 +87,11 @@ function stub(page) {
   console.log('\n=== Stale-shell fix: the document is network-first ===');
   ctx = await browser.newContext();   // real service worker
   page = await ctx.newPage();
+  // Deny every external host by default. Routes registered after this one
+  // win, so each suite still stubs what it needs - but anything a suite
+  // forgot fails closed instead of quietly reaching the real internet,
+  // which is what made these suites pass locally and fail in CI.
+  await page.route('https://**', (r) => r.abort());
   await page.goto(BASE_URL + '/index.html');
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.waitForTimeout(1800);

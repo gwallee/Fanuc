@@ -60,6 +60,11 @@ const AIR_BODY = JSON.stringify({ current: {
 
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 1000 }, serviceWorkers: 'block' });
   const page = await ctx.newPage();
+  // Deny every external host by default. Routes registered after this one
+  // win, so each suite still stubs what it needs - but anything a suite
+  // forgot fails closed instead of quietly reaching the real internet,
+  // which is what made these suites pass locally and fail in CI.
+  await page.route('https://**', (r) => r.abort());
   const errors = [];
   page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|ERR_TUNNEL|ERR_FAILED|net::/.test(m.text())) errors.push('CONSOLE: ' + m.text()); });

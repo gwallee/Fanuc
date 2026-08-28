@@ -45,6 +45,11 @@ function omBody() {
 
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' });
   const page = await ctx.newPage();
+  // Deny every external host by default. Routes registered after this one
+  // win, so each suite still stubs what it needs - but anything a suite
+  // forgot fails closed instead of quietly reaching the real internet,
+  // which is what made these suites pass locally and fail in CI.
+  await page.route('https://**', (r) => r.abort());
   const errors = [];
   page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|ERR_TUNNEL|ERR_FAILED|net::/.test(m.text())) errors.push('CONSOLE: ' + m.text()); });
@@ -178,6 +183,11 @@ function omBody() {
   await check('V9 data is migrated to the neutral namespace', async () => {
     const ctx2 = await browser.newContext({ serviceWorkers: 'block' });
     const p2 = await ctx2.newPage();
+    // Deny every external host by default. Routes registered after this one
+    // win, so each suite still stubs what it needs - but anything a suite
+    // forgot fails closed instead of quietly reaching the real internet,
+    // which is what made these suites pass locally and fail in CI.
+    await p2.route('https://**', (r) => r.abort());
     await p2.route('https://api.open-meteo.com/**', (r) => r.fulfill({ contentType: 'application/json', body: omBody() }));
     await p2.route('https://api.weather.gov/**', (r) => r.fulfill({ status: 404, body: '{}' }));
     await p2.route('https://opengeo.ncep.noaa.gov/**', (r) => r.abort());

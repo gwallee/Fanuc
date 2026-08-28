@@ -97,6 +97,11 @@ function stubRest(page, { omHigh = 88, omLow = 71 } = {}) {
   async function load(opts, rest) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' });
     const page = await ctx.newPage();
+    // Deny every external host by default. Routes registered after this one
+    // win, so each suite still stubs what it needs - but anything a suite
+    // forgot fails closed instead of quietly reaching the real internet,
+    // which is what made these suites pass locally and fail in CI.
+    await page.route('https://**', (r) => r.abort());
     await stubNWS(page, opts);
     stubRest(page, rest);
     await page.goto(BASE_URL + '/index.html', { waitUntil: 'networkidle' });
@@ -191,6 +196,7 @@ function stubRest(page, { omHigh = 88, omLow = 71 } = {}) {
 
   console.log('\n=== Conversion table ===');
   ctx = await browser.newContext({ serviceWorkers: 'block' }); page = await ctx.newPage();
+  await page.route('https://**', (r) => r.abort());   // fail closed, as above
   await page.goto(BASE_URL + '/index.html', { waitUntil: 'networkidle' });
   const conv = await page.evaluate(() => {
     // Exercise the same helpers the app uses, via a known-value table.

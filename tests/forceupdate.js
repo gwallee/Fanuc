@@ -12,6 +12,11 @@ const APP_VERSION = (require('fs').readFileSync(APP_DIR + '/config.js', 'utf8')
   const browser = await chromium.launch({ executablePath: BROWSER });
   const ctx = await browser.newContext();   // real service worker
   const page = await ctx.newPage();
+  // Deny every external host by default. Routes registered after this one
+  // win, so each suite still stubs what it needs - but anything a suite
+  // forgot fails closed instead of quietly reaching the real internet,
+  // which is what made these suites pass locally and fail in CI.
+  await page.route('https://**', (r) => r.abort());
   let failures = 0;
   const check = async (n, fn) => {
     try { const ok = await fn(); console.log((ok?'PASS':'FAIL') + ' - ' + n); if(!ok) failures++; }

@@ -14,6 +14,11 @@ const BROWSER = process.env.PLAYWRIGHT_CHROMIUM || undefined;
     serviceWorkers: 'block',
   });
   const page = await context.newPage();
+  // Deny every external host by default. Routes registered after this one
+  // win, so each suite still stubs what it needs - but anything a suite
+  // forgot fails closed instead of quietly reaching the real internet,
+  // which is what made these suites pass locally and fail in CI.
+  await page.route('https://**', (r) => r.abort());
   page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
   page.on('console', (m) => {
     // Resource-load failures are stub/network noise, not app errors.

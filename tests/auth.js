@@ -42,6 +42,11 @@ function omBody() {
   const mk = async (clientId) => {
     const ctx = await browser.newContext({ viewport:{width:1280,height:900}, serviceWorkers:'block' });
     const page = await ctx.newPage();
+    // Deny every external host by default. Routes registered after this one
+    // win, so each suite still stubs what it needs - but anything a suite
+    // forgot fails closed instead of quietly reaching the real internet,
+    // which is what made these suites pass locally and fail in CI.
+    await page.route('https://**', (r) => r.abort());
     if (clientId) {
       // Patch config before any app script runs.
       await page.addInitScript((id) => {
