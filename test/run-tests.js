@@ -279,6 +279,18 @@ const withPT = L.lint(ptLib, A.buildCallGraph(ptLib), A.buildGlobalXref(ptLib), 
 check(without.length === 0, 'normally: CALL clears the handshake window (call may move)');
 check(withPT.length === 1, 'with _SET_OFFS marked utility: handshake still flagged through the call');
 
+console.log('\n-- call-order collapse --');
+const allRows = FL.callOrder(programs, A.buildCallGraph(programs), 'MAIN');
+const vis1 = FL.visibleRows(allRows, { '1.2': true });
+check(vis1.some(r => r.seq === '1.2') && !vis1.some(r => r.seq === '1.2.1'),
+  'collapsing 1.2 keeps the row but hides 1.2.x (' + allRows.length + ' → ' + vis1.length + ' rows)');
+check(vis1.some(r => r.seq === '1.3'), 'sibling 1.3 stays visible');
+check(vis1.find(r => r.seq === '1.2').hasChildren === true && vis1.find(r => r.seq === '1.1').hasChildren === false,
+  'hasChildren computed (PICK yes, GRIPPER leaf no)');
+const depth1 = FL.visibleRows(allRows, FL.collapseToDepth(allRows, 2));
+check(depth1.every(r => r.depth <= 1), 'collapseToDepth(2) shows root + direct calls only');
+check(FL.visibleRows(allRows, FL.collapseToDepth(allRows, 1)).length === 1, 'collapseToDepth(1) shows just the root');
+
 console.log('\n-- side-by-side pairing --');
 const D0 = require('../js/diff.js');
 const sbs = D0.sideBySide(D0.diffLines('a\nb\nc', 'a\nX\nc\nd'));

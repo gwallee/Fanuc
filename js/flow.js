@@ -138,7 +138,35 @@
     return rows;
   }
 
-  var api = { buildFlow: buildFlow, callOrder: callOrder };
+  /* Collapse support for the call-order tree.
+   * rows: output of callOrder. collapsed: {seq: true}.
+   * Marks each row hasChildren and returns only visible rows. */
+  function visibleRows(rows, collapsed) {
+    var out = [];
+    var hiddenUnder = null; // seq prefix currently collapsed
+    rows.forEach(function (row, i) {
+      row.hasChildren = i + 1 < rows.length && rows[i + 1].depth > row.depth;
+      if (hiddenUnder !== null) {
+        if (row.seq.indexOf(hiddenUnder + '.') === 0) return; // inside collapsed subtree
+        hiddenUnder = null;
+      }
+      out.push(row);
+      if (row.hasChildren && collapsed[row.seq]) hiddenUnder = row.seq;
+    });
+    return out;
+  }
+
+  /* Build a collapsed-map that shows only `depth` call levels (root = level 1). */
+  function collapseToDepth(rows, depth) {
+    var map = {};
+    rows.forEach(function (row, i) {
+      var hasChildren = i + 1 < rows.length && rows[i + 1].depth > row.depth;
+      if (hasChildren && row.depth >= depth - 1) map[row.seq] = true;
+    });
+    return map;
+  }
+
+  var api = { buildFlow: buildFlow, callOrder: callOrder, visibleRows: visibleRows, collapseToDepth: collapseToDepth };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucFlow = api;
 })(typeof window !== 'undefined' ? window : globalThis);

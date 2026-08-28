@@ -994,18 +994,90 @@
     if (!rootNames.length) rootNames = Object.keys(state.programs);
     var flowWrap = h('div', { class: 'graph' });
     flowWrap.appendChild(h('h3', { text: 'Call order — the sequence programs run in' }));
-    flowWrap.appendChild(h('p', { class: 'muted', text: 'Read top to bottom: each row is a CALL in the order it appears. Indent = call depth. Sections inside loops repeat every cycle. Click a program to open it.' }));
+    flowWrap.appendChild(h('p', { class: 'muted', text: 'Read top to bottom: each row is a CALL in the order it appears. Indent = call depth. Sections inside loops repeat every cycle. Click a program to open it, ▸ to collapse a branch.' }));
+
+    if (!state.flowCollapse) state.flowCollapse = {};
+    var rowsByRoot = {};
+    rootNames.sort().forEach(function (r) {
+      rowsByRoot[r] = FL.callOrder(state.programs, g, r, state.flowIgnore);
+    });
+
+    // collapse controls
+    var ctl = h('div', { class: 'search-bar', style: 'margin-bottom:6px' });
+    ctl.appendChild(h('button', {
+      class: 'btn subtle', text: 'Expand all',
+      onclick: function () { state.flowCollapse = {}; render(); }
+    }));
+    ctl.appendChild(h('button', {
+      class: 'btn subtle', text: 'Collapse all',
+      onclick: function () {
+        state.flowCollapse = {};
+        Object.keys(rowsByRoot).forEach(function (r) {
+          var m = FL.collapseToDepth(rowsByRoot[r], 1);
+          Object.keys(m).forEach(function (s) { state.flowCollapse[r + '|' + s] = true; });
+        });
+        render();
+      }
+    }));
+    [1, 2, 3].forEach(function (d) {
+      ctl.appendChild(h('button', {
+        class: 'btn subtle opt', text: String(d), title: 'Show ' + d + ' call level' + (d > 1 ? 's' : '') + ' deep',
+        onclick: function () {
+          state.flowCollapse = {};
+          Object.keys(rowsByRoot).forEach(function (r) {
+            var m = FL.collapseToDepth(rowsByRoot[r], d + 1);
+            Object.keys(m).forEach(function (s) { state.flowCollapse[r + '|' + s] = true; });
+          });
+          render();
+        }
+      }));
+    });
+    flowWrap.appendChild(ctl);
+
+    // restore row for programs hidden with ✕ — kept next to the controls so
+    // it's easy to find
+    var ignored = Object.keys(state.flowIgnore).filter(function (n) { return state.flowIgnore[n]; });
+    if (ignored.length) {
+      var ig = h('p', { class: 'muted' });
+      ig.appendChild(document.createTextNode('Hidden programs (click to unhide): '));
+      ignored.sort().forEach(function (n) {
+        ig.appendChild(h('span', {
+          class: 'chip write', text: n + ' ✕',
+          title: 'Show ' + n + ' in the flow again',
+          onclick: function () { delete state.flowIgnore[n]; savePrefs(); rebuildDerived(); render(); }
+        }));
+      });
+      ig.appendChild(h('span', { class: 'muted', text: ' (hidden programs are also treated as non-motion by the handshake check)' }));
+      flowWrap.appendChild(ig);
+    }
 
     var seqBox = h('div', { class: 'callorder' });
-    rootNames.sort().forEach(function (r) {
-      FL.callOrder(state.programs, g, r, state.flowIgnore).forEach(function (row) {
+    Object.keys(rowsByRoot).forEach(function (r) {
+      var perRoot = {};
+      Object.keys(state.flowCollapse).forEach(function (k) {
+        if (k.indexOf(r + '|') === 0 && state.flowCollapse[k]) perRoot[k.slice(r.length + 1)] = true;
+      });
+      FL.visibleRows(rowsByRoot[r], perRoot).forEach(function (row) {
+        var key = r + '|' + row.seq;
         var el = h('div', { class: 'seq-row', style: 'padding-left:' + (row.depth * 26) + 'px' });
+        el.appendChild(row.hasChildren
+          ? h('span', {
+              class: 'seq-caret', text: state.flowCollapse[key] ? '▸' : '▾',
+              title: state.flowCollapse[key] ? 'Expand this branch' : 'Collapse this branch',
+              onclick: function () {
+                if (state.flowCollapse[key]) delete state.flowCollapse[key];
+                else state.flowCollapse[key] = true;
+                render();
+              }
+            })
+          : h('span', { class: 'seq-caret empty' }));
         el.appendChild(h('span', { class: 'seq-num', text: row.seq }));
         el.appendChild(h('span', {
           class: 'seq-name' + (row.note === 'missing' ? ' missing' : ''),
           text: row.name,
           onclick: row.note === 'missing' ? null : function () { state.selected = row.name; state.tab = 'code'; render(); }
         }));
+        if (state.flowCollapse[key]) el.appendChild(h('span', { class: 'ref', text: '… ' + (rowsByRoot[r].filter(function (x) { return x.seq.indexOf(row.seq + '.') === 0; }).length) + ' hidden' }));
         if (row.line) el.appendChild(h('span', { class: 'ref', text: 'called at line ' + row.line }));
         if (row.note === 'missing') el.appendChild(h('span', { class: 'badge warn', text: 'not in library' }));
         if (row.note === 'recursion') el.appendChild(h('span', { class: 'ref', text: '↻ recursion — expanded above' }));
@@ -1018,20 +1090,6 @@
       });
     });
     flowWrap.appendChild(seqBox);
-
-    var ignored = Object.keys(state.flowIgnore).filter(function (n) { return state.flowIgnore[n]; });
-    if (ignored.length) {
-      var ig = h('p', { class: 'muted' });
-      ig.appendChild(document.createTextNode('Hidden utility programs (also treated as non-motion by the handshake check): '));
-      ignored.sort().forEach(function (n) {
-        ig.appendChild(h('span', {
-          class: 'chip read', text: n + ' ✕',
-          title: 'Show ' + n + ' in the flow again',
-          onclick: function () { delete state.flowIgnore[n]; savePrefs(); rebuildDerived(); render(); }
-        }));
-      });
-      flowWrap.appendChild(ig);
-    }
 
     var loopNotes = [];
     Object.keys(state.programs).forEach(function (n) {

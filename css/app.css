@@ -711,6 +711,19 @@ tr:last-child td { border-bottom: none; }
 .cg-msg { max-width: 90ch; }
 .cg-refs { margin-top: 3px; }
 
+/* ---------- flow collapse ---------- */
+.seq-caret {
+  display: inline-block;
+  color: var(--faint);
+  width: 16px;
+  min-height: 1em;
+  flex: 0 0 auto;
+  cursor: pointer;
+  text-align: center;
+}
+.seq-caret:hover { color: var(--accent); }
+.seq-caret.empty { cursor: default; }
+
 /* ---------- flow ignore ---------- */
 .seq-hide {
   color: var(--faint);
