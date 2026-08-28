@@ -13,7 +13,7 @@
 (function (global) {
   'use strict';
 
-  var JUMP_RE = /(?:JMP\s+|TIMEOUT\s*,\s*|Skip\s*,\s*)LBL\[\s*(\d+)(?::[^\]]*)?\]/g;
+  var JUMP_RE = /(?:JMP\s+|TIMEOUT\s*,\s*|Skip\s*,\s*)LBL\[\s*(\d+)\s*(?::[^\]]*)?\]/g;
 
   function isUncondJump(text) { return /^JMP\s+LBL\[/.test(text); }
   function isStop(text) { return /^(END\s*$|ABORT\s*$)/.test(text); }
@@ -39,7 +39,7 @@
       if (active && isLabelDef(line.text)) {
         close();
         open();
-        var m = line.text.match(/^LBL\[\s*(\d+)(?::([^\]]*))?\]/);
+        var m = line.text.match(/^LBL\[\s*(\d+)\s*(?::([^\]]*))?\]/);
         cur.labelNum = parseInt(m[1], 10);
         cur.labelName = (m[2] || '').trim();
         labelBlock[cur.labelNum] = blocks.length; // idx once pushed
