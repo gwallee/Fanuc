@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V13 — app.js
+   What the Wether V14 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -975,6 +975,13 @@
     panel.classList.toggle('open', open);
     if (overlay) overlay.hidden = !open;
     document.body.classList.toggle('settings-open', open);
+
+    // Neither provider's script is fetched until the panel is actually
+    // opened by somebody who is not already signed in.
+    if (open && !signInRendered && !WTWAuth.isSignedIn()) {
+      signInRendered = true;
+      renderSignIn();
+    }
   }
 
   function initSettingsUI() {
@@ -1062,7 +1069,8 @@
       }
       if (name.length > 24) { toast('Keep the username under 24 characters.', true); return; }
       WTWStorage.saveSettings({ username: name });
-      WTWStorage.remove('usernameFromGoogle');   // chosen by hand now
+      WTWStorage.remove('usernameFromAccount');  // chosen by hand now
+      WTWStorage.remove('usernameFromGoogle');   // key used before V14
       renderUsernameEverywhere();
       toast(`Hello, ${name}! 👋`);
     };
@@ -1108,12 +1116,12 @@
 
   /* ---------------- Account ---------------- */
 
-  let googleButtonRendered = false;
+  let signInRendered = false;
 
   function renderAccount(profile) {
     const signedIn = $('accountSignedIn');
     const signedOut = $('accountSignedOut');
-    const avatar = $('brandAvatar');
+    const brand = $('brandAvatar');
     if (!signedIn || !signedOut) return;
 
     signedIn.hidden = !profile;
@@ -1122,81 +1130,89 @@
     if (profile) {
       $('accountName').textContent = profile.name || '';
       $('accountEmail').textContent = profile.email || '';
-      const pic = $('accountAvatar');
-      if (pic) {
-        if (profile.picture) { pic.src = profile.picture; pic.hidden = false; }
-        else { pic.hidden = true; }
+      renderAccountAvatar(profile);
+      if (brand && profile.picture) {
+        brand.src = profile.picture;
+        brand.hidden = false;
+      } else if (brand) {
+        brand.hidden = true;
+        brand.removeAttribute('src');
       }
-      if (avatar && profile.picture) {
-        avatar.src = profile.picture;
-        avatar.hidden = false;
-      }
-    } else {
-      if (avatar) {
-        avatar.hidden = true;
-        avatar.removeAttribute('src');
-      }
-      renderGuestChoice();
+    } else if (brand) {
+      brand.hidden = true;
+      brand.removeAttribute('src');
     }
     renderAccountHint(profile);
   }
 
-  /* ------------------------------------------------------------
-     Guest is automatic: not signed in simply is a guest, from the
-     first load, with nothing to click and nothing stored. The panel
-     states that rather than asking for a decision.
-     ------------------------------------------------------------ */
-  function renderGuestChoice() {
-    const note = $('guestNote');
-    if (note) {
-      note.textContent = WTWAuth.canSignIn()
-        ? 'No account needed \u2014 everything works. Sign in only if you want your name and picture.'
-        : 'No account needed \u2014 everything works.';
+  // Google supplies a picture; Microsoft's ID token does not, and
+  // fetching one needs Graph. An initial is better than a broken image.
+  function renderAccountAvatar(profile) {
+    const pic = $('accountAvatar');
+    const initial = $('accountInitial');
+    if (!pic || !initial) return;
+    if (profile.picture) {
+      pic.src = profile.picture;
+      pic.hidden = false;
+      initial.hidden = true;
+      return;
     }
-    showSignIn(false);
+    pic.hidden = true;
+    pic.removeAttribute('src');
+    initial.textContent = (profile.name || '?').trim().charAt(0).toUpperCase();
+    initial.hidden = false;
   }
 
   /* ------------------------------------------------------------
-     Log out. One button, present whether or not anyone is signed in,
-     and it always does something real: it clears the Google session
-     and the name and picture that came with it. A username typed in
-     by hand is left alone — it was never part of any account.
+     The two ways in. Each provider's SDK is fetched only when this
+     panel is opened and nobody is signed in, so simply using the app
+     contacts neither Google nor Microsoft.
      ------------------------------------------------------------ */
-  function logOut() {
-    const wasSignedIn = WTWAuth.isSignedIn();
-    const adopted = WTWStorage.get('usernameFromGoogle', false) === true;
+  async function renderSignIn() {
+    const note = $('signInNote');
+    const msBtn = $('microsoftBtn');
+    const googleHost = $('googleButtonHost');
+    if (!note || !msBtn || !googleHost) return;
 
-    if (wasSignedIn) WTWAuth.signOut();
+    const available = WTWAuth.providers();
 
-    if (adopted) {
-      WTWStorage.remove('usernameFromGoogle');
-      WTWStorage.saveSettings({ username: WTW_CONFIG.defaults.username });
-      renderUsernameEverywhere();
-      restateRoast();
+    if (!available.length) {
+      msBtn.hidden = true;
+      googleHost.hidden = true;
+      note.textContent = WTWAuth.isSupportedHere()
+        ? "Sign-in isn't set up on this build yet."
+        : 'Signing in needs a web address, so it is unavailable in the desktop app.';
+      note.hidden = false;
+      return;
     }
 
-    if (wasSignedIn) toast('Logged out. You\u2019re a guest again.');
-    else toast('You\u2019re already a guest \u2014 nothing to log out of.');
+    note.hidden = true;
+    msBtn.hidden = !available.includes('microsoft');
+
+    if (!available.includes('google')) {
+      googleHost.hidden = true;
+      return;
+    }
+    googleHost.hidden = false;
+    const result = await WTWAuth.renderGoogleButton(googleHost);
+    if (result !== 'rendered') {
+      // Never leave an empty slot where a button was promised.
+      googleHost.hidden = true;
+      note.textContent = "Couldn't reach Google to load its sign-in button.";
+      note.hidden = false;
+    }
   }
 
-  // Google's script is only fetched when somebody actually asks to sign
-  // in, so a guest never touches Google at all.
-  function showSignIn(open) {
-    const host = $('googleButtonHost');
-    const openBtn = $('showSignInBtn');
-    const cancelBtn = $('cancelSignInBtn');
-    if (!host || !openBtn || !cancelBtn) return;
-
-    const offered = WTWAuth.canSignIn();
-    const row = $('accountSignin');
-    if (row) row.hidden = !offered;
-    openBtn.hidden = !offered || open;
-    cancelBtn.hidden = !offered || !open;
-    host.hidden = !offered || !open;
-
-    if (offered && open && !googleButtonRendered) {
-      googleButtonRendered = true;
-      WTWAuth.renderButton(host);
+  async function signInWithMicrosoft() {
+    const btn = $('microsoftBtn');
+    if (btn) btn.disabled = true;
+    try {
+      const res = await WTWAuth.signInWithMicrosoft();
+      if (!res.ok && res.reason !== 'cancelled') {
+        toast("Couldn't sign in with Microsoft. Try again?", true);
+      }
+    } finally {
+      if (btn) btn.disabled = false;
     }
   }
 
@@ -1204,25 +1220,16 @@
     const hint = $('accountHint');
     if (!hint) return;
     if (profile) {
-      hint.textContent = 'Signed in with Google. Your name and picture are kept ' +
+      const where = profile.provider === 'microsoft' ? 'Microsoft' : 'Google';
+      hint.textContent = `Signed in with ${where}. Your name and picture are kept ` +
         'on this device only \u2014 nothing is synced anywhere.';
       return;
     }
-    const reason = WTWAuth.unavailableReason();
-    if (reason === 'unconfigured') {
-      hint.textContent = 'Sign-in is not set up on this build, so everyone is a ' +
-        'guest \u2014 which is the entire app, nothing held back.';
-    } else if (reason === 'unsupported') {
-      hint.textContent = 'Google sign-in needs a web address, so the desktop app ' +
-        'is guest only. Nothing is missing.';
-    } else {
-      hint.textContent = 'Guest is always enough. Signing in only sets your name ' +
-        'and picture on this device \u2014 nothing is synced, and nothing is sent ' +
-        "anywhere but Google's own sign-in.";
-    }
+    hint.textContent = 'Signing in sets your name and picture. Nothing is synced: ' +
+      'your favourites and settings stay on this device.';
   }
 
-  // Adopt the Google first name only while the username is still the
+  // Adopt the account's first name only while the username is still the
   // stock default — never overwrite one the user chose themselves.
   function applyProfileToUsername(profile) {
     if (!profile || !profile.givenName) return;
@@ -1231,17 +1238,39 @@
     WTWStorage.saveSettings({ username: profile.givenName.slice(0, 24) });
     // Remembered so logging out can hand the name back, and so a name
     // typed in later is recognised as the user's own.
-    WTWStorage.set('usernameFromGoogle', true);
+    WTWStorage.set('usernameFromAccount', true);
     renderUsernameEverywhere();
   }
 
+  /* Log out ends the session and hands back the name and picture that
+     came with it. A username typed in by hand is never touched. */
+  function logOut() {
+    const adopted = WTWStorage.get('usernameFromAccount', false) === true ||
+                    WTWStorage.get('usernameFromGoogle', false) === true;
+    WTWAuth.signOut();
+    if (adopted) {
+      WTWStorage.remove('usernameFromAccount');
+      WTWStorage.remove('usernameFromGoogle');
+      WTWStorage.saveSettings({ username: WTW_CONFIG.defaults.username });
+      renderUsernameEverywhere();
+      restateRoast();
+    }
+    toast('Logged out');
+  }
+
   function onAuthChange(profile) {
-    // Signing out lands back on the guest panel, which always offers a
-    // way in again, so there is no dead end either way.
     renderAccount(profile);
     if (profile) {
       applyProfileToUsername(profile);
       toast(`Signed in as ${profile.name}`);
+      return;
+    }
+    // Logging out must leave a way back in: the buttons are skipped
+    // while signed in, so re-draw them if the panel is open.
+    signInRendered = false;
+    if (document.body.classList.contains('settings-open')) {
+      signInRendered = true;
+      renderSignIn();
     }
   }
 
@@ -1375,9 +1404,7 @@
       });
     }
     $('signOutBtn').addEventListener('click', logOut);
-    $('guestLogoutBtn').addEventListener('click', logOut);
-    $('showSignInBtn').addEventListener('click', () => showSignIn(true));
-    $('cancelSignInBtn').addEventListener('click', () => showSignIn(false));
+    $('microsoftBtn').addEventListener('click', signInWithMicrosoft);
 
     $('downloadBtn').addEventListener('click', () => openDownloads(true));
     $('settingsDownloadBtn').addEventListener('click', () => {

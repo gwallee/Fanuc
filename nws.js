@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V13 — nws.js
+   What the Wether V14 — nws.js
    National Weather Service (api.weather.gov) client.
 
    Free, no API key, CORS-enabled. US + territories only, so

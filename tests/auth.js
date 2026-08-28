@@ -1,4 +1,5 @@
-/* Guest (the automatic default), logging out, and optional Google sign-in. */
+/* Sign in with Google or Microsoft, and what the panel says when
+   nobody has. */
 const { chromium } = require('playwright');
 const BASE_URL = process.env.WTW_BASE_URL || 'http://localhost:8901';
 const APP_DIR = process.env.WTW_APP_DIR || require('path').join(__dirname, '..');
@@ -13,12 +14,20 @@ function fakeIdToken(payload) {
   return `${b64({ alg: 'RS256', typ: 'JWT' })}.${b64(payload)}.notarealsignature`;
 }
 
-const PROFILE = {
+const GOOGLE_PROFILE = {
   sub: '1234567890',
   name: 'Ada Lovelace',
   given_name: 'Ada',
   email: 'ada@example.com',
   picture: 'https://lh3.googleusercontent.com/fake-avatar',
+};
+
+// Microsoft returns an account object alongside the claims, and no picture.
+const MS_CLAIMS = {
+  oid: 'ms-0000-1111',
+  name: 'Grace Hopper',
+  given_name: 'Grace',
+  preferred_username: 'grace@contoso.com',
 };
 
 function omBody() {
@@ -38,29 +47,25 @@ function omBody() {
     catch (e) { console.log('FAIL - ' + n + ' (' + e.message.split('\n')[0] + ')'); failures++; }
   };
 
-  // clientId: null leaves it unconfigured (the shipped default).
-  const mk = async (clientId) => {
+  // ids: {} leaves both providers unconfigured, which is what ships.
+  const mk = async (ids = {}) => {
     const ctx = await browser.newContext({ viewport:{width:1280,height:900}, serviceWorkers:'block' });
     const page = await ctx.newPage();
-    // Deny every external host by default. Routes registered after this one
-    // win, so each suite still stubs what it needs - but anything a suite
-    // forgot fails closed instead of quietly reaching the real internet.
-    // A predicate, not a glob: 'https://**' matches nothing at all.
+    // Deny every external host by default; the stubs below are
+    // registered afterwards and so take precedence.
     await page.route((u) => u.protocol === 'https:', (r) => r.abort());
-    if (clientId) {
-      // Patch config before any app script runs.
-      await page.addInitScript((id) => {
+    if (ids.google || ids.microsoft) {
+      // Patch config before any app script reads it.
+      await page.addInitScript((cfg) => {
         const apply = () => {
-          if (window.WTW_CONFIG && window.WTW_CONFIG.auth) {
-            window.WTW_CONFIG.auth.googleClientId = id;
-            return true;
-          }
-          return false;
+          if (!window.WTW_CONFIG || !window.WTW_CONFIG.auth) return false;
+          if (cfg.google) window.WTW_CONFIG.auth.google.clientId = cfg.google;
+          if (cfg.microsoft) window.WTW_CONFIG.auth.microsoft.clientId = cfg.microsoft;
+          return true;
         };
-        Object.defineProperty(window, '__wtwPatch', { value: apply, writable: true });
-        document.addEventListener('readystatechange', apply, true);
         const timer = setInterval(() => { if (apply()) clearInterval(timer); }, 5);
-      }, clientId);
+        document.addEventListener('readystatechange', apply, true);
+      }, ids);
     }
     // Stand in for Google Identity Services.
     await page.route('https://accounts.google.com/gsi/client', (r) => r.fulfill({
@@ -79,148 +84,162 @@ function omBody() {
         } } };
       `,
     }));
+    // Stand in for MSAL. loginPopup resolves with whatever the test set.
+    await page.route('https://alcdn.msauth.net/**', (r) => r.fulfill({
+      contentType: 'text/javascript',
+      body: `
+        window.msal = {
+          PublicClientApplication: class {
+            constructor(config) { window.__msalConfig = config; this.accounts = []; }
+            async loginPopup(req) {
+              window.__msalLoginRequest = req;
+              if (window.__msalReject) throw window.__msalReject;
+              this.accounts = [window.__msalAccount];
+              return { account: window.__msalAccount, idTokenClaims: window.__msalClaims };
+            }
+            getAllAccounts() { return this.accounts; }
+            removeAccount(a) { this.accounts = this.accounts.filter((x) => x !== a); window.__msalRemoved = true; }
+          },
+        };
+      `,
+    }));
     await page.route('https://lh3.googleusercontent.com/**', (r) => r.fulfill({ contentType:'image/png', body: PNG }));
     await page.route('https://api.github.com/**', r => r.fulfill({status:404, body:'{}'}));
     await page.route('https://geocoding-api.open-meteo.com/**', r => r.fulfill({contentType:'application/json',
       body: JSON.stringify({results:[{name:'Austin',admin1:'Texas',country:'United States',latitude:30.2672,longitude:-97.7431}]})}));
     await page.route('https://api.open-meteo.com/**', r => r.fulfill({contentType:'application/json', body: omBody()}));
     await page.route('https://api.weather.gov/**', r => r.fulfill({status:404, body:'{}'}));
-    await page.route('https://api.met.no/**', r => r.abort());
-    await page.route('https://air-quality-api.open-meteo.com/**', r => r.abort());
-    await page.route('https://api.rainviewer.com/**', r => r.abort());
     await page.route('https://opengeo.ncep.noaa.gov/**', r => r.fulfill({contentType:'image/png', body:PNG}));
     await page.route('https://basemaps.cartocdn.com/**', r => r.fulfill({contentType:'image/png', body:PNG}));
     await page.goto(BASE_URL + '/index.html', { waitUntil:'networkidle' });
-    await page.evaluate((tok) => { window.__fakeToken = tok; }, fakeIdToken(PROFILE));
+    await page.evaluate((tok) => { window.__fakeToken = tok; }, fakeIdToken(GOOGLE_PROFILE));
+    await page.evaluate((c) => {
+      window.__msalClaims = c;
+      window.__msalAccount = { homeAccountId: c.oid, name: c.name, username: c.preferred_username };
+    }, MS_CLAIMS);
     return { ctx, page };
   };
 
-  console.log('=== Unconfigured: the app is unaffected ===');
-  let { ctx, page } = await mk(null);
-  await check('the app loads and works with no client ID', async () => {
+  const GOOGLE_ID = 'test-client-id.apps.googleusercontent.com';
+  const MS_ID = '11111111-2222-3333-4444-555555555555';
+
+  console.log('=== Nothing configured: the app is unaffected ===');
+  let { ctx, page } = await mk();
+  await check('the app loads and works with no client IDs', async () => {
     await page.fill('#searchInput', 'Austin');
     await page.click('#searchBtn');
     await page.waitForSelector('#weatherPanels:not([hidden])', { timeout: 15000 });
     return /Austin/.test(await page.textContent('#wxCity'));
   });
-  await check('guest is already the state, with nothing to click', async () => {
+  await check('settings says so plainly, with no dead buttons', async () => {
     await page.click('#settingsBtn');
     await page.waitForTimeout(700);
-    return await page.isVisible('#accountGuest') &&
-           /browsing as a guest/i.test(await page.textContent('#guestTitle')) &&
-           !(await page.isVisible('#showSignInBtn')) &&
+    return /isn.t set up/i.test(await page.textContent('#signInNote')) &&
+           !(await page.isVisible('#microsoftBtn')) &&
            (await page.locator('#fakeGoogleButton').count()) === 0;
   });
-  await check('nothing at all is stored to be a guest', async () =>
-    page.evaluate(() => Object.keys(localStorage)
-      .every((k) => !/guest/i.test(k))));
-  await check('the hint says guest is the whole app, in plain words', async () => {
-    const hint = await page.textContent('#accountHint');
-    return /guest/i.test(hint) && !/client id|config\.js/i.test(hint);
-  });
-  await check('a log out button is there even with no sign-in', async () =>
-    page.isVisible('#guestLogoutBtn'));
-  await check('logging out as a guest says so instead of doing nothing', async () => {
-    await page.click('#guestLogoutBtn');
-    await page.waitForTimeout(300);
-    return /already a guest/i.test(await page.textContent('#toast'));
-  });
-  await check('still a guest after a reload, with nothing to do', async () => {
-    await page.reload({ waitUntil: 'networkidle' });
-    await page.waitForTimeout(1200);
-    await page.click('#settingsBtn');
-    await page.waitForTimeout(500);
-    return await page.isVisible('#accountGuest') &&
-           await page.isVisible('#guestLogoutBtn');
-  });
-  await check("Google's script is not even fetched when unconfigured", async () =>
-    page.evaluate(() => !document.querySelector('script[src*="accounts.google.com"]')));
+  await check('the word "guest" appears nowhere in the app', async () =>
+    page.evaluate(() => !/guest/i.test(document.body.innerText)));
+  await check('neither provider script is fetched when unconfigured', async () =>
+    page.evaluate(() => !document.querySelector('script[src*="accounts.google.com"]') &&
+                        !document.querySelector('script[src*="msauth.net"]')));
   await check('the default username is untouched', async () =>
     (await page.textContent('.brand-greeting strong')) === 'DJTheBest');
-  await check('logging out leaves a name you typed yourself alone', async () => {
-    await page.fill('#usernameInput', 'StormLord');
-    await page.click('#usernameSaveBtn');
-    await page.waitForTimeout(300);
-    await page.click('#guestLogoutBtn');
-    await page.waitForTimeout(300);
-    return (await page.textContent('.brand-greeting strong')) === 'StormLord';
-  });
   await ctx.close();
 
-  console.log('\n=== Configured: guest still comes first ===');
-  ({ ctx, page } = await mk('test-client-id.apps.googleusercontent.com'));
+  console.log('\n=== Both configured: two ways in ===');
+  ({ ctx, page } = await mk({ google: GOOGLE_ID, microsoft: MS_ID }));
   await page.fill('#searchInput', 'Austin');
   await page.click('#searchBtn');
   await page.waitForSelector('#weatherPanels:not([hidden])', { timeout: 15000 });
-  await check('the guest row leads, with sign-in offered underneath', async () => {
+  await check('both buttons are offered', async () => {
     await page.click('#settingsBtn');
-    await page.waitForTimeout(600);
-    return await page.isVisible('#accountGuest') &&
-           await page.isVisible('#showSignInBtn') &&
-           !(await page.isVisible('#googleButtonHost'));
-  });
-  await check('a guest never contacts Google, even with sign-in available', async () =>
-    page.evaluate(() => !document.querySelector('script[src*="accounts.google.com"]')));
-  await check('sign-in opens on request', async () => {
-    await page.click('#showSignInBtn');
     await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
-    return page.isVisible('#fakeGoogleButton');
+    return await page.isVisible('#fakeGoogleButton') && await page.isVisible('#microsoftBtn');
   });
-  await check('"never mind" folds it back to guest', async () => {
-    await page.click('#cancelSignInBtn');
-    await page.waitForTimeout(400);
-    return !(await page.isVisible('#googleButtonHost')) &&
-           await page.isVisible('#showSignInBtn') &&
-           await page.isVisible('#accountGuest');
-  });
-  await check('signing in replaces the guest row', async () => {
-    await page.click('#showSignInBtn');
-    await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
-    await page.click('#fakeGoogleButton');
-    await page.waitForTimeout(700);
-    return await page.isVisible('#accountSignedIn') &&
-           !(await page.isVisible('#accountGuest'));
-  });
-  await check('logging out hands back the name that came from Google', async () => {
-    await page.click('#signOutBtn');
-    await page.waitForTimeout(600);
-    return (await page.textContent('.brand-greeting strong')) === 'DJTheBest' &&
-           /logged out/i.test(await page.textContent('#toast'));
-  });
-  await check('logging out returns to the guest panel, not a dead end', async () =>
-    await page.isVisible('#accountGuest') &&
-    await page.isVisible('#guestLogoutBtn') &&
-    await page.isVisible('#showSignInBtn'));
-  await check('no guest bookkeeping is left in storage either way', async () =>
-    page.evaluate(() => Object.keys(localStorage).every((k) => !/guestMode/.test(k))));
-  await ctx.close();
-
-  console.log('\n=== Configured: signing in ===');
-  ({ ctx, page } = await mk('test-client-id.apps.googleusercontent.com'));
-  await page.fill('#searchInput', 'Austin');
-  await page.click('#searchBtn');
-  await page.waitForSelector('#weatherPanels:not([hidden])', { timeout: 15000 });
-  await page.waitForTimeout(1500);
-  await check('the sign-in button renders once asked for', async () => {
-    await page.click('#settingsBtn');
-    await page.waitForTimeout(400);
-    await page.click('#showSignInBtn');
-    await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
-    return page.isVisible('#fakeGoogleButton');
-  });
-  await check('the client ID is passed to Google', async () =>
-    (await page.evaluate(() => window.__gsiOpts && window.__gsiOpts.client_id)) ===
-      'test-client-id.apps.googleusercontent.com');
+  await check('still no talk of guests', async () =>
+    page.evaluate(() => !/guest/i.test(document.body.innerText)));
+  await check('the Google client ID is passed through', async () =>
+    (await page.evaluate(() => window.__gsiOpts && window.__gsiOpts.client_id)) === GOOGLE_ID);
   await check('auto sign-in is not enabled behind the scenes', async () =>
     (await page.evaluate(() => window.__gsiOpts && window.__gsiOpts.auto_select)) === false);
+  await ctx.close();
+
+  console.log('\n=== Signing in with Microsoft ===');
+  ({ ctx, page } = await mk({ google: GOOGLE_ID, microsoft: MS_ID }));
+  await page.fill('#searchInput', 'Austin');
+  await page.click('#searchBtn');
+  await page.waitForSelector('#weatherPanels:not([hidden])', { timeout: 15000 });
+  await page.click('#settingsBtn');
+  await page.waitForTimeout(800);
+  await check('the Microsoft app is configured with the client ID and authority', async () => {
+    await page.click('#microsoftBtn');
+    await page.waitForTimeout(900);
+    const cfg = await page.evaluate(() => window.__msalConfig && window.__msalConfig.auth);
+    return cfg.clientId === MS_ID && /login\.microsoftonline\.com\/common/.test(cfg.authority);
+  });
+  await check('it asks which account to use rather than reusing one', async () =>
+    (await page.evaluate(() => window.__msalLoginRequest && window.__msalLoginRequest.prompt)) === 'select_account');
+  await check('the name and email are shown', async () =>
+    (await page.textContent('#accountName')) === 'Grace Hopper' &&
+    (await page.textContent('#accountEmail')) === 'grace@contoso.com');
+  await check('an initial stands in for the missing picture', async () =>
+    await page.isVisible('#accountInitial') &&
+    (await page.textContent('#accountInitial')) === 'G' &&
+    !(await page.isVisible('#accountAvatar')));
+  await check('the hint names Microsoft', async () =>
+    /Microsoft/.test(await page.textContent('#accountHint')));
+  await check('the username adopts the first name', async () =>
+    (await page.textContent('.brand-greeting strong')) === 'Grace');
+  await check('the sign-in buttons are replaced, not stacked', async () =>
+    !(await page.isVisible('#accountSignedOut')) && await page.isVisible('#accountSignedIn'));
+  await check('logging out clears the account and the adopted name', async () => {
+    await page.click('#signOutBtn');
+    await page.waitForTimeout(700);
+    return await page.isVisible('#accountSignedOut') &&
+           (await page.textContent('.brand-greeting strong')) === 'DJTheBest';
+  });
+  await check("logging out drops Microsoft's cached account", async () =>
+    page.evaluate(() => window.__msalRemoved === true));
+  await check('both buttons are offered again straight away', async () =>
+    await page.isVisible('#microsoftBtn') && await page.isVisible('#fakeGoogleButton'));
+  await check('a cancelled popup is not treated as a failure', async () => {
+    // Clear the log-out toast first, or its 3s lifetime answers for us.
+    await page.evaluate(() => {
+      window.__msalReject = { errorCode: 'user_cancelled' };
+      document.getElementById('toast').classList.remove('show');
+    });
+    await page.click('#microsoftBtn');
+    await page.waitForTimeout(700);
+    const toastVisible = await page.evaluate(() =>
+      document.getElementById('toast').classList.contains('show'));
+    return !(await page.isVisible('#accountSignedIn')) && !toastVisible;
+  });
+  await check('the button is usable again after a cancel', async () =>
+    page.evaluate(() => !document.getElementById('microsoftBtn').disabled));
+  await check('a real failure says so instead of failing silently', async () => {
+    await page.evaluate(() => { window.__msalReject = { errorCode: 'something_broke' }; });
+    await page.click('#microsoftBtn');
+    await page.waitForTimeout(700);
+    return /Microsoft/.test(await page.textContent('#toast'));
+  });
+  await ctx.close();
+
+  console.log('\n=== Signing in with Google ===');
+  ({ ctx, page } = await mk({ google: GOOGLE_ID, microsoft: MS_ID }));
+  await page.fill('#searchInput', 'Austin');
+  await page.click('#searchBtn');
+  await page.waitForSelector('#weatherPanels:not([hidden])', { timeout: 15000 });
+  await page.click('#settingsBtn');
+  await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
   await check('signing in shows the name and email', async () => {
     await page.click('#fakeGoogleButton');
     await page.waitForTimeout(700);
     return (await page.textContent('#accountName')) === 'Ada Lovelace' &&
            (await page.textContent('#accountEmail')) === 'ada@example.com';
   });
-  await check('the signed-out block is replaced, not stacked', async () =>
-    !(await page.isVisible('#accountSignedOut')) && await page.isVisible('#accountSignedIn'));
+  await check('the picture is used when there is one', async () =>
+    await page.isVisible('#accountAvatar') && !(await page.isVisible('#accountInitial')));
   await check('the avatar appears beside the greeting', async () =>
     page.isVisible('#brandAvatar'));
   await check('the username adopts the Google first name', async () =>
@@ -231,9 +250,14 @@ function omBody() {
     await page.waitForTimeout(400);
     return /Ada/.test(await page.textContent('#roastText'));
   });
-  await check('logging out clears the profile and the avatar', async () => {
+  await check('the profile survives a reload', async () => {
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForTimeout(1800);
     await page.click('#settingsBtn');
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(600);
+    return (await page.textContent('#accountName')) === 'Ada Lovelace';
+  });
+  await check('logging out clears the profile and the avatar', async () => {
     await page.click('#signOutBtn');
     await page.waitForTimeout(700);
     return await page.isVisible('#accountSignedOut') &&
@@ -243,54 +267,58 @@ function omBody() {
   await check("logging out also clears Google's auto-select", async () =>
     page.evaluate(() => window.__autoSelectDisabled === true));
   await check('the profile is gone from storage', async () =>
-    page.evaluate(() => localStorage.getItem('wtw:googleProfile') === null));
-  await check('a way back in is offered straight away', async () =>
-    page.isVisible('#showSignInBtn'));
+    page.evaluate(() => localStorage.getItem('wtw:profile') === null &&
+                        localStorage.getItem('wtw:googleProfile') === null));
   await check('signing back in works without a reload', async () => {
-    await page.click('#showSignInBtn');
     await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
     await page.click('#fakeGoogleButton');
     await page.waitForTimeout(700);
     return (await page.textContent('#accountName')) === 'Ada Lovelace';
   });
-  await check('the profile survives a reload', async () => {
-    await page.reload({ waitUntil: 'networkidle' });
-    await page.waitForTimeout(1800);
+  await ctx.close();
+
+  console.log('\n=== One provider configured, not the other ===');
+  ({ ctx, page } = await mk({ microsoft: MS_ID }));
+  await check('only the configured provider is offered', async () => {
     await page.click('#settingsBtn');
-    await page.waitForTimeout(600);
-    return (await page.textContent('#accountName')) === 'Ada Lovelace';
+    await page.waitForTimeout(800);
+    return await page.isVisible('#microsoftBtn') &&
+           (await page.locator('#fakeGoogleButton').count()) === 0 &&
+           !(await page.isVisible('#googleButtonHost'));
   });
+  await check("Google's script is not fetched for a Microsoft-only build", async () =>
+    page.evaluate(() => !document.querySelector('script[src*="accounts.google.com"]')));
   await ctx.close();
 
   console.log('\n=== A chosen username is never overwritten ===');
-  ({ ctx, page } = await mk('test-client-id.apps.googleusercontent.com'));
+  ({ ctx, page } = await mk({ google: GOOGLE_ID, microsoft: MS_ID }));
   await page.evaluate(() => {
     const s = JSON.parse(localStorage.getItem('wtw:settings') || '{}');
     s.username = 'StormLord';
     localStorage.setItem('wtw:settings', JSON.stringify(s));
   });
   await page.reload({ waitUntil: 'networkidle' });
-  await page.evaluate((tok) => { window.__fakeToken = tok; },
-    fakeIdToken(PROFILE));
+  await page.evaluate((tok) => { window.__fakeToken = tok; }, fakeIdToken(GOOGLE_PROFILE));
   await page.waitForTimeout(800);
   await check('a custom username survives signing in', async () => {
     await page.click('#settingsBtn');
-    await page.waitForTimeout(400);
-    await page.click('#showSignInBtn');
     await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
     await page.click('#fakeGoogleButton');
+    await page.waitForTimeout(700);
+    return (await page.textContent('.brand-greeting strong')) === 'StormLord';
+  });
+  await check('and survives logging out again', async () => {
+    await page.click('#signOutBtn');
     await page.waitForTimeout(700);
     return (await page.textContent('.brand-greeting strong')) === 'StormLord';
   });
   await ctx.close();
 
   console.log('\n=== Malformed credentials are refused ===');
-  ({ ctx, page } = await mk('test-client-id.apps.googleusercontent.com'));
+  ({ ctx, page } = await mk({ google: GOOGLE_ID }));
   await check('garbage tokens do not sign anyone in', async () => {
     await page.evaluate(() => { window.__fakeToken = 'not.a.jwt'; });
     await page.click('#settingsBtn');
-    await page.waitForTimeout(400);
-    await page.click('#showSignInBtn');
     await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
     await page.click('#fakeGoogleButton');
     await page.waitForTimeout(600);
@@ -307,7 +335,7 @@ function omBody() {
     page.isVisible('#settingsPanel'));
   await ctx.close();
 
-  console.log(failures ? `\n${failures} FAILURE(S)` : '\nAll guest, log-out and sign-in checks passed.');
+  console.log(failures ? `\n${failures} FAILURE(S)` : '\nAll sign-in checks passed.');
   await browser.close();
   process.exit(failures ? 1 : 0);
 })();

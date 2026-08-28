@@ -1,4 +1,4 @@
-# What the Wether V13 ⚡🌩️
+# What the Wether V14 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -244,50 +244,69 @@ alongside the headline stats.
 - Save locations, remove them, click to load
 - Stored in `localStorage`
 
-### 👤 Account — guest first (optional sign-in)
+### 👤 Account — sign in with Google or Microsoft (optional)
 
-**Settings → Account** leads with **Continue as guest**: one button, no sign-up,
-and the entire app. Guest is not a limited mode — nothing is held back, and no
-feature anywhere asks for an account. Taking it is remembered, so the panel
-stops asking and just says *You're all set*.
+**Settings → Account** offers two ways in: **Sign in with Google** and **Sign in
+with Microsoft**. Signing in sets your name and picture, and the roast bot
+starts using your first name. That is the whole of what it does.
 
-Signing in with Google sits underneath, behind its own **Sign in with Google
-instead** button, so Google's script is never even fetched unless somebody asks
-for it. A **Never mind, stay a guest** button folds it back. If no client ID is
-configured (the shipped default), the sign-in row simply isn't there — the panel
-says everyone is a guest rather than showing a developer note.
+Nothing in the app is behind it. Every feature works before anybody signs in,
+so the panel does not explain the state you are in meanwhile — there is nothing
+to explain. Each provider's SDK is fetched only when this panel is opened by
+somebody who is not signed in, so simply using the app contacts neither
+company.
 
-Signing in sets your name and picture, and the roast bot starts using your
-first name. It is **off until you supply a client ID**, and the app is fully
-functional without it — "works with zero keys" still holds.
+Both providers are **off until you supply a client ID**, and each is
+independent: configure one, the other, or both, and only what is configured
+appears. With neither set the panel says so in a line rather than showing a
+button that cannot work.
 
-**Turning it on:**
+**Turning on Google:**
 
 1. Create an **OAuth 2.0 Client ID** (type: *Web application*) at
    [console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials)
 2. Under **Authorised JavaScript origins**, add your site — for this project
    that is `https://gwallee.github.io` (add `http://localhost:8000` too if you
    test locally)
-3. Paste the ID into `auth.googleClientId` in `config.js`
+3. Paste it into `auth.google.clientId` in `config.js`
 
-A web client ID is public by design and safe to commit — it is not a secret,
-and it only works from the origins you listed.
+**Turning on Microsoft:**
+
+1. Register an application at
+   [Microsoft Entra ID → App registrations](https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade)
+2. Choose the account types you want to accept. *Personal Microsoft accounts*
+   and *work or school accounts* both map to the default `common` tenant; set
+   `auth.microsoft.tenant` to `consumers` for personal only, or to a tenant ID
+   to restrict sign-in to one organisation
+3. Add a **Single-page application** redirect URI matching the page itself —
+   `https://gwallee.github.io/What-The-Weather/` (and
+   `http://localhost:8000/` for local testing). SPA, *not* Web: the Web type
+   expects a client secret, which a static site cannot keep
+4. Paste the **Application (client) ID** into `auth.microsoft.clientId`
+
+No client secret is needed for either, and neither client ID is a secret: both
+are public by design and only work from the origins you registered, which is
+why they can live in a committed file.
 
 **Two things this deliberately is not:**
 
-- **Not verified authentication.** Verifying a Google ID token means checking
-  its signature against Google's public keys *on a server*. This app has no
+- **Not verified authentication.** Verifying an ID token means checking its
+  signature against the provider's public keys *on a server*. This app has no
   server, so the token is decoded, never verified. That is fine for showing a
-  name and an avatar, and nothing security-relevant depends on it — but don't
+  name and a picture, and nothing security-relevant depends on it — but don't
   mistake it for real auth.
 - **Not account sync.** Favourites and settings stay in this browser's
   `localStorage`. Syncing across devices needs somewhere to store them, which
   again means a server.
 
-Signing out clears the stored profile and disables Google's auto-select, so you
-aren't silently signed back in, and lands back on the guest panel — there is no
-state you can reach with no way forward. A username you chose yourself is never
-overwritten by the Google one.
+**Logging out** clears the stored profile and hands back the name and picture
+that came with it. For Google it also calls `disableAutoSelect`, so you are not
+silently signed back in on the next visit; for Microsoft it drops the cached
+account, and sign-in always asks which account to use, so nothing is sticky. A
+username you chose yourself is never touched, whichever way you came in.
+
+Microsoft's ID token carries no picture (fetching one needs Microsoft Graph),
+so a signed-in Microsoft account shows an initial rather than a broken image.
 
 ### ⚙️ Settings
 - **Username** (default: `DJTheBest`) — shown throughout the app and used
@@ -339,7 +358,7 @@ dependencies** — `package.json` exists only for the tests.
 ## Project structure
 
 ```
-WhatTheWether-V13/
+WhatTheWether-V14/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
@@ -462,7 +481,7 @@ on the **Build desktop apps** action) and GitHub builds all three platforms
 natively and attaches them to a release:
 
 ```bash
-git tag v13.0.0 && git push origin v13.0.0
+git tag v14.0.0 && git push origin v14.0.0
 ```
 
 | Platform | Files |

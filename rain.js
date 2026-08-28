@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V13 — rain.js
+   What the Wether V14 — rain.js
    Picks the most authoritative precipitation source available and
    says which one answered.
 

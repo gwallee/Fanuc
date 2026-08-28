@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V13 — radar.js
+   What the Wether V14 — radar.js
    Canvas radar scope with a real basemap underneath.
 
    Layers, bottom to top, all projected in EPSG:3857 so they align:

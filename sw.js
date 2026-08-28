@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V13 — sw.js
+   What the Wether V14 — sw.js
    Service worker: precaches the app shell so the app opens
    instantly and works offline, and keeps a runtime cache of the
    last successful weather responses to fall back on.
@@ -8,7 +8,7 @@
    is deleted on activate.
    ============================================================ */
 
-const CACHE_VERSION = 'wtw-v13-4';
+const CACHE_VERSION = 'wtw-v14-1';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 
@@ -102,10 +102,13 @@ self.addEventListener('fetch', (event) => {
   if (url.hostname.includes('ncep.noaa.gov') || url.hostname.includes('cartocdn.com') ||
       url.hostname.includes('rainviewer.com')) return;
 
-  // Sign-in must always talk to Google directly; caching any of it
-  // would be both broken and a bad idea.
+  // Sign-in must always reach Google and Microsoft directly; caching any
+  // of it would be both broken and a bad idea.
   if (url.hostname.endsWith('google.com') || url.hostname.endsWith('googleapis.com') ||
-      url.hostname.endsWith('googleusercontent.com') || url.hostname.endsWith('gstatic.com')) return;
+      url.hostname.endsWith('googleusercontent.com') || url.hostname.endsWith('gstatic.com') ||
+      url.hostname.endsWith('microsoftonline.com') || url.hostname.endsWith('msauth.net') ||
+      url.hostname.endsWith('msftauth.net') || url.hostname.endsWith('live.com') ||
+      url.hostname.endsWith('microsoft.com')) return;
 
   // The page itself is network-first. Cache-first on the document is how
   // a deployed update can go unseen for a whole session: the browser

@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V13 — styles.css
+   What the Wether V14 — styles.css
    All colors come from CSS variables so themes are one block
    each. Default theme: Neon Dark. Others: Midnight, Light.
    ============================================================ */
@@ -670,58 +670,54 @@ body.modal-open { overflow: hidden; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Guest: the default choice, so it reads as a state you are already in
-   rather than a lesser option. */
-.account-guest {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  background: var(--input-bg);
-  border: 1px solid var(--card-border);
-  border-radius: 12px;
-  padding: 0.5rem 0.6rem;
+/* Sign-in. Google renders its own branded button; the Microsoft one is
+   ours, following their mark: four squares, never recoloured. */
+.account-lead {
+  font-size: 0.85rem;
+  color: var(--text);
+  margin-bottom: 0.6rem;
 }
-.account-badge {
-  flex: 0 0 auto;
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-  padding: 0.28rem 0.5rem;
-  border-radius: 999px;
-  border: 1px solid var(--card-border);
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-.account-badge.is-set {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.account-guest .btn { flex: 0 0 auto; }
-
-.account-signin {
+.signin-buttons {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 0.45rem;
-  margin-top: 0.5rem;
+  align-items: stretch;
+  gap: 0.5rem;
 }
-.account-signin[hidden] { margin-top: 0; }
-.btn-quiet {
-  background: transparent;
-  border-color: transparent;
-  color: var(--text-dim);
-  padding-left: 0.2rem;
-  padding-right: 0.2rem;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.btn-quiet:hover { color: var(--accent); }
+.signin-buttons:empty { display: none; }
 
-@media (max-width: 420px) {
-  .account-guest { flex-wrap: wrap; }
-  .account-guest .account-meta { flex-basis: 100%; order: 2; }
-  .account-guest .btn { order: 3; margin-left: auto; }
+.signin-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  width: 100%;
+  max-width: 260px;
+  min-height: 40px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.ms-btn {
+  background: #2f2f2f;
+  border: 1px solid #3c3c3c;
+  color: #fff;
+}
+.ms-btn:hover { background: #3a3a3a; }
+.ms-btn:disabled { opacity: 0.6; cursor: default; }
+.ms-logo { display: inline-flex; flex: 0 0 auto; }
+
+/* Microsoft supplies no picture, so an initial stands in for one. */
+.account-initial {
+  width: 36px; height: 36px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1rem;
 }
 
 .auth-note {

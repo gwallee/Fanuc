@@ -1,12 +1,12 @@
 /* ============================================================
-   What the Wether V13 — config.js
+   What the Wether V14 — config.js
    Central configuration. No API keys required, ever.
    ============================================================ */
 
 const WTW_CONFIG = {
   app: {
     name: 'What the Wether',
-    version: 'V13',
+    version: 'V14',
     tagline: 'Weather with an attitude problem.',
   },
 
@@ -66,22 +66,30 @@ const WTW_CONFIG = {
     minutelyResolution: 15,
   },
 
-  // Optional Google sign-in. Leave the client ID empty and the app
-  // behaves exactly as before — sign-in simply does not appear.
-  //
-  // To turn it on, create an OAuth 2.0 Web client at
-  // https://console.cloud.google.com/apis/credentials and add your
-  // site to "Authorised JavaScript origins" (for this project that is
-  // https://gwallee.github.io). Paste the client ID below. A web
-  // client ID is public by design — it is not a secret — but it is
-  // still tied to the origins you list, so nobody else can use it.
+  // Sign-in. Leave both client IDs empty and sign-in simply does not
+  // appear; nothing else in the app changes, because nothing is behind
+  // it. Setting either one up is described in the README.
   //
   // Without a server the returned token can only be decoded, never
-  // verified, so this provides a name and an avatar, not trustworthy
+  // verified, so this provides a name and a picture, not trustworthy
   // authentication, and nothing security-relevant depends on it.
+  // Both providers are optional and neither needs a secret:
+  // a browser client ID is public by design and only works from the
+  // origins you register it against, so it belongs in this file rather
+  // than in an environment variable that a static site cannot read.
   auth: {
-    googleClientId: '',
-    setupUrl: 'https://console.cloud.google.com/apis/credentials',
+    google: {
+      clientId: '',
+      setupUrl: 'https://console.cloud.google.com/apis/credentials',
+    },
+    microsoft: {
+      clientId: '',
+      // 'common' accepts both personal and work/school accounts;
+      // 'consumers' is personal only, or use a tenant ID to restrict
+      // sign-in to one organisation.
+      tenant: 'common',
+      setupUrl: 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade',
+    },
   },
 
   // Where the desktop builds come from. The GitHub API is key-less and

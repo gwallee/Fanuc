@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V13 — hourly.js
+   What the Wether V14 — hourly.js
    48-hour outlook: normalizes hourly data from either source and
    draws the temperature curve with a precipitation-chance bar
    underneath. Canvas, no charting library, theme-aware.

@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V13 — units.js
+   What the Wether V14 — units.js
    One place that turns canonical values into display strings.
 
    Everything inside the app stays in a single canonical set —

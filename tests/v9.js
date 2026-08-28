@@ -50,6 +50,18 @@ function omBody() {
     catch (e) { console.log('FAIL - ' + n + ' (' + e.message.split('\n')[0] + ')'); failures++; }
   };
 
+  // Radar refetches are debounced and then load six images, which takes
+  // as long as the machine takes. Waiting for the condition instead of a
+  // fixed 1200ms is the difference between a test and a coin toss.
+  const waitFor = async (fn, timeout = 10000, step = 150) => {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      try { if (await fn()) return true; } catch (err) { /* not ready yet */ }
+      await page.waitForTimeout(step);
+    }
+    return false;
+  };
+
   // Block service workers so page.route stubs apply to app requests;
   // the worker itself is exercised separately in sw-offline.js.
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 1000 }, serviceWorkers: 'block' });
@@ -186,9 +198,15 @@ function omBody() {
   });
   await check('zoom re-requests radar at the new range', async () => {
     const before = wmsUrls.length;
-    await page.waitForTimeout(1200);
-    return wmsUrls.length > before;
+    return waitFor(() => wmsUrls.length > before);
   });
+
+  const bboxOf = (url) => new URL(url).searchParams.get('bbox').split(',').map(Number);
+  const centreLon = (url) => {
+    const bb = bboxOf(url);
+    return (((bb[0] + bb[2]) / 2) / 6378137) * 180 / Math.PI;
+  };
+
   await check('dragging the scope pans it', async () => {
     const b = await page.locator('#radarCanvas').boundingBox();
     const beforeCount = wmsUrls.length;
@@ -196,18 +214,14 @@ function omBody() {
     await page.mouse.down();
     await page.mouse.move(b.x + b.width / 2 + 60, b.y + b.height / 2 + 40, { steps: 8 });
     await page.mouse.up();
-    await page.waitForTimeout(1200);
-    const after = new URL(wmsUrls[wmsUrls.length - 1]).searchParams.get('bbox').split(',').map(Number);
-    const first = new URL(wmsUrls[0]).searchParams.get('bbox').split(',').map(Number);
-    return wmsUrls.length > beforeCount && Math.abs(after[0] - first[0]) > 1;
+    const moved = await waitFor(() => wmsUrls.length > beforeCount &&
+      Math.abs(bboxOf(wmsUrls[wmsUrls.length - 1])[0] - bboxOf(wmsUrls[0])[0]) > 1);
+    return moved;
   });
   await check('recenter returns to the location', async () => {
     await page.click('#radarRecenter');
-    await page.waitForTimeout(1200);
-    const R = 6378137;
-    const bb = new URL(wmsUrls[wmsUrls.length - 1]).searchParams.get('bbox').split(',').map(Number);
-    const lon = (((bb[0] + bb[2]) / 2) / R) * 180 / Math.PI;
-    return Math.abs(lon - AUSTIN.lon) < 0.05;
+    return waitFor(() =>
+      Math.abs(centreLon(wmsUrls[wmsUrls.length - 1]) - AUSTIN.lon) < 0.05);
   });
   await check('attribution is displayed', async () =>
     /OpenStreetMap/.test(await page.textContent('.radar-attribution')));
