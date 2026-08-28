@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <defs>
+    <linearGradient id="cloudGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00c8ff"/>
+      <stop offset="100%" stop-color="#00ff9d"/>
+    </linearGradient>
+    <linearGradient id="boltGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffe14d"/>
+      <stop offset="100%" stop-color="#ff9d00"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Cloud -->
+  <g filter="url(#glow)">
+    <path d="M32 74
+             a16 16 0 0 1 2 -31.8
+             a22 22 0 0 1 42.5 -4.6
+             a18 18 0 0 1 11.5 33.2
+             a14 14 0 0 1 -8 3.2
+             H36
+             a16 16 0 0 1 -4 0 Z"
+          fill="none" stroke="url(#cloudGrad)" stroke-width="5"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Lightning bolt -->
+  <g filter="url(#glow)">
+    <path d="M63 56 L48 84 L60 84 L52 108 L78 74 L64 74 L74 56 Z"
+          fill="url(#boltGrad)" stroke="#ffde59" stroke-width="1.5"
+          stroke-linejoin="round"/>
+  </g>
+
+  <!-- Rain sparks -->
+  <g stroke="#00c8ff" stroke-width="4" stroke-linecap="round" opacity="0.9">
+    <line x1="36" y1="84" x2="32" y2="94"/>
+    <line x1="86" y1="84" x2="82" y2="94"/>
+  </g>
+</svg>

@@ -1,0 +1,14 @@
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Node / desktop packaging (only created if you build the desktop app)
+node_modules/
+dist/
+out/
+*.log

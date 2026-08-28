@@ -1,0 +1,14 @@
+{
+  "name": "what-the-wether-desktop",
+  "productName": "What the Wether",
+  "version": "8.0.0",
+  "description": "What the Wether V8 desktop app — neon weather with animated radar and a local roast AI. No API keys.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}

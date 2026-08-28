@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="neon-dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0e17" />
+  <meta name="description" content="What the Wether V8 — a neon weather app with animated radar, 7-day forecasts, favorites, themes, and a built-in local AI that roasts the weather. No API keys required." />
+  <title>What the Wether V8 ⚡🌩️</title>
+  <link rel="icon" type="image/svg+xml" href="logo.svg" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ================= Header ================= -->
+  <header class="app-header">
+    <div class="brand">
+      <img src="logo.svg" alt="What the Wether logo" class="brand-logo" />
+      <div class="brand-text">
+        <h1>What the Wether <span class="version-badge" id="appVersion">V8</span></h1>
+        <p class="brand-greeting">Yo, <strong data-username>DJTheBest</strong> ⚡</p>
+      </div>
+    </div>
+
+    <div class="search-bar" role="search">
+      <input
+        type="text"
+        id="searchInput"
+        placeholder="City, place, or US ZIP…"
+        autocomplete="off"
+        aria-label="Search for a city, place, or ZIP code"
+      />
+      <button type="button" id="searchBtn" class="btn btn-primary">🔍 Search</button>
+      <button type="button" id="geoBtn" class="btn" title="Use my location">📍</button>
+      <button type="button" id="settingsBtn" class="btn" title="Settings" aria-label="Open settings">⚙️</button>
+    </div>
+  </header>
+
+  <!-- ================= Welcome (first run) ================= -->
+  <section class="welcome-panel" id="welcomePanel" hidden>
+    <img src="logo.svg" alt="" class="welcome-logo" />
+    <h2>Welcome, <span data-username>DJTheBest</span>!</h2>
+    <p>Search for a city or ZIP code, or use your location to get started.
+       Fair warning: the forecast comes with attitude.</p>
+    <div class="welcome-actions">
+      <button type="button" id="welcomeGeoBtn" class="btn btn-primary">📍 Use my location</button>
+      <button type="button" id="welcomeSearchBtn" class="btn">🔍 Search a place</button>
+    </div>
+  </section>
+
+  <!-- ================= Main content ================= -->
+  <main class="app-main" id="weatherPanels" hidden>
+
+    <!-- Current weather -->
+    <section class="card current-card empty" id="currentCard" aria-label="Current weather">
+      <div class="card-head">
+        <h2 id="wxCity">—</h2>
+        <div class="card-head-actions">
+          <button type="button" id="saveFavBtn" class="btn btn-small">☆ Save location</button>
+          <button type="button" id="refreshBtn" class="btn btn-small" title="Refresh weather">🔄</button>
+        </div>
+      </div>
+
+      <div class="current-main">
+        <div class="wx-icon" id="wxIcon">🌡️</div>
+        <div class="wx-temp-block">
+          <div class="wx-temp" id="wxTemp">--°</div>
+          <div class="wx-condition" id="wxCondition">Loading…</div>
+        </div>
+      </div>
+
+      <div class="wx-stats">
+        <div class="stat"><span class="stat-label">Feels like</span><span class="stat-value" id="wxFeels">--°</span></div>
+        <div class="stat"><span class="stat-label">Humidity</span><span class="stat-value" id="wxHumidity">--%</span></div>
+        <div class="stat"><span class="stat-label">Wind</span><span class="stat-value" id="wxWind">-- mph</span></div>
+        <div class="stat"><span class="stat-label">High / Low</span><span class="stat-value" id="wxHiLo">--° / --°</span></div>
+        <div class="stat"><span class="stat-label">Rain chance</span><span class="stat-value" id="wxRain">--%</span></div>
+      </div>
+      <div class="wx-updated" id="wxUpdated"></div>
+    </section>
+
+    <!-- AI roast -->
+    <section class="card roast-card" aria-label="AI weather roast">
+      <div class="card-head">
+        <h2>🤖 Wether Bot</h2>
+        <span class="roast-personality" id="roastPersonality"></span>
+      </div>
+      <p class="roast-text" id="roastText">Load some weather and I'll tell you what I really think, <span data-username>DJTheBest</span>.</p>
+      <button type="button" id="roastBtn" class="btn btn-primary">🔥 Roast me again</button>
+      <p class="roast-note">100% local AI — no API key, no cloud, no mercy.</p>
+    </section>
+
+    <!-- Radar -->
+    <section class="card radar-card" aria-label="Animated radar">
+      <div class="card-head">
+        <h2>📡 Live Radar</h2>
+        <div class="radar-status">
+          <span class="status-dot" id="radarStatusDot"></span>
+          <span id="radarStatusText">STANDBY</span>
+        </div>
+      </div>
+
+      <div class="radar-wrap">
+        <canvas id="radarCanvas" aria-label="Animated weather radar display"></canvas>
+        <div class="radar-location" id="radarLocationLabel">No location</div>
+      </div>
+
+      <div class="radar-timeline">
+        <span class="timeline-caption">-60 min</span>
+        <input type="range" id="radarTimeline" min="0" max="60" value="60" step="1" aria-label="Radar timeline" />
+        <span class="timeline-label" id="radarTimeLabel">NOW</span>
+      </div>
+
+      <div class="radar-controls">
+        <button type="button" id="radarPlayBtn" class="btn" aria-pressed="true">⏸ Pause</button>
+        <button type="button" id="radarStopBtn" class="btn">⏹ Stop</button>
+        <button type="button" id="radarRefreshBtn" class="btn">🔄 Refresh</button>
+        <button type="button" id="radarLocateBtn" class="btn">📍 My Location</button>
+      </div>
+    </section>
+
+    <!-- 7-day forecast -->
+    <section class="card forecast-card-panel" aria-label="7-day forecast">
+      <div class="card-head"><h2>📅 7-Day Forecast</h2></div>
+      <div class="forecast-row" id="forecastRow"></div>
+    </section>
+
+    <!-- Favorites -->
+    <section class="card favorites-card" aria-label="Favorite locations">
+      <div class="card-head"><h2>⭐ Favorites</h2></div>
+      <p class="favorites-empty" id="favoritesEmpty">No favorites yet. Load a place and hit “Save location”.</p>
+      <ul class="favorites-list" id="favoritesList"></ul>
+    </section>
+
+  </main>
+
+  <!-- ================= Settings ================= -->
+  <div class="settings-overlay" id="settingsOverlay" hidden></div>
+  <aside class="settings-panel" id="settingsPanel" aria-label="Settings">
+    <div class="settings-head">
+      <h2>⚙️ Settings</h2>
+      <button type="button" id="settingsCloseBtn" class="btn btn-small" aria-label="Close settings">✕</button>
+    </div>
+
+    <div class="setting-group">
+      <label for="usernameInput">Username</label>
+      <div class="setting-row">
+        <input type="text" id="usernameInput" maxlength="24" autocomplete="off" />
+        <button type="button" id="usernameSaveBtn" class="btn btn-primary btn-small">Save</button>
+      </div>
+      <p class="setting-hint">Shown across the app. The bot will use it against you.</p>
+    </div>
+
+    <div class="setting-group">
+      <label for="personalitySelect">AI personality</label>
+      <select id="personalitySelect"></select>
+      <p class="setting-hint">Friendly → Brutal. Choose your pain level.</p>
+    </div>
+
+    <div class="setting-group">
+      <label class="toggle-row" for="autoRoastToggle">
+        <span>Automatic weather roasts</span>
+        <input type="checkbox" id="autoRoastToggle" />
+      </label>
+    </div>
+
+    <div class="setting-group">
+      <label for="themeSelect">Theme</label>
+      <select id="themeSelect"></select>
+    </div>
+
+    <p class="settings-footnote">Everything is stored locally in your browser. No accounts, no API keys.</p>
+  </aside>
+
+  <!-- ================= Toast ================= -->
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <footer class="app-footer">
+    <span>What the Wether <span id="appVersionFooter">V8</span> ⚡🌩️ — weather data by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (no API key needed)</span>
+  </footer>
+
+  <!-- Load order matters: config → storage → themes → AI → radar → app -->
+  <script src="config.js"></script>
+  <script src="storage.js"></script>
+  <script src="themes.js"></script>
+  <script src="local-ai.js"></script>
+  <script src="radar.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
