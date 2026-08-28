@@ -179,7 +179,18 @@
     return g;
   }
 
-  var api = { parseLS: parseLS, unwrapMd: unwrapMd };
+  /* FANUC load errors (ASBN-009 "on line 76") count PHYSICAL file lines —
+   * header included — not teach-pendant line numbers. Map one to the other
+   * using the exact source that was uploaded. */
+  function mapFileLine(source, fileLine) {
+    var lines = source.split(/\r\n|\r|\n/);
+    var t = lines[fileLine - 1];
+    if (t === undefined) return null;
+    var m = t.match(/^\s*(\d+)\s*:/);
+    return { raw: t.trim(), progLine: m ? parseInt(m[1], 10) : null };
+  }
+
+  var api = { parseLS: parseLS, unwrapMd: unwrapMd, mapFileLine: mapFileLine };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucParser = api;
 })(typeof window !== 'undefined' ? window : globalThis);

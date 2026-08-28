@@ -217,6 +217,12 @@ async function handleApi(req, res, u) {
         result.error = uploadError
           ? 'The controller rejected the upload: ' + uploadError
           : 'Upload finished but the program is GONE on the robot — the .LS→TP translation failed and the controller deleted it.';
+        // grab the newest error-log entries — they carry the ASBN load
+        // errors with the failing file line
+        try {
+          const log = await ftp.retr('ERRALL.LS');
+          result.errlog = log.toString('latin1').split(/\r?\n/).slice(0, 40).join('\n');
+        } catch (e) { /* no error log available — banner just shows less */ }
         // 4. auto-restore the snapshot so nothing is lost on the robot
         if (result.snapshot) {
           try {

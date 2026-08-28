@@ -58,9 +58,11 @@ async function post(route, body) {
     check(r.snapshot && fs.readFileSync(r.snapshot, 'utf8').includes('R[1]=1'), 'snapshot holds the PREVIOUS version');
 
     console.log('\n-- safe upload: translation failure deletes program, we auto-restore --');
+    files['ERRALL.LS'] = 'ERRALL.LS  Robot Name MOCK\n\n4697" 28-AUG-26 15:34:24 " ASBN-009 on line 3, column 8                     " " WARN   00000000"    "\n4698" 28-AUG-26 15:34:24 " ASBN-002 Error occurred during load              " " WARN   00000000"    "\n';
     const before = files['PICK.LS'];
     r = await post('/api/robot/upload', { ip: ROBOT, name: 'PICK.LS', content: '/PROG PICK\n/MN\n   1:  BADSYNTAX ;\n/END\n' });
     check(r.ok === false, 'upload reported as failed');
+    check(r.errlog && /ASBN-009 on line 3/.test(r.errlog), 'failure response carries the controller error log');
     check(/GONE|deleted|rejected/i.test(r.error || ''), 'error explains the program vanished: ' + r.error);
     check(r.restored === true, 'previous version auto-restored on the robot');
     check(files['PICK.LS'] === before, 'robot content is byte-identical to before the failed upload');

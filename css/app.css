@@ -613,6 +613,9 @@ tr:last-child td { border-bottom: none; }
 .banner.good { background: var(--read-bg); border-color: var(--read); }
 .banner.bad { background: var(--write-bg); border-color: var(--write); }
 .banner .btn { margin-left: auto; }
+.banner-errs { flex-basis: 100%; margin-top: 6px; border-top: 1px solid var(--write); padding-top: 6px; }
+.banner-errs .mono { font-size: 12.5px; margin: 3px 0; }
+.banner-errs .chip { cursor: pointer; }
 
 /* ---------- search options + groups ---------- */
 .search-bar .btn.opt { font-family: "IBM Plex Mono", monospace; font-size: 12px; padding: 6px 9px; }

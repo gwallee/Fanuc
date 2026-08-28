@@ -117,7 +117,31 @@
       .map(function (k) { return k + ' ' + e.coords[k].toFixed(1); }).join('  ');
   }
 
-  var api = { parseNumreg: parseNumreg, rawLines: rawLines, parseIOComments: parseIOComments, parseIOState: parseIOState, parsePosreg: parsePosreg, posregValueStr: posregValueStr };
+  /* ERRALL.LS / ERRACT.LS — controller error history, NEWEST FIRST:
+   *   4695" 28-AUG-26 15:34:24 " ASBN-002 Error occurred during load  " " WARN   00000000" act"
+   * "R E S E T" rows have no alarm code; a trailing "act" marks active alarms. */
+  function parseErrall(text) {
+    var out = [];
+    text.split(/\r\n|\r|\n/).forEach(function (line) {
+      var m = line.match(/^\s*(\d+)"\s*([^"]*?)\s*"\s*([^"]*?)\s*"(.*)$/);
+      if (!m) return;
+      var msg = m[3];
+      var cm = msg.match(/^([A-Z]{2,5}-\d+)\s*(.*)$/);
+      var rest = m[4];
+      var sev = (rest.match(/([A-Z][A-Z.,G]*(?:\s[A-Z.,G]+)*)\s+[01]{8}"/) || [])[1] || '';
+      out.push({
+        seq: parseInt(m[1], 10),
+        time: m[2],
+        code: cm ? cm[1] : null,
+        text: cm ? cm[2].trim() : msg.replace(/\s+/g, ' ').trim(),
+        severity: sev.trim(),
+        active: /"\s*act\s*"?\s*$/.test(line)
+      });
+    });
+    return out;
+  }
+
+  var api = { parseNumreg: parseNumreg, rawLines: rawLines, parseIOComments: parseIOComments, parseIOState: parseIOState, parsePosreg: parsePosreg, posregValueStr: posregValueStr, parseErrall: parseErrall };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucVA = api;
 })(typeof window !== 'undefined' ? window : globalThis);

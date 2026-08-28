@@ -215,7 +215,7 @@
   }
 
   function connectRobot(ip) {
-    state.robot = { ip: ip, ftpUser: state.robot.ftpUser, ftpPass: state.robot.ftpPass, files: [], registers: null, posregs: null, rawIO: null, ioState: null, ioComments: null, error: null, loadedAt: null, backup: null };
+    state.robot = { ip: ip, ftpUser: state.robot.ftpUser, ftpPass: state.robot.ftpPass, files: [], registers: null, posregs: null, rawIO: null, ioState: null, ioComments: null, errors: undefined, error: null, loadedAt: null, backup: null };
     state.tab = 'robot';
     render();
     api('/api/robot/list?ip=' + encodeURIComponent(ip) + ftpQS()).then(function (b) {
@@ -251,6 +251,19 @@
       if (state.tab === 'robot') render();
     }).catch(function (e) {
       state.robot.posregs = { error: e.message };
+      if (state.tab === 'robot') render();
+    });
+  }
+
+  function loadRobotErrors() {
+    var ip = state.robot.ip;
+    state.robot.errors = null;
+    render();
+    api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=ERRALL.LS' + ftpQS()).then(function (b) {
+      state.robot.errors = VA.parseErrall(b.content);
+      if (state.tab === 'robot') render();
+    }).catch(function (e) {
+      state.robot.errors = { error: e.message };
       if (state.tab === 'robot') render();
     });
   }
@@ -310,6 +323,7 @@
         pass: state.robot.ftpPass || undefined
       })
     }).then(function (r) { return r.json(); }).then(function (b) {
+      b.sentContent = content; // for mapping controller file-line errors back to program lines
       state.upload = b;
       onDone(b);
     }).catch(function (e) {
@@ -331,6 +345,34 @@
       if (u.restored) el.appendChild(h('span', { text: 'The previous version was automatically restored on the robot from the pre-upload snapshot — nothing was lost. Fix the program here and send again.' }));
       else if (u.snapshot) el.appendChild(h('span', { text: 'Auto-restore did not succeed' + (u.restoreError ? ' (' + u.restoreError + ')' : '') + ' — the previous version is saved at ' + u.snapshot + '.' }));
       else el.appendChild(h('span', { text: 'The program did not exist on the robot before this upload, so there is nothing to restore. Your source is safe in the library.' }));
+
+      // pull the controller's load errors and translate file lines → program lines
+      if (u.errlog) {
+        var loadErrs = VA.parseErrall(u.errlog).filter(function (e2) { return e2.code && /^(ASBN|MEMO|INTP)/.test(e2.code); }).slice(0, 6);
+        if (loadErrs.length) {
+          var box = h('div', { class: 'banner-errs' });
+          box.appendChild(h('div', {}, [h('strong', { text: 'Controller error log:' })]));
+          loadErrs.forEach(function (e2) {
+            var row = h('div', { class: 'mono' });
+            row.appendChild(document.createTextNode('• ' + e2.code + ' ' + e2.text));
+            var lm = e2.text.match(/\bline\s+(\d+)/i);
+            if (lm && u.sentContent) {
+              var mapped = P.mapFileLine(u.sentContent, parseInt(lm[1], 10));
+              if (mapped && mapped.progLine !== null) {
+                row.appendChild(document.createTextNode(' — that is program line ' + mapped.progLine + ': "' + mapped.raw.replace(/^\d+\s*:\s*/, '').replace(/\s*;\s*$/, '') + '" '));
+                row.appendChild(h('span', {
+                  class: 'chip write', text: 'go to line ' + mapped.progLine,
+                  onclick: function () { gotoLine(u.name.replace(/\.LS$/i, ''), mapped.progLine); }
+                }));
+              } else if (mapped) {
+                row.appendChild(document.createTextNode(' — file line ' + lm[1] + ' is in the header/positions section: "' + mapped.raw + '"'));
+              }
+            }
+            box.appendChild(row);
+          });
+          el.appendChild(box);
+        }
+      }
     }
     el.appendChild(h('button', { class: 'btn subtle', text: 'Dismiss', onclick: function () { state.upload = null; render(); } }));
     return el;
@@ -2059,6 +2101,56 @@
       pane.appendChild(h('p', { class: 'muted', text: 'To diff a robot against this backup later: Compare tab → load this folder as the baseline.' }));
     }
     } // end backups section
+
+    // error history
+    var errs = state.robot.errors;
+    var errsOk = errs && !errs.error ? errs : null;
+    var actCount = errsOk ? errsOk.filter(function (e2) { return e2.active; }).length : 0;
+    var secErr = secHead('Error history (ERRALL.LS)' + (errsOk ? ' — ' + errsOk.length + (actCount ? ' · ' + actCount + ' active' : '') : ''), 'robot-errors');
+    pane.appendChild(secErr.el);
+    if (secErr.open) {
+      pane.appendChild(h('p', {}, [
+        h('button', { class: 'btn subtle', text: errs !== undefined && errs !== null ? 'Refresh from robot' : 'Read from robot', onclick: loadRobotErrors })
+      ]));
+      if (errs === null) pane.appendChild(h('p', { class: 'muted', text: 'Reading…' }));
+      else if (errs && errs.error) pane.appendChild(h('p', { class: 'muted', text: 'Could not read ERRALL.LS: ' + errs.error }));
+      else if (errsOk) {
+        var eBar = h('div', { class: 'search-bar' });
+        var eIn = h('input', { type: 'search', placeholder: 'Filter errors… e.g. ASBN, SRVO-003, collision' });
+        eBar.appendChild(eIn);
+        pane.appendChild(eBar);
+        var eWrap = h('div', { class: 'table-wrap' });
+        pane.appendChild(eWrap);
+        var drawErrs = function () {
+          var q = eIn.value.trim().toLowerCase();
+          eWrap.innerHTML = '';
+          var tbl = h('table', { class: 'xref-table' });
+          tbl.appendChild(h('tr', {}, [h('th', { text: 'Time' }), h('th', { text: 'Code' }), h('th', { text: 'Message' }), h('th', { text: 'Severity' })]));
+          var shown = 0;
+          errsOk.forEach(function (e2) {
+            var hay = (e2.time + ' ' + (e2.code || '') + ' ' + e2.text + ' ' + e2.severity).toLowerCase();
+            if (q && hay.indexOf(q) === -1) return;
+            if (++shown > 300) return;
+            tbl.appendChild(h('tr', {}, [
+              h('td', { class: 'n', text: e2.time }),
+              h('td', { class: 'n', text: e2.code || '—' }),
+              h('td', { text: e2.text }),
+              h('td', {}, [
+                e2.severity ? h('span', { class: 'badge ' + (/SERVO|ABORT|STOP/.test(e2.severity) ? 'warn' : 'mid'), text: e2.severity }) : null,
+                e2.active ? h('span', { class: 'badge warn', text: 'ACTIVE' }) : null
+              ])
+            ]));
+          });
+          eWrap.appendChild(tbl);
+          if (!shown) eWrap.appendChild(h('p', { class: 'muted', text: 'No errors match.' }));
+        };
+        eIn.addEventListener('input', drawErrs);
+        drawErrs();
+        pane.appendChild(h('p', { class: 'muted', text: 'Newest first. Load errors (ASBN) reference physical FILE lines — failed uploads from this app translate those to program lines automatically in the red banner.' }));
+      } else {
+        pane.appendChild(h('p', { class: 'muted', text: 'Click “Read from robot” to pull the controller’s alarm history.' }));
+      }
+    }
 
     // registers
     var regs = state.robot.registers;

@@ -208,6 +208,23 @@ const rbLib = { RB: { parsed: rbParsed, analysis: rbA, source: rbSrc } };
 const rbFind = L.lint(rbLib, A.buildCallGraph(rbLib), A.buildGlobalXref(rbLib));
 check(!rbFind.some(f => f.rule === 'unreachable-code'), 'blank line + LBL after JMP not flagged unreachable');
 
+console.log('\n-- ERRALL.LS parser --');
+const errText = fs.readFileSync(path.join(__dirname, '..', 'testdata', 'errall.ls'), 'latin1');
+const errs = VA.parseErrall(errText);
+check(errs.length === 100, '100 error entries parsed (got ' + errs.length + ')');
+check(errs[0].seq === 4428 && errs[0].code === 'SRVO-003' && errs[0].severity === 'SERVO' && errs[0].active === true,
+  'first (newest) entry: ' + errs[0].code + ' "' + errs[0].text + '" [' + errs[0].severity + '] active=' + errs[0].active);
+const reset = errs.find(e => e.code === null);
+check(reset && /R E S E T/.test(reset.text), 'RESET rows (no alarm code) parsed');
+const lidpickStyle = VA.parseErrall('4697\" 28-AUG-26 15:34:24 \" ASBN-009 on line 76, column 12                    \" \" ASBN-092 Undefined instruction   \" WARN   00000000\"    \"');
+check(lidpickStyle.length === 1 && lidpickStyle[0].code === 'ASBN-009' && /line 76/.test(lidpickStyle[0].text), 'ASBN load-error row parsed');
+
+console.log('\n-- file line → program line mapping --');
+const mapSrc = ['/PROG X', '/ATTR', 'COMMENT = "t";', '/MN', '   1:  LBL[1] ;', '   2:  J MP LBL[620] ;', '   3:  END ;', '/END', ''].join('\n');
+check(P.mapFileLine(mapSrc, 6).progLine === 2 && /J MP/.test(P.mapFileLine(mapSrc, 6).raw), 'file line 6 → program line 2 (the broken JMP)');
+check(P.mapFileLine(mapSrc, 3).progLine === null, 'file line 3 is header — no program line');
+check(P.mapFileLine(mapSrc, 999) === null, 'out-of-range file line → null');
+
 console.log('\n-- padded label indices: LBL[ 610 ] --');
 const padSrc = `/PROG PAD
 /MN
