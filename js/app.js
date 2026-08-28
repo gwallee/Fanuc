@@ -321,6 +321,25 @@
     return el;
   }
 
+  /* Programs already in the library that came from somewhere OTHER than the
+   * currently connected robot and would be overwritten by importing `names`. */
+  function crossSourceCollisions(names) {
+    return names.map(function (f) { return f.replace(/\.LS$/i, '').toUpperCase(); })
+      .filter(function (n) {
+        var p = state.programs[n];
+        if (!p) return false;
+        return !(p.origin.type === 'robot' && p.origin.ip === state.robot.ip);
+      });
+  }
+
+  function confirmCrossSource(names) {
+    var hits = crossSourceCollisions(names);
+    if (!hits.length) return true;
+    return confirm('The library already has ' + hits.length + ' program' + (hits.length > 1 ? 's' : '') + ' with the same name' + (hits.length > 1 ? 's' : '') + ' from a different source (another robot, a folder, or an upload):\n\n' +
+      hits.slice(0, 12).join(', ') + (hits.length > 12 ? ' +' + (hits.length - 12) + ' more' : '') +
+      '\n\nImporting from ' + state.robot.ip + ' will REPLACE those library copies. If you want to keep both robots’ versions, take a backup of each robot instead and use the Compare tab.\n\nReplace them?');
+  }
+
   function importFromRobot(name) {
     var ip = state.robot.ip;
     return api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=' + encodeURIComponent(name) + ftpQS())
@@ -1940,6 +1959,7 @@
         h('button', {
           class: 'btn', text: 'Import all ' + lsFiles.length + ' programs',
           onclick: function () {
+            if (!confirmCrossSource(lsFiles)) return;
             var pending = lsFiles.length;
             lsFiles.forEach(function (f) {
               importFromRobot(f).catch(function () {}).then(function () { if (--pending === 0) render(); });
@@ -1955,7 +1975,10 @@
           class: 'chip ' + (state.programs[name] ? 'read' : 'write'),
           text: f + (state.programs[name] ? ' ✓' : ''),
           title: state.programs[name] ? 'in library — click to re-import' : 'click to import',
-          onclick: function () { importFromRobot(f).then(function (n) { state.selected = n; render(); }); }
+          onclick: function () {
+            if (!confirmCrossSource([f])) return;
+            importFromRobot(f).then(function (n) { state.selected = n; render(); });
+          }
         }));
       });
       pane.appendChild(fl);
@@ -2246,6 +2269,9 @@
       }
       if (e.dataTransfer.files.length) importFiles(e.dataTransfer.files);
     });
+
+    var buildTag = document.getElementById('build-tag');
+    if (buildTag && window.FANUC_STUDIO_BUILD) buildTag.textContent = window.FANUC_STUDIO_BUILD;
 
     loadPrefs();
     restore();
