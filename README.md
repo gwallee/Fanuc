@@ -1,4 +1,4 @@
-# What the Wether V10 ⚡🌩️
+# What the Wether V11 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -59,6 +59,44 @@ enforces a few rules before anything reaches the screen:
 - Active NWS watches, warnings, and advisories for the current location
 - Colour-coded by severity (extreme/severe, moderate, minor)
 - Hidden entirely when there's nothing active
+
+### 🌍 Units, worldwide
+Pick **Imperial** or **Metric** and a **12- or 24-hour clock** in Settings, and
+every surface follows at once: cards, detail row, hourly chart axis, radar
+range rings, station distance, the share card — and the roasts, which restate
+themselves in your units.
+
+Internally everything stays in one canonical set (°F, mph, miles, inHg) and is
+converted once at display time, in `units.js`, so there is no mixed-unit maths
+anywhere in the app.
+
+### 🌬️ Air & Sky
+- **Air quality index** with an EPA-coloured badge, plain-language advice, and
+  the PM2.5 / PM10 / ozone / NO₂ breakdown
+- **Pollen** where the upstream model publishes it. It covers Europe only, so
+  elsewhere the row is hidden rather than showing zeroes that would read as
+  "no pollen"
+- **Moon phase** with illumination, computed locally from the synodic month —
+  no network needed
+- **Daylight length** and **solar noon**, derived exactly from sunrise/sunset
+
+### ⏳ Rain nowcast
+"Precipitation starting in about 35m, lasting roughly 1h" — from Open-Meteo's
+15-minute series, with a compact two-hour strip underneath. Where that series
+isn't published the hourly one is used and the wording says "within the hour"
+instead of implying minute precision the data doesn't have. The panel always
+states which resolution it used.
+
+### 🗺️ Your Locations
+Every saved favorite side by side — temperature, conditions, high/low and rain
+chance at a glance, warmest first. Click any card to load it. One compact
+request per location, run in parallel; a single failure shows that one card as
+unavailable instead of emptying the grid.
+
+### 🔔 Severe alert notifications
+Optional browser notifications for extreme and severe NWS alerts, deduplicated
+so a refresh doesn't re-notify. Opt-in, permission-gated, and honest about its
+limit: there is no push server, so they fire only while the app is open.
 
 ### 🔍 Fullscreen radar
 **Tap or click the scope** and it expands to fill the screen — bigger sweep,
@@ -180,12 +218,16 @@ bucket, a USB stick...
 ## Project structure
 
 ```
-WhatTheWether-V10/
+WhatTheWether-V11/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
 ├── radar.js        # Animated canvas radar engine
 ├── local-ai.js     # Local AI 3.0 roast generator (offline)
+├── units.js        # Imperial/metric + clock formatting (single source)
+├── air.js          # Air quality, pollen, moon phase, sun figures
+├── precip.js       # Minute-scale rain nowcast
+├── compare.js      # Multi-location dashboard
 ├── nws.js          # National Weather Service client (obs, forecast, alerts)
 ├── map.js          # Web Mercator projection + basemap tiles
 ├── hourly.js       # 48-hour outlook chart
@@ -207,8 +249,9 @@ WhatTheWether-V10/
 ```
 
 Script load order matters and is already correct in `index.html`:
-`config.js → storage.js → themes.js → nws.js → map.js → hourly.js →
-share.js → local-ai.js → radar.js → app.js`.
+`config.js → storage.js → themes.js → units.js → nws.js → air.js →
+precip.js → compare.js → map.js → hourly.js → share.js → local-ai.js →
+radar.js → app.js`.
 
 ## APIs used (all free, all key-less)
 
@@ -220,6 +263,7 @@ share.js → local-ai.js → radar.js → app.js`.
 | [Open-Meteo Geocoding](https://open-meteo.com/en/docs/geocoding-api) | City/place search | **No** |
 | [Zippopotam.us](https://api.zippopotam.us/) | US ZIP code lookup | **No** |
 | [Carto basemaps](https://carto.com/basemaps/) | Map tiles under the radar | **No** |
+| [Open-Meteo Air Quality](https://open-meteo.com/en/docs/air-quality-api) | AQI, pollutants, pollen | **No** |
 
 V9 asks NWS and Open-Meteo **in parallel**. NWS is authoritative for US
 observations, forecasts and alerts; Open-Meteo covers the rest of the world
@@ -251,7 +295,8 @@ The service worker only registers over `https://` or on `localhost` — opening
 
 ## Upgrading
 
-V10 moves to a **version-neutral storage namespace** (`wtw:`), so from here on
+V11 needs no migration — V10 already moved to a **version-neutral storage
+namespace** (`wtw:`), so from here on
 upgrading never touches your data again. On first run it migrates your
 username, favorites, settings, roast history, last location and saved
 snapshot from the V9 or V8 namespaces, newest first. The old keys are left in

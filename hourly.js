@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V10 — hourly.js
+   What the Wether V11 — hourly.js
    48-hour outlook: normalizes hourly data from either source and
    draws the temperature curve with a precipitation-chance bar
    underneath. Canvas, no charting library, theme-aware.
@@ -110,7 +110,9 @@ const WTWHourly = (() => {
     const plotW = W - padL - padR;
     const plotH = H - padT - padB;
 
-    const temps = hours.map((h) => h.tempF).filter((t) => t !== null && !isNaN(t));
+    // Plot in the reader's units so the axis matches the cards.
+    const conv = (t) => (window.WTWUnits ? WTWUnits.tempValue(t) : t);
+    const temps = hours.map((h) => conv(h.tempF)).filter((t) => t !== null && !isNaN(t));
     if (!temps.length) return;
     let min = Math.min(...temps), max = Math.max(...temps);
     if (max - min < 6) { const mid = (max + min) / 2; min = mid - 3; max = mid + 3; }
@@ -153,7 +155,7 @@ const WTWHourly = (() => {
     ctx.beginPath();
     hours.forEach((h, i) => {
       if (h.tempF === null) return;
-      const x = xAt(i), y = yAt(h.tempF);
+      const x = xAt(i), y = yAt(conv(h.tempF));
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
     const line = ctx.getLineDash();
@@ -179,7 +181,8 @@ const WTWHourly = (() => {
     ctx.font = '10px "Courier New", monospace';
     hours.forEach((h, i) => {
       if (i % 6 !== 0) return;
-      ctx.fillText(h.time.toLocaleTimeString([], { hour: 'numeric' }).replace(' ', ''),
+      ctx.fillText(window.WTWUnits ? WTWUnits.hourLabel(h.time)
+        : h.time.toLocaleTimeString([], { hour: 'numeric' }).replace(' ', ''),
         xAt(i), barBase + 8);
     });
 
@@ -194,11 +197,12 @@ const WTWHourly = (() => {
       ctx.stroke();
       if (h.tempF !== null) {
         ctx.beginPath();
-        ctx.arc(x, yAt(h.tempF), 4, 0, Math.PI * 2);
+        ctx.arc(x, yAt(conv(h.tempF)), 4, 0, Math.PI * 2);
         ctx.fillStyle = accent;
         ctx.fill();
       }
-      const label = `${h.time.toLocaleTimeString([], { hour: 'numeric' })}  ${Math.round(h.tempF)}°` +
+      const label = `${window.WTWUnits ? WTWUnits.time(h.time) : h.time.toLocaleTimeString([], { hour: 'numeric' })}` +
+        `  ${window.WTWUnits ? WTWUnits.temp(h.tempF) : Math.round(h.tempF) + '°'}` +
         (h.precipProb ? `  💧${Math.round(h.precipProb)}%` : '');
       ctx.font = '11px system-ui, sans-serif';
       const tw = ctx.measureText(label).width + 12;

@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V10 — local-ai.js
+   What the Wether V11 — local-ai.js
    Local AI 3.0: a fully offline roast generator. No API key,
    no cloud, no network. It reacts to temperature, rain, snow,
    thunderstorms, wind, fog, extreme heat, cold and clear skies,
@@ -33,8 +33,10 @@ const LocalAI = (() => {
 
   /* ------------------------------------------------------------
      Roast template pools.
-     {name} = username, {temp} = °F, {city} = place name,
-     {wind} = wind mph, {feels} = feels-like °F.
+     {name} = username, {city} = place name.
+     {tempU}/{feelsU}/{windU} carry the reader's chosen units
+     ("91°F" or "33°C", "12 mph" or "19 km/h"); {temp}/{feels}/{wind}
+     are the bare converted numbers.
      Keep it funny/rude, never hateful or discriminatory.
      ------------------------------------------------------------ */
   const POOLS = {
@@ -52,7 +54,7 @@ const LocalAI = (() => {
         "The sky is shedding glitter over {city}. Bundle up, buddy!",
         "Snowflakes incoming, {name} — every one unique, just like you. Aww. Now grab a coat.",
         "Winter wonderland mode: ON. Drive slow and waddle carefully, {name}.",
-        "It's {temp}°F and snowing — basically a free postcard outside your window.",
+        "It's {tempU} and snowing — basically a free postcard outside your window.",
       ],
       rain: [
         "Rain in {city} today, {name}. Free plant-watering service, courtesy of the sky! 🌧️",
@@ -67,32 +69,32 @@ const LocalAI = (() => {
         "The clouds came down for a visit. Say hi, but use your low beams.",
       ],
       wind: [
-        "Breezy {wind} mph in {city}, {name}! Free hair styling all day long. 💨",
+        "Breezy {windU} in {city}, {name}! Free hair styling all day long. 💨",
         "The wind is showing off today. Hold onto your hat and your dignity.",
-        "It's {wind} mph out there — the trees are doing cardio. Maybe skip the umbrella.",
+        "It's {windU} out there — the trees are doing cardio. Maybe skip the umbrella.",
         "Windy one, {name}! Great day to feel dramatic in a long coat.",
       ],
       extremeHeat: [
-        "Whew, {temp}°F in {city}! Hydrate like it's your job today, {name}. 🥵",
+        "Whew, {tempU} in {city}! Hydrate like it's your job today, {name}. 🥵",
         "It's officially oven weather, {name}. Find shade, find water, find AC — in that order.",
-        "{temp}°F?! Even the sun is showing off. Take it easy out there, friend.",
-        "Hot hot hot! {temp}°F in {city}. Ice cream is basically medicine today.",
+        "{tempU}?! Even the sun is showing off. Take it easy out there, friend.",
+        "Hot hot hot! {tempU} in {city}. Ice cream is basically medicine today.",
       ],
       extremeCold: [
-        "{temp}°F in {city}?! That's freezer aisle weather, {name}. Layer up like a burrito! 🧊",
-        "Brrr, {temp}°F! Your breath gets its own weather system today. Stay warm, {name}!",
+        "{tempU} in {city}?! That's freezer aisle weather, {name}. Layer up like a burrito! 🧊",
+        "Brrr, {tempU}! Your breath gets its own weather system today. Stay warm, {name}!",
         "It is COLD cold out there, {name}. Two pairs of socks kind of day.",
       ],
       cold: [
-        "Chilly {temp}°F in {city} today — sweater weather at full power, {name}! 🧣",
+        "Chilly {tempU} in {city} today — sweater weather at full power, {name}! 🧣",
         "Nippy one out there, {name}. Warm drinks are 40% more delicious today. It's science.",
-        "{temp}°F — cold enough to complain about, warm enough to survive. You've got this.",
+        "{tempU} — cold enough to complain about, warm enough to survive. You've got this.",
         "Jacket weather, {name}! The crisp air is free, enjoy responsibly.",
       ],
       hot: [
-        "Toasty {temp}°F in {city}, {name}! Sunscreen now, thank yourself later. ☀️",
-        "It's a warm one — {temp}°F. Perfect excuse for something cold and delicious.",
-        "Summer is summering at {temp}°F. Shade is your best friend today, {name}.",
+        "Toasty {tempU} in {city}, {name}! Sunscreen now, thank yourself later. ☀️",
+        "It's a warm one — {tempU}. Perfect excuse for something cold and delicious.",
+        "Summer is summering at {tempU}. Shade is your best friend today, {name}.",
       ],
       clouds: [
         "Cloudy in {city} today — the sun is working from home, {name}. ☁️",
@@ -103,7 +105,7 @@ const LocalAI = (() => {
       clear: [
         "Clear skies over {city}, {name}! Go outside and get that free vitamin D. 😎",
         "Not a cloud in sight — the sky really said 'you're welcome' today.",
-        "Beautiful and clear at {temp}°F. Whatever you were putting off outside? Today's the day.",
+        "Beautiful and clear at {tempU}. Whatever you were putting off outside? Today's the day.",
         "Blue skies in {city}! Even the weather is rooting for you today, {name}.",
       ],
     },
@@ -122,13 +124,13 @@ const LocalAI = (() => {
         "Oh look, the sky's dandruff is falling all over {city} again.",
         "It's snowing, {name}. Time to watch everyone forget how to drive in real time.",
         "Snow: nature's way of saying 'stay home in your blanket burrito.' Who are we to argue?",
-        "{temp}°F and snowing. Winter said 'and what about it?'",
+        "{tempU} and snowing. Winter said 'and what about it?'",
       ],
       rain: [
         "Rain again in {city}? The clouds seriously need a new hobby, {name}. 🌧️",
         "It's wet out there. Your hair had plans? The sky said no. Sorry, {name}.",
         "The sky is crying over {city}. Somebody check on it, I guess.",
-        "Rain at {temp}°F. Perfect weather for cancelling plans you were 'totally' going to keep, {name}.",
+        "Rain at {tempU}. Perfect weather for cancelling plans you were 'totally' going to keep, {name}.",
         "Umbrella check, {name}. Yes, that one you left... somewhere. Classic.",
       ],
       fog: [
@@ -137,32 +139,32 @@ const LocalAI = (() => {
         "Foggy with a chance of walking into things. Good luck out there, {name}.",
       ],
       wind: [
-        "{wind} mph winds, {name}. Your hairstyle is about to be a group decision with the atmosphere. 💨",
+        "{windU} winds, {name}. Your hairstyle is about to be a group decision with the atmosphere. 💨",
         "It's giving wind tunnel in {city} today. Secure your trash cans and your ego.",
-        "The wind is {wind} mph and full of opinions today. Dress accordingly, {name}.",
-        "Breezy? No honey, it's {wind} mph. That's the sky doing crossfit.",
+        "The wind is {windU} and full of opinions today. Dress accordingly, {name}.",
+        "Breezy? No honey, it's {windU}. That's the sky doing crossfit.",
       ],
       extremeHeat: [
-        "{temp}°F in {city}?! The sun woke up and chose violence, {name}. 🔥",
-        "It's {temp}°F. Outside is now an air fryer. You've been warned, {name}.",
-        "The pavement is basically lava and so is everything else. {temp}°F. Stay inside, sweetie.",
-        "{temp}°F, feels like {feels}°F. Even your ice cubes are sweating, {name}.",
+        "{tempU} in {city}?! The sun woke up and chose violence, {name}. 🔥",
+        "It's {tempU}. Outside is now an air fryer. You've been warned, {name}.",
+        "The pavement is basically lava and so is everything else. {tempU}. Stay inside, sweetie.",
+        "{tempU}, feels like {feelsU}. Even your ice cubes are sweating, {name}.",
       ],
       extremeCold: [
-        "{temp}°F in {city}. The air hurts your face and honestly? Rude of it. 🥶",
-        "It's {temp}°F, {name}. Your car needs ten minutes and a pep talk this morning.",
-        "{temp}°F outside. Going out unprepared is a choice — a bad one, {name}.",
+        "{tempU} in {city}. The air hurts your face and honestly? Rude of it. 🥶",
+        "It's {tempU}, {name}. Your car needs ten minutes and a pep talk this morning.",
+        "{tempU} outside. Going out unprepared is a choice — a bad one, {name}.",
       ],
       cold: [
-        "{temp}°F in {city}. Cold enough to whine about, and you WILL, won't you {name}? 🧊",
+        "{tempU} in {city}. Cold enough to whine about, and you WILL, won't you {name}? 🧊",
         "Sweater weather called. It said stop pretending that hoodie counts, {name}.",
-        "A brisk {temp}°F out there. The air is crunchy today. Enjoy.",
-        "It's {temp}°F. Yes you need the jacket. No, don't argue with me, {name}.",
+        "A brisk {tempU} out there. The air is crunchy today. Enjoy.",
+        "It's {tempU}. Yes you need the jacket. No, don't argue with me, {name}.",
       ],
       hot: [
-        "{temp}°F in {city}. Sticky, sweaty, and glorious — much like your gym playlist, {name}. ☀️",
-        "Warm one today — {temp}°F. Deodorant is not optional, just saying.",
-        "It's {temp}°F. The sun is doing the absolute most, as usual.",
+        "{tempU} in {city}. Sticky, sweaty, and glorious — much like your gym playlist, {name}. ☀️",
+        "Warm one today — {tempU}. Deodorant is not optional, just saying.",
+        "It's {tempU}. The sun is doing the absolute most, as usual.",
       ],
       clouds: [
         "Cloudy over {city}. The sun called in sick. Again. Typical. ☁️",
@@ -171,7 +173,7 @@ const LocalAI = (() => {
         "Overcast in {city}. The sky couldn't commit to a decision either, {name}. Twins!",
       ],
       clear: [
-        "Clear skies and {temp}°F in {city}. Even the weather has its life together today. Unlike some of us, {name}. 😌",
+        "Clear skies and {tempU} in {city}. Even the weather has its life together today. Unlike some of us, {name}. 😌",
         "Not a cloud in sight. The sky is showing off. Go outside so it wasn't for nothing, {name}.",
         "Gorgeous out there. If you stay in and scroll all day, that's between you and the sun, {name}.",
         "It's stunning outside, {name}. Yes, outside. That place beyond the fridge.",
@@ -189,7 +191,7 @@ const LocalAI = (() => {
       snow: [
         "Snow in {city}, {name}. Enjoy scraping your car with a spatula because you lost the scraper. Again.",
         "It's snowing. Time for you to shovel — that's the most exercise you'll get all year, {name}. ❄️",
-        "{temp}°F and snowing. Mother Nature said 'suffer' and honestly, fair.",
+        "{tempU} and snowing. Mother Nature said 'suffer' and honestly, fair.",
         "Snowflakes everywhere, {name}. Cold, flaky, and all over the place. Sound familiar?",
         "Snow again. Watch out for that one patch of ice — it's got your name on it, {name}.",
       ],
@@ -198,7 +200,7 @@ const LocalAI = (() => {
         "It's pouring, {name}. Even the sky is crying about your fantasy team.",
         "Rain all day. Your plans were bad anyway — consider this a rescue, {name}.",
         "Wet and miserable out there. So basically the weather is doing an impression of your texts, {name}.",
-        "Rain at {temp}°F. Nature's way of saying stay in, {name}. Listen to it for once.",
+        "Rain at {tempU}. Nature's way of saying stay in, {name}. Listen to it for once.",
       ],
       fog: [
         "Fog in {city} thicker than your last excuse, {name}. Drive slow. 🌫️",
@@ -206,31 +208,31 @@ const LocalAI = (() => {
         "Foggy and gray, {name}. The sky's as unclear about its direction as you are.",
       ],
       wind: [
-        "{wind} mph winds in {city}. Hold onto something, {name} — preferably your last shred of dignity. 💨",
-        "It's blowing {wind} mph out there. Your comb-over doesn't stand a chance, {name}.",
-        "Wind's at {wind} mph, {name}. Even the air wants you to stay home today.",
+        "{windU} winds in {city}. Hold onto something, {name} — preferably your last shred of dignity. 💨",
+        "It's blowing {windU} out there. Your comb-over doesn't stand a chance, {name}.",
+        "Wind's at {windU}, {name}. Even the air wants you to stay home today.",
         "Gusty out there. If you hear howling, it's the wind. Probably. Anyway, good luck, {name}.",
       ],
       extremeHeat: [
-        "{temp}°F in {city}. You're gonna sweat through that shirt in four minutes, {name}. Bring backup. 🔥",
-        "It's {temp}°F, {name}. Satan called — even he thinks this is a bit much.",
-        "{temp}°F out there. Your car seat is now a George Foreman grill. Enjoy, {name}.",
-        "Feels like {feels}°F. Go outside if you want, {name}, but you'll come back looking like a boiled ham.",
+        "{tempU} in {city}. You're gonna sweat through that shirt in four minutes, {name}. Bring backup. 🔥",
+        "It's {tempU}, {name}. Satan called — even he thinks this is a bit much.",
+        "{tempU} out there. Your car seat is now a George Foreman grill. Enjoy, {name}.",
+        "Feels like {feelsU}. Go outside if you want, {name}, but you'll come back looking like a boiled ham.",
       ],
       extremeCold: [
-        "{temp}°F in {city}, {name}. Your face is going to hurt. More than usual, I mean. 🥶",
-        "It's {temp}°F. Your phone battery will die faster than your motivation, {name}.",
-        "{temp}°F out there. Even penguins would file a complaint. Bundle up, genius.",
+        "{tempU} in {city}, {name}. Your face is going to hurt. More than usual, I mean. 🥶",
+        "It's {tempU}. Your phone battery will die faster than your motivation, {name}.",
+        "{tempU} out there. Even penguins would file a complaint. Bundle up, genius.",
       ],
       cold: [
-        "{temp}°F in {city} and you're STILL going to wear shorts, aren't you {name}? Clown behavior.",
-        "It's {temp}°F, {name}. That thin little jacket of yours is a decoration, not a plan.",
+        "{tempU} in {city} and you're STILL going to wear shorts, aren't you {name}? Clown behavior.",
+        "It's {tempU}, {name}. That thin little jacket of yours is a decoration, not a plan.",
         "Cold and gray, just like your leftovers, {name}. Wear layers.",
-        "{temp}°F today. Time to dig out the winter coat that still has last year's receipts in it, {name}.",
+        "{tempU} today. Time to dig out the winter coat that still has last year's receipts in it, {name}.",
       ],
       hot: [
-        "{temp}°F in {city}. You + humidity = a walking swamp, {name}. Godspeed. 🥵",
-        "It's {temp}°F out. Your AC bill is about to roast you harder than I ever could, {name}.",
+        "{tempU} in {city}. You + humidity = a walking swamp, {name}. Godspeed. 🥵",
+        "It's {tempU} out. Your AC bill is about to roast you harder than I ever could, {name}.",
         "Hot one today, {name}. Pit stains are inevitable. Own them.",
       ],
       clouds: [
@@ -243,7 +245,7 @@ const LocalAI = (() => {
         "Clear and sunny in {city}, {name}. Zero excuses left for skipping your run. Zero.",
         "Beautiful day out. Shame you'll spend it indoors arguing with strangers online, {name}. 😎",
         "Not a single cloud, {name}. The sky did its job today. Your move.",
-        "Sunny and {temp}°F. Perfect weather, wasted on you, {name}.",
+        "Sunny and {tempU}. Perfect weather, wasted on you, {name}.",
       ],
     },
 
@@ -257,7 +259,7 @@ const LocalAI = (() => {
       ],
       snow: [
         "Snow in {city}, {name}. White, cold, and relentless — like the lies you tell your dentist about flossing. ❄️",
-        "{temp}°F and snowing. Mother Nature is beating {city} like it owes her money.",
+        "{tempU} and snowing. Mother Nature is beating {city} like it owes her money.",
         "It's dumping snow, {name}. Your back will give out shoveling before your excuses do.",
         "Snowstorm inbound. Everything will be buried, {name} — much like your New Year's resolutions.",
         "Snow again. You'll fall on the ice at least once today, {name}, and I want you to know: someone will see it.",
@@ -275,31 +277,31 @@ const LocalAI = (() => {
         "Foggy in {city}. The weather is gaslighting the entire town. You'd know all about that, {name}.",
       ],
       wind: [
-        "{wind} mph winds, {name}. The atmosphere is swinging on {city} — and it's still gentler than your last performance review. 💨",
-        "The wind is {wind} mph. It could carry away everything you own, which, let's be honest {name}, wouldn't take long.",
+        "{windU} winds, {name}. The atmosphere is swinging on {city} — and it's still gentler than your last performance review. 💨",
+        "The wind is {windU}. It could carry away everything you own, which, let's be honest {name}, wouldn't take long.",
         "Gale-force attitude out there. The wind's had a worse week than you, {name}, and it's taking it out on everyone.",
-        "{wind} mph gusts. Walk outside and get flung into next week — honestly might be an upgrade for you, {name}.",
+        "{windU} gusts. Walk outside and get flung into next week — honestly might be an upgrade for you, {name}.",
       ],
       extremeHeat: [
-        "{temp}°F in {city}. The sun is trying to delete you specifically, {name}. Stay inside and hydrate, you rotisserie chicken. 🔥",
-        "It's {temp}°F, feels like {feels}°F. Outside is a crime scene and you're the next victim, {name}.",
-        "{temp}°F. The devil checked the forecast for {city} and went 'nope, too much.' What's your plan, {name}?",
+        "{tempU} in {city}. The sun is trying to delete you specifically, {name}. Stay inside and hydrate, you rotisserie chicken. 🔥",
+        "It's {tempU}, feels like {feelsU}. Outside is a crime scene and you're the next victim, {name}.",
+        "{tempU}. The devil checked the forecast for {city} and went 'nope, too much.' What's your plan, {name}?",
         "It is DANGEROUSLY hot, {name}. Today the sun does to you what leg day never could: total destruction.",
       ],
       extremeCold: [
-        "{temp}°F in {city}. Cold enough to freeze your excuses mid-sentence, {name}. Nothing survives out there — especially not your attitude. 🥶",
-        "It's {temp}°F, {name}. Exposed skin goes numb in minutes. So does anyone who reads your posts, but that's unrelated.",
-        "{temp}°F. The air will slap you harder than reality ever has, {name}, and that's saying something.",
+        "{tempU} in {city}. Cold enough to freeze your excuses mid-sentence, {name}. Nothing survives out there — especially not your attitude. 🥶",
+        "It's {tempU}, {name}. Exposed skin goes numb in minutes. So does anyone who reads your posts, but that's unrelated.",
+        "{tempU}. The air will slap you harder than reality ever has, {name}, and that's saying something.",
       ],
       cold: [
-        "{temp}°F and gray in {city}, {name}. Even the thermometer is embarrassed. Wear the big coat — nobody's impressed by your goosebumps.",
-        "It's {temp}°F. Your 'I don't get cold' era ends today, {name}, in front of everyone.",
+        "{tempU} and gray in {city}, {name}. Even the thermometer is embarrassed. Wear the big coat — nobody's impressed by your goosebumps.",
+        "It's {tempU}. Your 'I don't get cold' era ends today, {name}, in front of everyone.",
         "Cold enough to see your breath — the most substantial thing you've produced all week, {name}.",
-        "{temp}°F out there. Winter is billing {city} for services no one ordered. Pay up in layers, {name}.",
+        "{tempU} out there. Winter is billing {city} for services no one ordered. Pay up in layers, {name}.",
       ],
       hot: [
-        "{temp}°F in {city}. You're about to sweat like you're being interrogated, {name} — and honestly, you'd fold immediately.",
-        "It's {temp}°F. Between you and the humidity, the swamp look is fully back, {name}. 🥵",
+        "{tempU} in {city}. You're about to sweat like you're being interrogated, {name} — and honestly, you'd fold immediately.",
+        "It's {tempU}. Between you and the humidity, the swamp look is fully back, {name}. 🥵",
         "Hot and sticky all day. Your car is an oven, your shirt is a towel, and your deodorant is a prayer, {name}.",
       ],
       clouds: [
@@ -310,7 +312,7 @@ const LocalAI = (() => {
       ],
       clear: [
         "Perfectly clear skies over {city}, {name}. Nature did its part flawlessly. The weak link today is, as always, you.",
-        "Not one cloud. {temp}°F. Absolutely zero excuses, {name} — today the only forecast for failure is you. 😎",
+        "Not one cloud. {tempU}. Absolutely zero excuses, {name} — today the only forecast for failure is you. 😎",
         "It's gorgeous out. Go touch grass, {name}. The grass has been asking about you. It's worried.",
         "Flawless blue sky over {city} and you're inside reading a weather app roast you. Think about that, {name}.",
       ],
@@ -325,14 +327,14 @@ const LocalAI = (() => {
         "Statistically you will be fine, {name}. Emotionally, that thunder is still going to make you jump.",
       ],
       snow: [
-        "It is snowing in {city}. Water, but organized. {temp}°F.",
+        "It is snowing in {city}. Water, but organized. {tempU}.",
         "Snow is falling, {name}. Every flake is unique. Collectively they are a driveway problem.",
-        "{temp}°F and snowing. The roads will be worse than you think and you will drive on them anyway.",
+        "{tempU} and snowing. The roads will be worse than you think and you will drive on them anyway.",
         "Frozen water is descending on {city} at a steady rate. Wear the boots, {name}.",
       ],
       rain: [
         "It is raining in {city}. Water is arriving from above at no charge, {name}.",
-        "Rain. {temp}°F. Your shoes will absorb more of it than you expect.",
+        "Rain. {tempU}. Your shoes will absorb more of it than you expect.",
         "Precipitation is occurring. An umbrella would address this, {name}. You will not bring one.",
         "The sky is releasing water over {city}. This has happened before and will happen again.",
       ],
@@ -342,29 +344,29 @@ const LocalAI = (() => {
         "Suspended water droplets are limiting your vision, {name}. Slow down.",
       ],
       wind: [
-        "Wind at {wind} mph in {city}. Objects will move. Some of them are yours, {name}.",
+        "Wind at {windU} in {city}. Objects will move. Some of them are yours, {name}.",
         "The air is moving quickly. Your hair has already lost this argument.",
-        "{wind} mph. Loose items become airborne items. Plan accordingly, {name}.",
+        "{windU}. Loose items become airborne items. Plan accordingly, {name}.",
       ],
       extremeHeat: [
-        "{temp}°F in {city}. That is hot. Not interesting-hot. Concerning-hot. Drink water, {name}.",
-        "It is {temp}°F, feels like {feels}°F. Your body will attempt to cool itself. It will lose.",
-        "{temp}°F. Shade is free and you should use it, {name}.",
+        "{tempU} in {city}. That is hot. Not interesting-hot. Concerning-hot. Drink water, {name}.",
+        "It is {tempU}, feels like {feelsU}. Your body will attempt to cool itself. It will lose.",
+        "{tempU}. Shade is free and you should use it, {name}.",
       ],
       extremeCold: [
-        "{temp}°F in {city}. Exposed skin will become numb. This is not a metaphor, {name}.",
-        "It is {temp}°F. Your car will start eventually. Probably.",
-        "{temp}°F. Wear more clothing than you believe is necessary, {name}. You are wrong about the amount.",
+        "{tempU} in {city}. Exposed skin will become numb. This is not a metaphor, {name}.",
+        "It is {tempU}. Your car will start eventually. Probably.",
+        "{tempU}. Wear more clothing than you believe is necessary, {name}. You are wrong about the amount.",
       ],
       cold: [
-        "{temp}°F in {city}. That is jacket weather. You own a jacket, {name}. Use it.",
-        "It is {temp}°F. Cold, but survivable. Most things are.",
-        "{temp}°F. You will complain about this and then complain about summer, {name}. Consistent.",
+        "{tempU} in {city}. That is jacket weather. You own a jacket, {name}. Use it.",
+        "It is {tempU}. Cold, but survivable. Most things are.",
+        "{tempU}. You will complain about this and then complain about summer, {name}. Consistent.",
       ],
       hot: [
-        "{temp}°F in {city}. Warm. Sticky. Familiar, {name}.",
-        "It is {temp}°F. You will sweat. Everyone will sweat. We do not need to discuss it further.",
-        "{temp}°F out. Sunscreen exists and works, {name}.",
+        "{tempU} in {city}. Warm. Sticky. Familiar, {name}.",
+        "It is {tempU}. You will sweat. Everyone will sweat. We do not need to discuss it further.",
+        "{tempU} out. Sunscreen exists and works, {name}.",
       ],
       clouds: [
         "Cloudy in {city}. The sun is present but unavailable, {name}.",
@@ -372,10 +374,10 @@ const LocalAI = (() => {
         "Cloud cover is total. Nothing further to add, {name}.",
       ],
       clear: [
-        "Clear skies in {city}, {temp}°F. Conditions are good. You may go outside, {name}. That is allowed.",
+        "Clear skies in {city}, {tempU}. Conditions are good. You may go outside, {name}. That is allowed.",
         "No clouds. No excuses. Just a functioning sky, {name}.",
         "The weather is fine. This is the part where you do the thing you said you would do, {name}.",
-        "{temp}°F and clear. Objectively pleasant. Act on it.",
+        "{tempU} and clear. Objectively pleasant. Act on it.",
       ],
     },
 
@@ -387,14 +389,14 @@ const LocalAI = (() => {
         "Thunder over {city}. Somewhere a basement is flooding and it might be yours, {name}.",
       ],
       snow: [
-        "Snow in {city}, {temp}°F. It'll be beautiful for an hour and grey slush for a month, {name}.",
+        "Snow in {city}, {tempU}. It'll be beautiful for an hour and grey slush for a month, {name}.",
         "It's snowing. It'll melt. It'll snow again. This is the whole thing, {name}.",
-        "{temp}°F and snowing. Somewhere under all that white is a driveway you'll never fully clear.",
+        "{tempU} and snowing. Somewhere under all that white is a driveway you'll never fully clear.",
       ],
       rain: [
         "Rain over {city}, {name}. The sky's been doing this for four billion years and still hasn't worked it out.",
         "It's raining. It was always going to rain. Bring the umbrella you already lost, {name}.",
-        "Rain at {temp}°F. Everything gets wet, everything dries, nothing is learned, {name}.",
+        "Rain at {tempU}. Everything gets wet, everything dries, nothing is learned, {name}.",
       ],
       fog: [
         "Fog in {city}. Can't see ahead. Honestly, {name}, that's just Tuesday with extra atmosphere.",
@@ -402,28 +404,28 @@ const LocalAI = (() => {
         "Thick fog over {city}. The world shrank to about forty feet. Could be worse. Will be, probably.",
       ],
       wind: [
-        "{wind} mph winds in {city}. Everything unsecured is now temporary, {name}.",
+        "{windU} winds in {city}. Everything unsecured is now temporary, {name}.",
         "The wind is taking things. It always takes things. Hold onto what's left, {name}.",
-        "{wind} mph. Somewhere a patio umbrella is achieving flight and ruining someone's afternoon.",
+        "{windU}. Somewhere a patio umbrella is achieving flight and ruining someone's afternoon.",
       ],
       extremeHeat: [
-        "{temp}°F in {city}. We keep saying it's never been this hot, {name}, and we keep being right.",
-        "It's {temp}°F, feels like {feels}°F. Stay inside. Drink water. Try not to think about August, {name}.",
-        "{temp}°F. The pavement is soft. So is our collective resolve, {name}.",
+        "{tempU} in {city}. We keep saying it's never been this hot, {name}, and we keep being right.",
+        "It's {tempU}, feels like {feelsU}. Stay inside. Drink water. Try not to think about August, {name}.",
+        "{tempU}. The pavement is soft. So is our collective resolve, {name}.",
       ],
       extremeCold: [
-        "{temp}°F in {city}. Cold enough that the air feels like it has opinions about you, {name}.",
-        "{temp}°F. Everything is brittle, including your patience, {name}.",
-        "It's {temp}°F. The cold gets in through gaps you didn't know you had, {name}.",
+        "{tempU} in {city}. Cold enough that the air feels like it has opinions about you, {name}.",
+        "{tempU}. Everything is brittle, including your patience, {name}.",
+        "It's {tempU}. The cold gets in through gaps you didn't know you had, {name}.",
       ],
       cold: [
-        "{temp}°F in {city}. The kind of cold that isn't dramatic, just persistent, {name}. Like most problems.",
-        "{temp}°F. Grey, damp, unremarkable. It'll be like this for a while, {name}.",
+        "{tempU} in {city}. The kind of cold that isn't dramatic, just persistent, {name}. Like most problems.",
+        "{tempU}. Grey, damp, unremarkable. It'll be like this for a while, {name}.",
         "Cold again in {city}. Wear the coat. It's the one thing here you can control, {name}.",
       ],
       hot: [
-        "{temp}°F in {city}. Warm now, warmer later, {name}. That's the whole forecast, really.",
-        "It's {temp}°F. Sticky, slow, endless. Summer does that, {name}.",
+        "{tempU} in {city}. Warm now, warmer later, {name}. That's the whole forecast, really.",
+        "It's {tempU}. Sticky, slow, endless. Summer does that, {name}.",
       ],
       clouds: [
         "Total cloud cover over {city}. The sun's up there somewhere, allegedly, {name}.",
@@ -431,9 +433,9 @@ const LocalAI = (() => {
         "Overcast in {city}. No drama, no relief, just a lid on the whole thing, {name}.",
       ],
       clear: [
-        "Clear skies over {city}, {temp}°F. Enjoy it, {name} — days like this are the exception and they don't wait around.",
+        "Clear skies over {city}, {tempU}. Enjoy it, {name} — days like this are the exception and they don't wait around.",
         "Not a cloud out there. Go outside, {name}. Genuinely. The good ones are finite.",
-        "It's {temp}°F and perfect. Which means you'll spend it indoors and remember it in November, {name}.",
+        "It's {tempU} and perfect. Which means you'll spend it indoors and remember it in November, {name}.",
       ],
     },
   };
@@ -478,13 +480,31 @@ const LocalAI = (() => {
     return chosen.text;
   }
 
+  // Values are converted through units.js so roasts read in whatever
+  // system the user picked. Falls back to raw Fahrenheit if units.js
+  // is not loaded (e.g. a bare unit test).
   function fill(template, w, name) {
+    const U = window.WTWUnits;
+    const tempF = w.tempF ?? 0;
+    const feelsF = w.feelsLikeF ?? w.tempF ?? 0;
+    const windMph = w.windMph ?? 0;
+
+    const tempU  = U ? U.temp(tempF, { withUnit: true })  : `${Math.round(tempF)}°F`;
+    const feelsU = U ? U.temp(feelsF, { withUnit: true }) : `${Math.round(feelsF)}°F`;
+    const windU  = U ? U.speed(windMph)                   : `${Math.round(windMph)} mph`;
+    const tempN  = U ? Math.round(U.tempValue(tempF))     : Math.round(tempF);
+    const feelsN = U ? Math.round(U.tempValue(feelsF))    : Math.round(feelsF);
+    const windN  = U ? U.speed(windMph, { withUnit: false }) : String(Math.round(windMph));
+
     return template
       .replaceAll('{name}', name)
       .replaceAll('{city}', w.city || 'your town')
-      .replaceAll('{temp}', Math.round(w.tempF ?? 0))
-      .replaceAll('{feels}', Math.round(w.feelsLikeF ?? w.tempF ?? 0))
-      .replaceAll('{wind}', Math.round(w.windMph ?? 0));
+      .replaceAll('{tempU}', tempU)
+      .replaceAll('{feelsU}', feelsU)
+      .replaceAll('{windU}', windU)
+      .replaceAll('{temp}', String(tempN))
+      .replaceAll('{feels}', String(feelsN))
+      .replaceAll('{wind}', String(windN));
   }
 
   /* ------------------------------------------------------------

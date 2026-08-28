@@ -1,12 +1,12 @@
 /* ============================================================
-   What the Wether V10 — config.js
+   What the Wether V11 — config.js
    Central configuration. No API keys required, ever.
    ============================================================ */
 
 const WTW_CONFIG = {
   app: {
     name: 'What the Wether',
-    version: 'V10',
+    version: 'V11',
     tagline: 'Weather with an attitude problem.',
   },
 
@@ -17,6 +17,9 @@ const WTW_CONFIG = {
     personality: 'sassy',        // friendly | sassy | rude | brutal
     autoRoast: true,             // roast automatically after each weather load
     theme: 'neon-dark',          // neon-dark | midnight | light
+    units: 'imperial',           // imperial | metric
+    clock: '12',                 // 12 | 24
+    alertNotifications: false,   // browser notifications for severe alerts
   },
 
   // Free, key-less public services.
@@ -29,6 +32,26 @@ const WTW_CONFIG = {
     zip: 'https://api.zippopotam.us/us/',
     // National Weather Service: free, no key, US coverage only.
     nws: 'https://api.weather.gov',
+    // Open-Meteo air quality + pollen: free, no key.
+    airQuality: 'https://air-quality-api.open-meteo.com/v1/air-quality',
+  },
+
+  unitSystems: [
+    { id: 'imperial', label: 'Imperial (°F, mph)' },
+    { id: 'metric',   label: 'Metric (°C, km/h)' },
+  ],
+
+  // Minute-scale precipitation nowcast.
+  nowcast: {
+    enabled: true,
+    lookaheadMinutes: 120,
+    // Open-Meteo serves 15-minute data for much of Europe and North
+    // America; elsewhere the hourly series is used instead.
+    minutelyResolution: 15,
+  },
+
+  compare: {
+    maxLocations: 8,   // favorites fetched for the compare grid
   },
 
   // Real radar imagery. NOAA's public GeoServer serves the CONUS

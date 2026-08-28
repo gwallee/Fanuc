@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V10 — app.js
+   What the Wether V11 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -17,6 +17,9 @@
     detail: {},
     source: null,
     alerts: [],
+    air: null,
+    nowcast: null,
+    notifiedAlerts: [],
     offline: false,
     lastRoast: null,
     loading: false,
@@ -107,6 +110,7 @@
                 'dew_point_2m'].join(','),
       hourly: ['temperature_2m', 'precipitation_probability', 'weather_code',
                'wind_speed_10m', 'visibility'].join(','),
+      minutely_15: ['precipitation', 'precipitation_probability'].join(','),
       daily: ['weather_code', 'temperature_2m_max', 'temperature_2m_min',
               'precipitation_probability_max', 'sunrise', 'sunset', 'uv_index_max'].join(','),
       temperature_unit: WTW_CONFIG.weather.temperatureUnit,
@@ -159,7 +163,7 @@
     };
 
     const hours = WTWHourly.fromOpenMeteo(data, WTW_CONFIG.weather.forecastHours);
-    return { weather, daily, hours, detail };
+    return { weather, daily, hours, detail, raw: data };
   }
 
   /* ------------------------------------------------------------
@@ -231,6 +235,7 @@
         },
         daily,
         hours,
+        raw: om ? om.raw : null,
         detail: {
           // Sun times and UV come from Open-Meteo — NWS publishes neither.
           sunrise: om && om.detail ? om.detail.sunrise : null,
@@ -249,13 +254,10 @@
 
   /* ---------------- Rendering ---------------- */
 
-  const fmtTemp = (v) =>
-    (v === null || v === undefined || Number.isNaN(v)) ? '--' : `${Math.round(v)}°`;
-
-  const clock = (d) => {
-    const date = d instanceof Date ? d : new Date(d);
-    return isNaN(date) ? '--' : date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  };
+  // All display formatting goes through units.js.
+  const U = () => window.WTWUnits;
+  const fmtTemp = (v) => U().temp(v);
+  const clock = (d) => U().time(d);
 
   function renderCurrent() {
     const w = state.weather;
@@ -267,15 +269,15 @@
     $('wxTemp').textContent = fmtTemp(w.tempF);
     $('wxCondition').textContent = w.conditionText || label;
     $('wxFeels').textContent = fmtTemp(w.feelsLikeF);
-    $('wxHumidity').textContent = w.humidity == null ? '--' : `${Math.round(w.humidity)}%`;
-    $('wxWind').textContent = w.windMph == null ? '--' : `${Math.round(w.windMph)} mph`;
+    $('wxHumidity').textContent = U().percent(w.humidity);
+    $('wxWind').textContent = U().speed(w.windMph);
     $('wxHiLo').textContent = `${fmtTemp(w.highF)} / ${fmtTemp(w.lowF)}`;
-    $('wxRain').textContent = w.precipProb == null ? '--' : `${Math.round(w.precipProb)}%`;
+    $('wxRain').textContent = U().percent(w.precipProb);
 
     let line = state.offline ? 'Offline · showing last saved forecast · ' : `Updated ${clock(new Date())} · `;
     if (state.source === 'nws') {
       line += `National Weather Service${w.station ? ' · ' + w.station : ''}`;
-      if (w.stationKm != null) line += ` (${Math.round(w.stationKm)} km away)`;
+      if (w.stationKm != null) line += ` (${U().distanceFromKm(w.stationKm)} away)`;
       if (w.observedAt) line += ` · observed ${clock(w.observedAt)}`;
     } else {
       line += 'Open-Meteo';
@@ -295,9 +297,9 @@
     set('wxSunrise', d.sunrise ? clock(d.sunrise) : '--');
     set('wxSunset', d.sunset ? clock(d.sunset) : '--');
     set('wxUv', d.uvIndex == null ? '--' : String(Math.round(d.uvIndex)));
-    set('wxDew', d.dewPointF == null ? '--' : `${Math.round(d.dewPointF)}°`);
-    set('wxPressure', d.pressureInHg == null ? '--' : `${d.pressureInHg.toFixed(2)} in`);
-    set('wxVisibility', d.visibilityMi == null ? '--' : `${Math.round(d.visibilityMi)} mi`);
+    set('wxDew', U().temp(d.dewPointF));
+    set('wxPressure', U().pressure(d.pressureInHg));
+    set('wxVisibility', U().distance(d.visibilityMi));
   }
 
   function renderForecast() {
@@ -317,11 +319,37 @@
         <div class="fc-day">${dayName}</div>
         <div class="fc-icon">${icon}</div>
         <div class="fc-temps"><span class="fc-hi">${fmtTemp(day.highF)}</span><span class="fc-lo">${fmtTemp(day.lowF)}</span></div>
-        <div class="fc-rain">💧 ${day.precipProb == null ? '--' : Math.round(day.precipProb) + '%'}</div>
+        <div class="fc-rain">💧 ${U().percent(day.precipProb)}</div>
       `;
       card.addEventListener('click', () => roastDay(day, dayName));
       wrap.appendChild(card);
     });
+  }
+
+  // Restate the visible roast in the new units. The history keeps its
+  // original wording — it is a log of what was said at the time — so
+  // this deliberately does not add a new entry.
+  function restateRoast() {
+    if (!state.weather || !state.lastRoast) return;
+    const line = LocalAI.generate(state.weather);
+    const el = $('roastText');
+    if (el) el.textContent = line;
+    state.lastRoast = Object.assign({}, state.lastRoast, { text: line });
+  }
+
+  // A unit or clock change must repaint every surface at once.
+  function rerenderAll() {
+    if (state.weather) {
+      renderCurrent();
+      renderForecast();
+      renderAir();
+      renderNowcast();
+      restateRoast();
+    }
+    WTWHourly.redraw();
+    WTWRadar.onUnitsChange();
+    renderCompare();
+    renderRoastLog();
   }
 
   function renderUsernameEverywhere() {
@@ -369,6 +397,242 @@
     }
     renderAlerts();
     WTWRadar.setAlerts(state.alerts);
+    notifyNewAlerts();
+  }
+
+  async function loadAir(location) {
+    try {
+      state.air = await WTWAir.fetchAirQuality(location);
+    } catch (err) {
+      console.warn('[app] air quality failed', err);
+      state.air = null;
+    }
+    renderAir();
+  }
+
+  /* ------------------------------------------------------------
+     Browser notifications for severe alerts.
+     Opt-in, deduplicated by event + expiry so a refresh doesn't
+     re-notify, and only fires while the page is running — there is
+     no push server and the app needs no account.
+     ------------------------------------------------------------ */
+
+  function alertKey(a) {
+    return `${a.event}|${a.expires || ''}|${a.areaDesc || ''}`;
+  }
+
+  function notifyNewAlerts() {
+    if (!WTWStorage.getSettings().alertNotifications) return;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+
+    const severe = state.alerts.filter((a) =>
+      ['extreme', 'severe'].includes(String(a.severity).toLowerCase()));
+    const seen = new Set(state.notifiedAlerts);
+
+    severe.forEach((a) => {
+      const key = alertKey(a);
+      if (seen.has(key)) return;
+      seen.add(key);
+      try {
+        new Notification(`⚠️ ${a.event}`, {
+          body: a.headline || a.areaDesc || 'Severe weather alert in your area.',
+          icon: 'icons/icon-192.png',
+          tag: key,
+        });
+      } catch (err) {
+        console.warn('[app] notification failed', err);
+      }
+    });
+    state.notifiedAlerts = Array.from(seen).slice(-40);
+  }
+
+  async function requestNotificationPermission() {
+    if (typeof Notification === 'undefined') {
+      toast('This browser does not support notifications.', true);
+      return false;
+    }
+    if (Notification.permission === 'granted') return true;
+    if (Notification.permission === 'denied') {
+      toast('Notifications are blocked in your browser settings.', true);
+      return false;
+    }
+    try {
+      const result = await Notification.requestPermission();
+      if (result !== 'granted') {
+        toast('Notification permission was not granted.', true);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('[app] notification permission failed', err);
+      return false;
+    }
+  }
+
+  /* ---------------- Air & sky ---------------- */
+
+  function renderAir() {
+    const card = $('airCard');
+    if (!card) return;
+    const air = state.air;
+    const d = state.detail || {};
+
+    // AQI
+    const badge = $('aqiBadge');
+    const cat = WTWAir.aqiCategory(air ? air.aqi : null);
+    badge.textContent = air && air.aqi != null ? Math.round(air.aqi) : '--';
+    badge.className = `aqi-badge ${cat.className}`;
+    $('aqiLabel').textContent = cat.label;
+    $('aqiAdvice').textContent = air && air.aqi != null ? cat.advice : 'Air quality unavailable for this location.';
+
+    const setVal = (id, value, unit) => {
+      const el = $(id);
+      if (el) el.textContent = (value === null || value === undefined)
+        ? '--' : `${Math.round(value)}${unit || ''}`;
+    };
+    setVal('aqPm25', air ? air.pm25 : null, ' µg/m³');
+    setVal('aqPm10', air ? air.pm10 : null, ' µg/m³');
+    setVal('aqOzone', air ? air.ozone : null, ' µg/m³');
+    setVal('aqNo2', air ? air.no2 : null, ' µg/m³');
+
+    // Pollen — only shown where the upstream model publishes it.
+    const pollenRow = $('pollenRow');
+    const summary = air ? WTWAir.pollenSummary(air.pollen) : null;
+    if (summary) {
+      pollenRow.hidden = false;
+      $('pollenValue').textContent = `${summary.level.label} · ${summary.name}`;
+    } else {
+      pollenRow.hidden = true;
+    }
+
+    // Sun
+    const sun = WTWAir.sunSummary(d.sunrise, d.sunset);
+    $('skyDaylight').textContent = sun ? U().duration(sun.daylightMinutes) : '--';
+    $('skySolarNoon').textContent = sun ? U().time(sun.solarNoon) : '--';
+
+    // Moon
+    const moon = WTWAir.moonPhase(new Date());
+    $('moonIcon').textContent = moon.icon;
+    $('moonName').textContent = moon.name;
+    $('moonIllum').textContent = `${Math.round(moon.illumination * 100)}% lit`;
+
+    card.hidden = false;
+  }
+
+  /* ---------------- Rain nowcast ---------------- */
+
+  function renderNowcast() {
+    const wrap = $('nowcastPanel');
+    if (!wrap) return;
+    const n = state.nowcast;
+    if (!n || !n.text) { wrap.hidden = true; return; }
+    wrap.hidden = false;
+    $('nowcastText').textContent = n.text;
+    $('nowcastIcon').textContent = n.rainingNow ? '🌧️' : (n.startsIn !== null ? '⏳' : '✅');
+    $('nowcastPrecision').textContent = n.precise
+      ? '15-minute data'
+      : 'hourly data — no minute-scale series here';
+    drawNowcastStrip(n);
+  }
+
+  // A compact bar strip of the next two hours. Width comes from CSS
+  // (100% of the card) so it tracks the viewport; only the backing
+  // store is set here, and a resize redraws it.
+  function drawNowcastStrip(n) {
+    const canvas = $('nowcastStrip');
+    if (!canvas || !n || !n.slots.length) return;
+    const width = canvas.clientWidth || canvas.parentElement.clientWidth;
+    if (!width) return;
+    const height = 34;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.height = height + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    const css = (name, fallback) =>
+      getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+    const accent2 = css('--accent-2', '#00c8ff');
+    const dim = css('--text-dim', '#8ba3b8');
+
+    const slots = n.slots;
+    const barW = Math.max(2, width / slots.length - 1.5);
+    slots.forEach((slot, i) => {
+      const x = (i / slots.length) * width;
+      const wet = WTWPrecip.isWet(slot);
+      const intensity = slot.mm !== null
+        ? Math.min(1, slot.mm / 2.5)
+        : Math.min(1, (slot.prob || 0) / 100);
+      const h = Math.max(2, intensity * (height - 12));
+      ctx.fillStyle = wet ? accent2 : dim;
+      ctx.globalAlpha = wet ? 0.85 : 0.22;
+      ctx.fillRect(x, height - 10 - h, barW, h);
+    });
+    ctx.globalAlpha = 1;
+
+    // "now" and end-of-window ticks
+    ctx.fillStyle = dim;
+    ctx.font = '9px "Courier New", monospace';
+    ctx.textBaseline = 'bottom';
+    ctx.textAlign = 'left';
+    ctx.fillText('now', 0, height);
+    ctx.textAlign = 'right';
+    ctx.fillText(U().duration(n.lookahead), width, height);
+  }
+
+  /* ---------------- Compare locations ---------------- */
+
+  async function renderCompare({ refresh = false } = {}) {
+    const panel = $('comparePanel');
+    const grid = $('compareGrid');
+    const empty = $('compareEmpty');
+    if (!panel || !grid) return;
+
+    const favs = WTWStorage.getFavorites();
+    if (!favs.length) {
+      grid.innerHTML = '';
+      empty.hidden = false;
+      return;
+    }
+    empty.hidden = true;
+
+    if (refresh || !WTWCompare.getRows().length) {
+      grid.innerHTML = '<p class="compare-loading">Loading your locations…</p>';
+      try {
+        await WTWCompare.load(favs);
+      } catch (err) {
+        console.warn('[app] compare load failed', err);
+      }
+    }
+
+    const rows = WTWCompare.sorted();
+    grid.innerHTML = '';
+    rows.forEach((row) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'compare-tile' + (row.ok ? '' : ' compare-failed');
+      if (row.ok) {
+        const [label, icon] = describeCode(row.code);
+        btn.innerHTML = `
+          <div class="compare-name">${row.location.name}</div>
+          <div class="compare-main"><span class="compare-icon">${icon}</span>
+            <span class="compare-temp">${U().temp(row.tempF)}</span></div>
+          <div class="compare-cond">${label}</div>
+          <div class="compare-stats">
+            <span>${U().temp(row.highF)} / ${U().temp(row.lowF)}</span>
+            <span>💧 ${U().percent(row.precipProb)}</span>
+          </div>`;
+        btn.title = `Load ${row.location.name}`;
+      } else {
+        btn.innerHTML = `
+          <div class="compare-name">${row.location.name}</div>
+          <div class="compare-cond">Unavailable</div>`;
+      }
+      btn.addEventListener('click', () => loadLocation(row.location));
+      grid.appendChild(btn);
+    });
   }
 
   /* ---------------- Roasts (Local AI 3.0) ---------------- */
@@ -468,6 +732,7 @@
       hours: state.hours.map((h) => Object.assign({}, h, { time: h.time.toISOString() })),
       detail: state.detail,
       alerts: state.alerts,
+      air: state.air,
       savedAt: Date.now(),
     });
   }
@@ -484,11 +749,13 @@
     state.hours = (snap.hours || []).map((h) => Object.assign({}, h, { time: new Date(h.time) }));
     state.detail = snap.detail || {};
     state.alerts = snap.alerts || [];
+    state.air = snap.air || null;
     state.offline = true;
 
     renderCurrent();
     renderForecast();
     renderAlerts();
+    renderAir();
     WTWHourly.setHours(state.hours);
     if (state.location) {
       WTWRadar.setLocation(state.location.name, state.weather, {
@@ -527,9 +794,14 @@
       WTWRadar.setLocation(location.name, result.weather, {
         lat: location.lat, lon: location.lon,
       });
+      state.nowcast = WTWPrecip.nowcast(result.raw, state.hours);
+      renderNowcast();
+
       WTWStorage.saveLastLocation(location);
       updateSaveButton();
       loadAlerts(location).then(saveSnapshot);
+      loadAir(location);
+      renderCompare({ refresh: true });
       saveSnapshot();
 
       if (WTWStorage.getSettings().autoRoast) doRoast();
@@ -611,6 +883,7 @@
         WTWStorage.saveFavorites(WTWStorage.getFavorites().filter((f) => favKey(f) !== favKey(fav)));
         renderFavorites();
         updateSaveButton();
+        renderCompare({ refresh: true });
         toast(`Removed ${fav.name}`);
       });
 
@@ -633,6 +906,7 @@
     }
     renderFavorites();
     updateSaveButton();
+    renderCompare({ refresh: true });
   }
 
   function updateSaveButton() {
@@ -677,6 +951,47 @@
     autoRoast.addEventListener('change', () => {
       WTWStorage.saveSettings({ autoRoast: autoRoast.checked });
       toast(autoRoast.checked ? 'Auto-roast ON 🔥' : 'Auto-roast off');
+    });
+
+    // Units
+    const uSel = $('unitsSelect');
+    uSel.innerHTML = '';
+    (WTW_CONFIG.unitSystems || []).forEach((u) => {
+      const opt = document.createElement('option');
+      opt.value = u.id;
+      opt.textContent = u.label;
+      uSel.appendChild(opt);
+    });
+    uSel.value = s.units;
+    uSel.addEventListener('change', () => {
+      WTWStorage.saveSettings({ units: uSel.value });
+      rerenderAll();
+      toast(`Units: ${uSel.options[uSel.selectedIndex].text}`);
+    });
+
+    // Clock
+    const cSel = $('clockSelect');
+    cSel.value = String(s.clock);
+    cSel.addEventListener('change', () => {
+      WTWStorage.saveSettings({ clock: cSel.value });
+      rerenderAll();
+      toast(cSel.value === '24' ? '24-hour clock' : '12-hour clock');
+    });
+
+    // Severe-alert notifications
+    const notify = $('alertNotifyToggle');
+    notify.checked = !!s.alertNotifications;
+    notify.addEventListener('change', async () => {
+      if (notify.checked) {
+        const granted = await requestNotificationPermission();
+        if (!granted) { notify.checked = false; return; }
+        WTWStorage.saveSettings({ alertNotifications: true });
+        toast('Severe alert notifications on 🔔');
+        notifyNewAlerts();
+      } else {
+        WTWStorage.saveSettings({ alertNotifications: false });
+        toast('Alert notifications off');
+      }
     });
 
     const tSel = $('themeSelect');
@@ -726,9 +1041,21 @@
         location.hostname !== '127.0.0.1') return;
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('sw.js')
-        .then((reg) => console.info('[pwa] service worker registered', reg.scope))
+        .then((reg) => console.info('[pwa] service worker registered', reg && reg.scope))
         .catch((err) => console.warn('[pwa] registration failed', err));
     });
+  }
+
+  // Canvas-backed strips need an explicit redraw when the layout changes.
+  function watchResize() {
+    let pending = null;
+    const redraw = () => {
+      clearTimeout(pending);
+      pending = setTimeout(() => { if (state.nowcast) drawNowcastStrip(state.nowcast); }, 120);
+    };
+    window.addEventListener('resize', redraw);
+    const panel = $('nowcastPanel');
+    if (window.ResizeObserver && panel) new ResizeObserver(redraw).observe(panel);
   }
 
   function watchConnectivity() {
@@ -777,6 +1104,11 @@
     $('radarRecenter').addEventListener('click', () => WTWRadar.recenter());
     $('radarFullscreenBtn').addEventListener('click', () => WTWRadar.toggleFullscreen());
 
+    $('compareRefreshBtn').addEventListener('click', () => {
+      renderCompare({ refresh: true });
+      toast('Refreshing your locations…');
+    });
+
     $('welcomeGeoBtn').addEventListener('click', handleGeolocate);
     $('welcomeSearchBtn').addEventListener('click', () => $('searchInput').focus());
   }
@@ -788,10 +1120,12 @@
     initEvents();
     renderFavorites();
     renderRoastLog();
+    renderCompare();
     WTWRadar.init('radarCanvas');
     WTWHourly.init('hourlyCanvas');
     registerServiceWorker();
     watchConnectivity();
+    watchResize();
 
     $('appVersion').textContent = WTW_CONFIG.app.version;
     const footerVersion = $('appVersionFooter');

@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V10 — radar.js
+   What the Wether V11 — radar.js
    Canvas radar scope with a real basemap underneath.
 
    Layers, bottom to top, all projected in EPSG:3857 so they align:
@@ -346,9 +346,10 @@ const WTWRadar = (() => {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (let i = 2; i <= 4; i += 2) {
-      const km = Math.round((state.rangeKm * i) / 4);
+      const km = (state.rangeKm * i) / 4;
+      const label = window.WTWUnits ? WTWUnits.range(km) : `${Math.round(km)} km`;
       const y = cy - (radius * i) / 4;
-      ctx.fillText(`${km} km`, cx, y + 8);
+      ctx.fillText(label, cx, y + 8);
     }
     ctx.restore();
   }
@@ -559,7 +560,16 @@ const WTWRadar = (() => {
 
   function updateRangeLabel() {
     const el = document.getElementById('radarRange');
-    if (el) el.textContent = `${state.rangeKm} km`;
+    if (!el) return;
+    el.textContent = window.WTWUnits ? WTWUnits.range(state.rangeKm) : `${state.rangeKm} km`;
+  }
+
+  // Units changed in settings: relabel the rings and the range readout.
+  function onUnitsChange() {
+    updateRangeLabel();
+    syncTimelineUI();
+    configureTimeline();
+    draw();
   }
 
   /* ================= Pan / zoom ================= */
@@ -812,7 +822,7 @@ const WTWRadar = (() => {
 
   return {
     init, play, stop, toggle, refresh, setLocation, setAlerts, zoom, recenter,
-    onThemeChange, enterFullscreen, exitFullscreen, toggleFullscreen,
+    onThemeChange, onUnitsChange, enterFullscreen, exitFullscreen, toggleFullscreen,
     isFullscreen: () => state.fullscreen,
   };
 })();

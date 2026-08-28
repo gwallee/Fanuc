@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V10 — share.js
+   What the Wether V11 — share.js
    Renders a roast as a shareable image on an offscreen canvas,
    then hands it to the Web Share API or a download. Everything
    is drawn locally; nothing is uploaded anywhere.
@@ -87,8 +87,9 @@ const WTWShare = (() => {
     ctx.textAlign = 'left';
     ctx.fillStyle = text;
     ctx.font = 'bold 62px system-ui, "Segoe UI", sans-serif';
-    const tempLabel = (tempF === null || tempF === undefined || isNaN(tempF))
-      ? '--°' : `${Math.round(tempF)}°`;
+    const tempLabel = window.WTWUnits
+      ? WTWUnits.temp(tempF, { withUnit: true })
+      : ((tempF === null || tempF === undefined || isNaN(tempF)) ? '--°' : `${Math.round(tempF)}°`);
     ctx.fillText(tempLabel, padX, y);
 
     const tempWidth = ctx.measureText(tempLabel).width;

@@ -1,4 +1,4 @@
-What the Wether V10 — Desktop Version
+What the Wether V11 — Desktop Version
 ====================================
 
 This folder prepares the project to be packaged as a desktop app with

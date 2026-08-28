@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0e17" />
-  <meta name="description" content="What the Wether V10 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
-  <title>What the Wether V10 ⚡🌩️</title>
+  <meta name="description" content="What the Wether V11 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
+  <title>What the Wether V11 ⚡🌩️</title>
   <link rel="icon" type="image/svg+xml" href="logo.svg" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="manifest" href="manifest.json" />
@@ -21,7 +21,7 @@
     <div class="brand">
       <img src="logo.svg" alt="What the Wether logo" class="brand-logo" />
       <div class="brand-text">
-        <h1>What the Wether <span class="version-badge" id="appVersion">V10</span></h1>
+        <h1>What the Wether <span class="version-badge" id="appVersion">V11</span></h1>
         <p class="brand-greeting">Yo, <strong data-username>DJTheBest</strong> ⚡</p>
       </div>
     </div>
@@ -88,6 +88,15 @@
         <div class="stat"><span class="stat-label">High / Low</span><span class="stat-value" id="wxHiLo">--° / --°</span></div>
         <div class="stat"><span class="stat-label">Rain chance</span><span class="stat-value" id="wxRain">--%</span></div>
       </div>
+      <div class="nowcast-panel" id="nowcastPanel" hidden>
+        <div class="nowcast-head">
+          <span class="nowcast-icon" id="nowcastIcon">⏳</span>
+          <span class="nowcast-text" id="nowcastText"></span>
+        </div>
+        <div class="nowcast-strip-wrap"><canvas id="nowcastStrip" aria-label="Precipitation over the next two hours"></canvas></div>
+        <div class="nowcast-precision" id="nowcastPrecision"></div>
+      </div>
+
       <div class="wx-detail">
         <div class="detail"><span class="detail-label">Sunrise</span><span class="detail-value" id="wxSunrise">--</span></div>
         <div class="detail"><span class="detail-label">Sunset</span><span class="detail-value" id="wxSunset">--</span></div>
@@ -173,6 +182,46 @@
       </div>
     </section>
 
+    <!-- Air & sky -->
+    <section class="card air-card" id="airCard" aria-label="Air quality and sky" hidden>
+      <div class="card-head"><h2>🌬️ Air &amp; Sky</h2></div>
+
+      <div class="aqi-row">
+        <div class="aqi-badge aqi-none" id="aqiBadge">--</div>
+        <div class="aqi-meta">
+          <div class="aqi-label" id="aqiLabel">--</div>
+          <div class="aqi-advice" id="aqiAdvice"></div>
+        </div>
+      </div>
+
+      <div class="air-grid">
+        <div class="detail"><span class="detail-label">PM2.5</span><span class="detail-value" id="aqPm25">--</span></div>
+        <div class="detail"><span class="detail-label">PM10</span><span class="detail-value" id="aqPm10">--</span></div>
+        <div class="detail"><span class="detail-label">Ozone</span><span class="detail-value" id="aqOzone">--</span></div>
+        <div class="detail"><span class="detail-label">NO₂</span><span class="detail-value" id="aqNo2">--</span></div>
+        <div class="detail" id="pollenRow" hidden><span class="detail-label">Pollen</span><span class="detail-value" id="pollenValue">--</span></div>
+      </div>
+
+      <div class="sky-row">
+        <div class="moon-block">
+          <span class="moon-icon" id="moonIcon">🌕</span>
+          <span class="moon-meta"><span id="moonName">--</span><small id="moonIllum">--</small></span>
+        </div>
+        <div class="detail"><span class="detail-label">Daylight</span><span class="detail-value" id="skyDaylight">--</span></div>
+        <div class="detail"><span class="detail-label">Solar noon</span><span class="detail-value" id="skySolarNoon">--</span></div>
+      </div>
+    </section>
+
+    <!-- Compare saved locations -->
+    <section class="card compare-card" id="comparePanel" aria-label="Compare saved locations">
+      <div class="card-head">
+        <h2>🗺️ Your Locations</h2>
+        <button type="button" id="compareRefreshBtn" class="btn btn-small">🔄 Refresh</button>
+      </div>
+      <p class="compare-empty" id="compareEmpty">Save a few locations and they'll line up here side by side.</p>
+      <div class="compare-grid" id="compareGrid"></div>
+    </section>
+
     <!-- 7-day forecast -->
     <section class="card forecast-card-panel" aria-label="7-day forecast">
       <div class="card-head"><h2>📅 7-Day Forecast</h2></div>
@@ -219,6 +268,28 @@
     </div>
 
     <div class="setting-group">
+      <label for="unitsSelect">Units</label>
+      <select id="unitsSelect"></select>
+      <p class="setting-hint">Applies everywhere — cards, chart, radar rings, even the roasts.</p>
+    </div>
+
+    <div class="setting-group">
+      <label for="clockSelect">Clock</label>
+      <select id="clockSelect">
+        <option value="12">12-hour</option>
+        <option value="24">24-hour</option>
+      </select>
+    </div>
+
+    <div class="setting-group">
+      <label class="toggle-row" for="alertNotifyToggle">
+        <span>Notify me of severe alerts</span>
+        <input type="checkbox" id="alertNotifyToggle" />
+      </label>
+      <p class="setting-hint">Browser notifications, only while the app is open. Needs permission.</p>
+    </div>
+
+    <div class="setting-group">
       <label for="themeSelect">Theme</label>
       <select id="themeSelect"></select>
     </div>
@@ -235,7 +306,7 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <footer class="app-footer">
-    <span>What the Wether <span id="appVersionFooter">V10</span> ⚡🌩️ — data from the
+    <span>What the Wether <span id="appVersionFooter">V11</span> ⚡🌩️ — data from the
       <a href="https://www.weather.gov/documentation/services-web-api" target="_blank" rel="noopener">National Weather Service</a>
       and <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, radar from
       <a href="https://opengeo.ncep.noaa.gov/" target="_blank" rel="noopener">NOAA</a> — no API keys needed</span>
@@ -245,7 +316,11 @@
   <script src="config.js"></script>
   <script src="storage.js"></script>
   <script src="themes.js"></script>
+  <script src="units.js"></script>
   <script src="nws.js"></script>
+  <script src="air.js"></script>
+  <script src="precip.js"></script>
+  <script src="compare.js"></script>
   <script src="map.js"></script>
   <script src="hourly.js"></script>
   <script src="share.js"></script>
