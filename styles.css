@@ -208,17 +208,19 @@ body.loading { cursor: progress; }
   grid-template-areas:
     "alerts  alerts"
     "current radar"
-    "roast   radar"
     "forecast forecast"
     "favorites favorites";
   gap: 1.1rem;
   padding: 1.25rem;
   max-width: 1200px;
   margin: 0 auto;
+  /* Cards size to their content instead of stretching to match the
+     tallest in the row, so the weather card doesn't trail dead space
+     under the roast. */
+  align-items: start;
 }
 
 .current-card { grid-area: current; }
-.roast-card { grid-area: roast; }
 .radar-card { grid-area: radar; }
 .forecast-card-panel { grid-area: forecast; }
 .favorites-card { grid-area: favorites; }
@@ -271,9 +273,23 @@ body.loading { cursor: progress; }
 
 .wx-updated { margin-top: 0.7rem; font-size: 0.75rem; color: var(--text-dim); }
 
-/* ---------------- Roast card ---------------- */
+/* ---------------- Built-in roast ---------------- */
 
-.roast-card { display: flex; flex-direction: column; }
+.roast-inline {
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--card-border);
+}
+.roast-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.4rem;
+}
+.roast-label { font-weight: 800; font-size: 0.95rem; letter-spacing: 0.3px; }
+.roast-inline .btn { width: 100%; }
 .roast-personality {
   font-size: 0.75rem;
   color: var(--accent);
@@ -282,10 +298,9 @@ body.loading { cursor: progress; }
   padding: 0.15rem 0.6rem;
 }
 .roast-text {
-  flex: 1;
   font-size: 1.05rem;
-  margin: 0.3rem 0 1rem;
-  min-height: 3.2em;
+  margin: 0.3rem 0 0.9rem;
+  min-height: 3em;
 }
 .roast-text.pop { animation: roastPop 0.35s ease; }
 @keyframes roastPop {
@@ -627,7 +642,6 @@ input[type="range"]::-moz-range-thumb {
       "alerts"
       "current"
       "radar"
-      "roast"
       "forecast"
       "favorites";
     padding: 0.9rem;

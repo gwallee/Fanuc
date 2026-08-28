@@ -79,17 +79,17 @@
         <div class="stat"><span class="stat-label">Rain chance</span><span class="stat-value" id="wxRain">--%</span></div>
       </div>
       <div class="wx-updated" id="wxUpdated"></div>
-    </section>
 
-    <!-- AI roast -->
-    <section class="card roast-card" aria-label="AI weather roast">
-      <div class="card-head">
-        <h2>🤖 Wether Bot</h2>
-        <span class="roast-personality" id="roastPersonality"></span>
+      <!-- Built-in roast: part of the weather card, not a separate panel -->
+      <div class="roast-inline">
+        <div class="roast-head">
+          <span class="roast-label">🤖 Wether Bot</span>
+          <span class="roast-personality" id="roastPersonality"></span>
+        </div>
+        <p class="roast-text" id="roastText">Load some weather and I'll tell you what I really think, <span data-username>DJTheBest</span>.</p>
+        <button type="button" id="roastBtn" class="btn btn-primary">🔥 Roast me again</button>
+        <p class="roast-note">100% local AI — no API key, no cloud, no mercy.</p>
       </div>
-      <p class="roast-text" id="roastText">Load some weather and I'll tell you what I really think, <span data-username>DJTheBest</span>.</p>
-      <button type="button" id="roastBtn" class="btn btn-primary">🔥 Roast me again</button>
-      <p class="roast-note">100% local AI — no API key, no cloud, no mercy.</p>
     </section>
 
     <!-- Radar -->
