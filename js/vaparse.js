@@ -72,7 +72,52 @@
     return out;
   }
 
-  var api = { parseNumreg: parseNumreg, rawLines: rawLines, parseIOComments: parseIOComments, parseIOState: parseIOState };
+  /* POSREG.VA — position registers with comments and values.
+   *   [1,1] =   'Home'   Group: 1
+   *   J1 = -.000 deg  J2 = -60.000 deg ...
+   * or Cartesian:
+   *   [1,20] =  '*Rack PKPL'
+   *   Group: 1   Config: F U T, 0, 0, 0
+   *   X: 17.764  Y: -30.473  Z: -784.647 ...
+   * or:  [1,7] = '' Uninitialized
+   * First bracket number is the motion group, second is the PR index. */
+  function parsePosreg(text) {
+    var out = [];
+    var headRe = /^\s*\[(\d+)\s*,\s*(\d+)\]\s*=\s*'([^']*)'(\s*Uninitialized)?/gm;
+    var heads = [];
+    var m;
+    while ((m = headRe.exec(text)) !== null) {
+      heads.push({ group: parseInt(m[1], 10), index: parseInt(m[2], 10), comment: m[3].trim(), uninit: !!m[4], start: m.index, bodyStart: m.index + m[0].length });
+    }
+    heads.forEach(function (hd, i) {
+      var body = text.slice(hd.bodyStart, i + 1 < heads.length ? heads[i + 1].start : text.length);
+      var e = { group: hd.group, index: hd.index, comment: hd.comment, rep: 'uninitialized', config: null, coords: {} };
+      if (!hd.uninit) {
+        var c = body.match(/Config:\s*([^\n]*?)\s*$/m);
+        if (c) e.config = c[1].trim();
+        var jRe = /\bJ(\d)\s*=\s*(-?[.\d]+)/g, j, any = false;
+        while ((j = jRe.exec(body)) !== null) { e.coords['J' + j[1]] = parseFloat(j[2]); any = true; }
+        if (any) e.rep = 'joint';
+        else {
+          var cRe = /\b([XYZWPR]):\s*(-?[.\d]+)/g;
+          while ((j = cRe.exec(body)) !== null) { e.coords[j[1]] = parseFloat(j[2]); any = true; }
+          if (any) e.rep = 'cartesian';
+        }
+      }
+      out.push(e);
+    });
+    return out;
+  }
+
+  // Compact one-line value for display: "J1 -95.0  J2 -60.0 …" / "X 17.8  Y -30.5 …"
+  function posregValueStr(e) {
+    if (e.rep === 'uninitialized') return 'uninitialized';
+    var keys = e.rep === 'joint' ? ['J1', 'J2', 'J3', 'J4', 'J5', 'J6'] : ['X', 'Y', 'Z', 'W', 'P', 'R'];
+    return keys.filter(function (k) { return e.coords[k] !== undefined; })
+      .map(function (k) { return k + ' ' + e.coords[k].toFixed(1); }).join('  ');
+  }
+
+  var api = { parseNumreg: parseNumreg, rawLines: rawLines, parseIOComments: parseIOComments, parseIOState: parseIOState, parsePosreg: parsePosreg, posregValueStr: posregValueStr };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucVA = api;
 })(typeof window !== 'undefined' ? window : globalThis);

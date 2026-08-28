@@ -274,6 +274,28 @@ const flg = ios.filter(p => p.type === 'F');
 check(flg.length === 2 && flg[0].comment === 'Task Rdy' && flg[1].comment === '', 'two-column FLG line split correctly');
 check(ios[5].type === 'GI' && ios[5].state === '0' && ios[5].comment === 'Task ID', 'group input with numeric value parsed');
 
+console.log('\n-- POSREG.VA parser --');
+const prText = fs.readFileSync(path.join(__dirname, '..', 'testdata', 'posreg.va'), 'latin1');
+const prsAll = VA.parsePosreg(prText);
+const prHome = prsAll.find(r => r.index === 1 && r.group === 1);
+check(prHome && prHome.comment === 'Home' && prHome.rep === 'joint' && prHome.coords.J2 === -60, 'PR[1] "Home" joint form parsed (J2=' + (prHome && prHome.coords.J2) + ')');
+const pr20 = prsAll.find(r => r.index === 20 && r.group === 1);
+check(pr20 && pr20.rep === 'cartesian' && pr20.coords.X === 17.764 && pr20.config === 'F U T, 0, 0, 0', 'PR[20] cartesian form with Config on its own line parsed');
+const pr7 = prsAll.find(r => r.index === 7 && r.group === 1);
+check(pr7 && pr7.rep === 'uninitialized', 'uninitialized PR[7] recognized');
+check(VA.posregValueStr(prHome).startsWith('J1 '), 'compact value string: ' + VA.posregValueStr(prHome));
+console.log('  (' + prsAll.length + ' entries parsed from the real backup, ' + prsAll.filter(r => r.rep !== 'uninitialized').length + ' initialized)');
+
+console.log('\n-- labeled but never used: posregs --');
+const prExtern = { source: 'test', registers: [], io: [], posregs: [
+  { group: 1, index: 199, comment: 'spare path', rep: 'joint', coords: {} },
+  { group: 1, index: 20, comment: 'used one', rep: 'joint', coords: {} }
+] };
+// PR[20] is used by PLACE in the samples; PR[199] is not
+const prFindings = L.lint(programs, A.buildCallGraph(programs), A.buildGlobalXref(programs), prExtern);
+check(prFindings.some(f => f.rule === 'labeled-never-used-posreg' && f.message.includes('PR[199]')), 'PR[199] "spare path" flagged');
+check(!prFindings.some(f => f.rule === 'labeled-never-used-posreg' && f.message.includes('PR[20]')), 'PR[20] not flagged (used in PLACE)');
+
 console.log('\n-- VA parser --');
 const regs = VA.parseNumreg("  [1] = 25  'part count'\n  [2] = 1.5  ''\n  [3] = -4  'offset'\n");
 check(regs.length === 3 && regs[0].value === 25 && regs[0].comment === 'part count', 'NUMREG.VA lines parsed');

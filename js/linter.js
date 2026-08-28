@@ -157,6 +157,15 @@
           refs: []
         });
       });
+      (extern.posregs || []).forEach(function (r) {
+        if (r.group !== 1 || !r.comment || xref.posRegs[r.index]) return;
+        findings.push({
+          severity: 'info',
+          rule: 'labeled-never-used-posreg',
+          message: 'PR[' + r.index + '] ("' + r.comment + '") is labeled on the controller' + src + ' but no program in the library uses it.',
+          refs: []
+        });
+      });
       (extern.io || []).forEach(function (p) {
         var key = p.type + '[' + p.index + ']';
         if (!p.comment || xref.io[key]) return;

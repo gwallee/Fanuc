@@ -63,16 +63,18 @@
   /* ================= library ================= */
 
   function buildExtern() {
-    var regs = null, io = null, source = null;
+    var regs = null, io = null, posregs = null, source = null;
     if (state.robot.registers && !state.robot.registers.error) {
       regs = state.robot.registers;
       source = 'robot ' + state.robot.ip;
     }
     if (state.robot.ioComments) { io = state.robot.ioComments; source = 'robot ' + state.robot.ip; }
+    if (state.robot.posregs && !state.robot.posregs.error) { posregs = state.robot.posregs; source = 'robot ' + state.robot.ip; }
     if (!regs && state.dirExtern && state.dirExtern.registers) { regs = state.dirExtern.registers; source = state.dirExtern.source; }
     if (!io && state.dirExtern && state.dirExtern.io) { io = state.dirExtern.io; source = source || state.dirExtern.source; }
-    if (!regs && !io) return null;
-    return { registers: regs || [], io: io || [], source: source };
+    if (!posregs && state.dirExtern && state.dirExtern.posregs) { posregs = state.dirExtern.posregs; source = source || state.dirExtern.source; }
+    if (!regs && !io && !posregs) return null;
+    return { registers: regs || [], io: io || [], posregs: posregs || [], source: source };
   }
 
   function rebuildDerived() {
@@ -213,7 +215,7 @@
   }
 
   function connectRobot(ip) {
-    state.robot = { ip: ip, ftpUser: state.robot.ftpUser, ftpPass: state.robot.ftpPass, files: [], registers: null, rawIO: null, ioState: null, ioComments: null, error: null, loadedAt: null, backup: null };
+    state.robot = { ip: ip, ftpUser: state.robot.ftpUser, ftpPass: state.robot.ftpPass, files: [], registers: null, posregs: null, rawIO: null, ioState: null, ioComments: null, error: null, loadedAt: null, backup: null };
     state.tab = 'robot';
     render();
     api('/api/robot/list?ip=' + encodeURIComponent(ip) + ftpQS()).then(function (b) {
@@ -221,6 +223,7 @@
       state.robot.loadedAt = new Date();
       render();
       loadRobotRegisters();
+      loadRobotPosregs();
     }).catch(function (e) {
       state.robot.error = e.message;
       render();
@@ -236,6 +239,18 @@
       if (state.tab === 'robot') render();
     }).catch(function (e) {
       state.robot.registers = { error: e.message };
+      if (state.tab === 'robot') render();
+    });
+  }
+
+  function loadRobotPosregs() {
+    var ip = state.robot.ip;
+    api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=POSREG.VA' + ftpQS()).then(function (b) {
+      state.robot.posregs = VA.parsePosreg(b.content);
+      rebuildDerived();
+      if (state.tab === 'robot') render();
+    }).catch(function (e) {
+      state.robot.posregs = { error: e.message };
       if (state.tab === 'robot') render();
     });
   }
@@ -359,10 +374,14 @@
       var numreg = b.files.find(function (f) { return /^numreg\.va$/i.test(f.name); });
       var iocfg = b.files.find(function (f) { return /^diocfgsv\.io$/i.test(f.name); });
       var iostate = b.files.find(function (f) { return /^iostate\.dg$/i.test(f.name); });
-      var extern = { source: 'backup ' + b.path, registers: null, io: null };
+      var posregVa = b.files.find(function (f) { return /^posreg\.va$/i.test(f.name); });
+      var extern = { source: 'backup ' + b.path, registers: null, io: null, posregs: null };
       var externLoads = [];
       if (numreg) externLoads.push(api('/api/dir/file?path=' + encodeURIComponent(numreg.path)).then(function (f) {
         extern.registers = VA.parseNumreg(f.content);
+      }).catch(function () {}));
+      if (posregVa) externLoads.push(api('/api/dir/file?path=' + encodeURIComponent(posregVa.path)).then(function (f) {
+        extern.posregs = VA.parsePosreg(f.content);
       }).catch(function () {}));
       if (iostate) externLoads.push(api('/api/dir/file?path=' + encodeURIComponent(iostate.path)).then(function (f) {
         extern.io = VA.parseIOState(f.content).filter(function (p) { return p.comment; });
@@ -371,7 +390,7 @@
         extern.io = VA.parseIOComments(f.content);
       }).catch(function () {}));
       Promise.all(externLoads).then(function () {
-        if (extern.registers || extern.io) { state.dirExtern = extern; rebuildDerived(); render(); }
+        if (extern.registers || extern.io || extern.posregs) { state.dirExtern = extern; rebuildDerived(); render(); }
       });
 
       var lsFiles = b.files.filter(function (f) { return /\.ls$/i.test(f.name); });
@@ -1560,14 +1579,35 @@
       return Object.keys(byNum).map(Number).sort(function (a, b) { return a - b; }).map(function (n) { return byNum[n]; });
     }
 
+    // PR section: merge controller data (values + comments) when loaded
+    function posregEntries() {
+      var byNum = {};
+      Object.keys(x.posRegs).forEach(function (n) {
+        byNum[n] = { key: 'PR[' + n + ']', label: x.posRegs[n].label, refs: x.posRegs[n].refs, value: undefined };
+      });
+      if (state.extern && state.extern.posregs) {
+        state.extern.posregs.forEach(function (r) {
+          if (r.group !== 1) return;
+          if (!byNum[r.index]) {
+            if (r.rep === 'uninitialized' && !r.comment) return; // don't list hundreds of empty PRs
+            byNum[r.index] = { key: 'PR[' + r.index + ']', label: null, refs: [], value: undefined };
+          }
+          byNum[r.index].value = VA.posregValueStr(r);
+          if (!byNum[r.index].label && r.comment) byNum[r.index].label = r.comment;
+        });
+      }
+      return Object.keys(byNum).map(Number).sort(function (a, b) { return a - b; }).map(function (n) { return byNum[n]; });
+    }
+
     function draw() {
       state.xrefFilter = fIn.value;
       var q = fIn.value.trim().toLowerCase();
       wrap.innerHTML = '';
       var haveValues = !!(state.extern && state.extern.registers && state.extern.registers.length);
+      var havePRValues = !!(state.extern && state.extern.posregs && state.extern.posregs.length);
       var sections = [
         ['Registers R[n]' + (haveValues ? ' — all controller registers, with values' : ''), registerEntries()],
-        ['Position registers PR[n]', entriesOf(x.posRegs, function (n) { return 'PR[' + n + ']'; })],
+        ['Position registers PR[n]' + (havePRValues ? ' — with controller values' : ''), posregEntries()],
         ['I/O points', Object.keys(x.io).sort(function (a, b) {
           var ta = x.io[a], tb = x.io[b];
           return ta.type === tb.type ? ta.index - tb.index : ta.type.localeCompare(tb.type);
@@ -2064,6 +2104,53 @@
       drawRegs();
     }
     } // end registers section
+
+    // position registers
+    var prs = state.robot.posregs;
+    var prsOk = prs && !prs.error ? prs.filter(function (r) { return r.rep !== 'uninitialized' || r.comment; }) : null;
+    var secPR = secHead('Position registers (POSREG.VA)' + (prsOk ? ' — ' + prsOk.length : ''), 'robot-posregs');
+    pane.appendChild(secPR.el);
+    if (secPR.open) {
+      pane.appendChild(h('p', {}, [h('button', { class: 'btn subtle', text: 'Refresh from robot', onclick: loadRobotPosregs })]));
+      if (!prs) pane.appendChild(h('p', { class: 'muted', text: 'Reading…' }));
+      else if (prs.error) pane.appendChild(h('p', { class: 'muted', text: 'Could not read POSREG.VA: ' + prs.error }));
+      else {
+        var prBar = h('div', { class: 'search-bar' });
+        var prIn = h('input', { type: 'search', placeholder: 'Filter position registers…' });
+        prBar.appendChild(prIn);
+        pane.appendChild(prBar);
+        var prWrap = h('div', { class: 'table-wrap' });
+        pane.appendChild(prWrap);
+        var drawPRs = function () {
+          var q = prIn.value.trim().toLowerCase();
+          prWrap.innerHTML = '';
+          var tbl = h('table', { class: 'xref-table' });
+          tbl.appendChild(h('tr', {}, [h('th', { text: 'PR' }), h('th', { text: 'Comment' }), h('th', { text: 'Type' }), h('th', { text: 'Values' }), h('th', { text: 'Used at' })]));
+          var shown = 0;
+          prsOk.forEach(function (r) {
+            var key = 'PR[' + r.index + ']' + (r.group > 1 ? ' GP' + r.group : '');
+            var vals = VA.posregValueStr(r);
+            if (q && (key + ' ' + r.comment + ' ' + vals).toLowerCase().indexOf(q) === -1) return;
+            if (++shown > 300) return;
+            var used = h('td');
+            var xr = r.group === 1 ? state.xref.posRegs[r.index] : null;
+            if (xr) xr.refs.slice(0, 6).forEach(function (ref) { used.appendChild(chip(ref, ref.write ? 'write' : 'read')); });
+            tbl.appendChild(h('tr', {}, [
+              h('td', { class: 'n', text: key }),
+              h('td', { text: r.comment }),
+              h('td', { class: 'n', text: r.rep === 'joint' ? 'joint' : r.rep === 'cartesian' ? 'xyzwpr' + (r.config ? ' · ' + r.config : '') : '—' }),
+              h('td', { class: 'n', text: vals }),
+              used
+            ]));
+          });
+          prWrap.appendChild(tbl);
+          if (!shown) prWrap.appendChild(h('p', { class: 'muted', text: 'No position registers match.' }));
+        };
+        prIn.addEventListener('input', drawPRs);
+        drawPRs();
+        pane.appendChild(h('p', { class: 'muted', text: 'Uninitialized, uncommented PRs are hidden. Cartesian values are mm/deg; joint values are axis degrees.' }));
+      }
+    }
 
     // I/O — live state from IOSTATE.DG, grouped by type
     var secIO = secHead('Live I/O (IOSTATE.DG)' + (state.robot.ioState ? ' — ' + state.robot.ioState.length + ' points' : ''), 'robot-io');
