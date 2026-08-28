@@ -5,9 +5,20 @@ name: Build desktop apps
 # needs macOS. This builds all three natively and attaches them to a
 # release.
 on:
-  workflow_dispatch:        # "Run workflow" button in the Actions tab
+  # "Run workflow" in the Actions tab publishes a release directly, so
+  # cutting one never requires pushing a tag by hand.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag (e.g. v13.0.0)'
+        required: true
+        default: 'v13.0.0'
+      prerelease:
+        description: 'Mark as a pre-release'
+        type: boolean
+        default: false
   push:
-    tags: ['v*']            # or push a tag like v13.0.0
+    tags: ['v*']            # pushing a tag works too
 
 permissions:
   contents: write           # needed to create the release
@@ -73,10 +84,9 @@ jobs:
           retention-days: 14
 
   release:
-    name: Attach to release
+    name: Publish release
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -95,6 +105,11 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
+          # Use the tag that triggered this run, or the one supplied to
+          # the manual dispatch (the action creates it if it is new).
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          name: What the Wether ${{ github.event.inputs.version || github.ref_name }}
+          prerelease: ${{ github.event.inputs.prerelease == 'true' }}
           files: artifacts/**/*
           generate_release_notes: true
           body: |
