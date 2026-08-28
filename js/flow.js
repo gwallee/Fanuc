@@ -112,7 +112,9 @@
     return { blocks: blocks, edges: edges };
   }
 
-  function callOrder(programs, graph, root) {
+  /* ignore: {NAME: true} — utility programs (offset setters, math helpers)
+   * hidden from the tree entirely; their own calls are not walked either. */
+  function callOrder(programs, graph, root, ignore) {
     var rows = [];
     function walk(name, seqPrefix, depth, viaLine, visited) {
       var missing = !programs[name];
@@ -125,7 +127,9 @@
         note: missing ? 'missing' : (recursive ? 'recursion' : null)
       });
       if (missing || recursive) return;
-      var calls = (graph.calls[name] || []);
+      var calls = (graph.calls[name] || []).filter(function (c) {
+        return !(ignore && ignore[c.target]);
+      });
       calls.forEach(function (c, i) {
         walk(c.target, seqPrefix + '.' + (i + 1), depth + 1, c.line, visited.concat(name));
       });

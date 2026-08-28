@@ -4,11 +4,15 @@
  * Comment lines are never counted as uses — the analyzer skips them.
  * extern (optional): controller-side data for labeled-but-never-used checks —
  *   { source, registers: [{index, comment}], io: [{type, index, comment}] }
+ * opts (optional): { passThroughCalls: {NAME: true} } — utility programs that
+ *   do not move the robot; a CALL to one does not satisfy the
+ *   handshake-without-motion rule.
  */
 (function (global) {
   'use strict';
 
-  function lint(programs, graph, xref, extern) {
+  function lint(programs, graph, xref, extern, opts) {
+    var passThrough = (opts && opts.passThroughCalls) || {};
     var findings = [];
     var names = Object.keys(programs).sort();
 
@@ -55,7 +59,8 @@
         if (line.comment !== null) return;
         var t = line.text;
         if (line.motion) { pendingDO = null; return; }
-        if (/^(CALL|RUN)\b/.test(t) || /^LBL\[/.test(t)) pendingDO = null;
+        var callM = t.match(/^(?:CALL|RUN)\s+([A-Z_][A-Z0-9_]*)/i);
+        if ((callM && !passThrough[callM[1].toUpperCase()]) || /^LBL\[/.test(t)) pendingDO = null;
         var dm = t.match(/^DO\[(\d+)(?::([^\]]*))?\]\s*=\s*ON\b/);
         if (dm) { pendingDO = { key: 'DO[' + dm[1] + ']', line: line.num }; return; }
         if (pendingDO && /^WAIT\b/.test(t) && /\b(DI|RI)\[\d+/.test(t)) {

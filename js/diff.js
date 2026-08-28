@@ -91,7 +91,35 @@
     return res;
   }
 
-  var api = { diffLines: diffLines, comparePrograms: comparePrograms, bodyOf: bodyOf };
+  /* Pair ops into side-by-side rows:
+   * { a: {n, text}|null, b: {n, text}|null, t: 'same'|'change'|'del'|'add' } */
+  function sideBySide(ops) {
+    var rows = [];
+    var i = 0;
+    while (i < ops.length) {
+      if (ops[i].t === '=') {
+        rows.push({ a: { n: ops[i].an, text: ops[i].text }, b: { n: ops[i].bn, text: ops[i].text }, t: 'same' });
+        i++;
+        continue;
+      }
+      var dels = [], adds = [];
+      while (i < ops.length && ops[i].t !== '=') {
+        (ops[i].t === '-' ? dels : adds).push(ops[i]);
+        i++;
+      }
+      var n = Math.max(dels.length, adds.length);
+      for (var k = 0; k < n; k++) {
+        rows.push({
+          a: dels[k] ? { n: dels[k].an, text: dels[k].text } : null,
+          b: adds[k] ? { n: adds[k].bn, text: adds[k].text } : null,
+          t: dels[k] && adds[k] ? 'change' : (dels[k] ? 'del' : 'add')
+        });
+      }
+    }
+    return rows;
+  }
+
+  var api = { diffLines: diffLines, comparePrograms: comparePrograms, bodyOf: bodyOf, sideBySide: sideBySide };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucDiff = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -23,8 +23,42 @@
     compare: null,         // { label, programs: {NAME: source}, results, open: name|null }
     pair: null,            // { a, b } two-program comparison
     split: null,           // program name shown in the right half of the Code view
-    upload: null           // last robot-upload result banner
+    upload: null,          // last robot-upload result banner
+    flowIgnore: {},        // {NAME: true} utility programs hidden from Flow (persisted)
+    hiddenRules: {},       // {rule: true} check rules the user muted (persisted)
+    checksOpen: {},        // {rule: bool} transient expand state in the Checks tab
+    xrefOpen: {},          // {itemKey: true} expanded items in Cross-reference
+    xrefFilter: ''
   };
+
+  var PREFS_KEY = 'fanuc-tp-studio.prefs.v1';
+
+  function loadPrefs() {
+    try {
+      var p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
+      state.flowIgnore = p.flowIgnore || {};
+      state.hiddenRules = p.hiddenRules || {};
+    } catch (e) { /* defaults */ }
+  }
+
+  function savePrefs() {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ flowIgnore: state.flowIgnore, hiddenRules: state.hiddenRules }));
+    } catch (e) { /* session-only */ }
+  }
+
+  function toast(msg) {
+    var t = document.getElementById('toast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'toast';
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(function () { t.classList.remove('show'); }, 4000);
+  }
 
   /* ================= library ================= */
 
@@ -44,7 +78,7 @@
   function rebuildDerived() {
     state.graph = A.buildCallGraph(state.programs);
     state.xref = A.buildGlobalXref(state.programs);
-    state.findings = L.lint(state.programs, state.graph, state.xref, buildExtern());
+    state.findings = L.lint(state.programs, state.graph, state.xref, buildExtern(), { passThroughCalls: state.flowIgnore });
   }
 
   function addProgram(source, filename, origin) {
@@ -97,11 +131,17 @@
   }
 
   function importFiles(fileList) {
-    var files = Array.prototype.slice.call(fileList).filter(function (f) {
-      return /\.(ls|txt)$/i.test(f.name) || fileList.length === 1;
+    var all = Array.prototype.slice.call(fileList);
+    var files = all.filter(function (f) {
+      return /\.(ls|txt)$/i.test(f.name) || all.length === 1;
     });
     var pending = files.length;
-    if (!pending) return;
+    if (!pending) {
+      toast(all.length
+        ? 'No .LS files in that selection (' + all.length + ' file' + (all.length > 1 ? 's' : '') + ' skipped — names must end in .LS).'
+        : 'Nothing was selected.');
+      return;
+    }
     var lastName = null;
     files.forEach(function (f) {
       var reader = new FileReader();
@@ -112,6 +152,7 @@
           rebuildDerived();
           persist();
           render();
+          toast('Imported ' + files.length + ' program' + (files.length > 1 ? 's' : '') + ' into the library.');
         }
       };
       reader.readAsText(f);
@@ -522,7 +563,7 @@
   function renderTabs() {
     var bar = document.getElementById('tabs');
     bar.innerHTML = '';
-    var problemCount = state.findings.filter(function (f) { return f.severity !== 'info'; }).length;
+    var problemCount = visibleFindings().filter(function (f) { return f.severity !== 'info'; }).length;
     TABS.forEach(function (t) {
       var label = t[1];
       if (t[0] === 'checks' && problemCount) label += ' (' + problemCount + ')';
@@ -922,7 +963,7 @@
 
     var seqBox = h('div', { class: 'callorder' });
     rootNames.sort().forEach(function (r) {
-      FL.callOrder(state.programs, g, r).forEach(function (row) {
+      FL.callOrder(state.programs, g, r, state.flowIgnore).forEach(function (row) {
         var el = h('div', { class: 'seq-row', style: 'padding-left:' + (row.depth * 26) + 'px' });
         el.appendChild(h('span', { class: 'seq-num', text: row.seq }));
         el.appendChild(h('span', {
@@ -933,10 +974,29 @@
         if (row.line) el.appendChild(h('span', { class: 'ref', text: 'called at line ' + row.line }));
         if (row.note === 'missing') el.appendChild(h('span', { class: 'badge warn', text: 'not in library' }));
         if (row.note === 'recursion') el.appendChild(h('span', { class: 'ref', text: '↻ recursion — expanded above' }));
+        if (row.depth > 0) el.appendChild(h('span', {
+          class: 'seq-hide', text: '✕',
+          title: 'Hide ' + row.name + ' from the flow view (utility programs like offset setters)',
+          onclick: function () { state.flowIgnore[row.name] = true; savePrefs(); rebuildDerived(); render(); }
+        }));
         seqBox.appendChild(el);
       });
     });
     flowWrap.appendChild(seqBox);
+
+    var ignored = Object.keys(state.flowIgnore).filter(function (n) { return state.flowIgnore[n]; });
+    if (ignored.length) {
+      var ig = h('p', { class: 'muted' });
+      ig.appendChild(document.createTextNode('Hidden utility programs (also treated as non-motion by the handshake check): '));
+      ignored.sort().forEach(function (n) {
+        ig.appendChild(h('span', {
+          class: 'chip read', text: n + ' ✕',
+          title: 'Show ' + n + ' in the flow again',
+          onclick: function () { delete state.flowIgnore[n]; savePrefs(); rebuildDerived(); render(); }
+        }));
+      });
+      flowWrap.appendChild(ig);
+    }
 
     var loopNotes = [];
     Object.keys(state.programs).forEach(function (n) {
@@ -975,9 +1035,10 @@
       var extra = b.lines.filter(function (l) { return l.comment === null; }).length - b.preview.length;
       if (extra > 0) body.appendChild(h('div', { class: 'fc-line muted', text: '… ' + extra + ' more line' + (extra > 1 ? 's' : '') }));
       card.appendChild(body);
-      if (b.calls.length) {
+      var visCalls = b.calls.filter(function (n) { return !state.flowIgnore[n]; });
+      if (visCalls.length) {
         var cc = h('div', { class: 'fc-calls' });
-        b.calls.forEach(function (name) {
+        visCalls.forEach(function (name) {
           cc.appendChild(h('span', {
             class: 'chip read', text: '→ ' + name,
             onclick: state.programs[name] ? function () { state.selected = name; render(); } : null
@@ -1064,11 +1125,29 @@
   /* ---- checks tab ---- */
 
   var SEV_LABEL = { error: 'Error', warn: 'Warning', info: 'Info' };
+  var RULE_NAMES = {
+    'jump-to-missing-label': 'Jump to a missing label',
+    'duplicate-label': 'Duplicate label definition',
+    'unreachable-code': 'Unreachable code',
+    'call-missing-program': 'Call to a program not in the library',
+    'handshake-without-motion': 'Handshake without motion (DO=ON → WAIT, no move)',
+    'unlabeled-register': 'Unlabeled register',
+    'unlabeled-posreg': 'Unlabeled position register',
+    'unlabeled-io': 'Unlabeled I/O point',
+    'unused-label': 'Label nothing jumps to',
+    'register-never-written': 'Register read but never written',
+    'labeled-never-used-register': 'Labeled register never used',
+    'labeled-never-used-io': 'Labeled I/O never used'
+  };
+
+  function visibleFindings() {
+    return state.findings.filter(function (f) { return !state.hiddenRules[f.rule]; });
+  }
 
   function renderChecks(pane) {
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Program checks' }),
-      h('span', { class: 'muted', text: 'static checks across the whole library — comment lines are never counted as uses' })
+      h('span', { class: 'muted', text: 'grouped by check — collapse a group, or Hide it to mute that check everywhere' })
     ]));
 
     if (!Object.keys(state.programs).length) {
@@ -1076,8 +1155,9 @@
       return;
     }
 
+    var visible = visibleFindings();
     var counts = { error: 0, warn: 0, info: 0 };
-    state.findings.forEach(function (f) { counts[f.severity]++; });
+    visible.forEach(function (f) { counts[f.severity]++; });
     var cards = h('div', { class: 'cards' });
     [['error', 'errors — will fault on the robot'], ['warn', 'warnings — review these'], ['info', 'notes']].forEach(function (c) {
       cards.appendChild(h('div', { class: 'card sev-' + c[0] }, [
@@ -1087,26 +1167,77 @@
     });
     pane.appendChild(cards);
 
-    if (!state.findings.length) {
-      pane.appendChild(h('p', { text: 'No issues found. Jumps all land on defined labels, every register and I/O point used has a label, and all called programs are present.' }));
+    // hidden rules restore row
+    var hidden = Object.keys(state.hiddenRules).filter(function (r) { return state.hiddenRules[r]; });
+    if (hidden.length) {
+      var hr = h('p', { class: 'muted' });
+      hr.appendChild(document.createTextNode('Hidden checks: '));
+      hidden.forEach(function (r) {
+        hr.appendChild(h('span', {
+          class: 'chip read', text: (RULE_NAMES[r] || r) + ' ✕',
+          title: 'Show this check again',
+          onclick: function () { delete state.hiddenRules[r]; savePrefs(); render(); }
+        }));
+      });
+      pane.appendChild(hr);
+    }
+
+    if (!visible.length) {
+      pane.appendChild(h('p', { text: hidden.length ? 'Nothing to show — every remaining check is clean.' : 'No issues found. Jumps all land on defined labels, every register and I/O point used has a label, and all called programs are present.' }));
       return;
     }
 
-    var tw = h('div', { class: 'table-wrap' });
-    var tbl = h('table', { class: 'xref-table' });
-    tbl.appendChild(h('tr', {}, [h('th', { text: 'Severity' }), h('th', { text: 'Finding' }), h('th', { text: 'Where' })]));
-    state.findings.forEach(function (f) {
-      var refs = h('td');
-      f.refs.slice(0, 12).forEach(function (r) { refs.appendChild(chip(r, f.severity === 'error' ? 'write' : 'read')); });
-      if (f.refs.length > 12) refs.appendChild(h('span', { class: 'muted', text: ' +' + (f.refs.length - 12) + ' more' }));
-      tbl.appendChild(h('tr', {}, [
-        h('td', {}, [h('span', { class: 'badge ' + (f.severity === 'error' ? 'warn' : f.severity === 'warn' ? 'mid' : 'ok'), text: SEV_LABEL[f.severity] })]),
-        h('td', { text: f.message }),
-        refs
-      ]));
+    // group by rule, ordered error → warn → info (findings are pre-sorted)
+    var groups = [];
+    var byRule = {};
+    visible.forEach(function (f) {
+      if (!byRule[f.rule]) {
+        byRule[f.rule] = { rule: f.rule, severity: f.severity, items: [] };
+        groups.push(byRule[f.rule]);
+      }
+      byRule[f.rule].items.push(f);
     });
-    tw.appendChild(tbl);
-    pane.appendChild(tw);
+
+    groups.forEach(function (g) {
+      var open = state.checksOpen[g.rule] !== undefined ? state.checksOpen[g.rule] : (g.severity !== 'info');
+      var box = h('div', { class: 'check-group' });
+      var head = h('button', { class: 'cg-head' }, [
+        h('span', { class: 'xi-caret', text: open ? '▾' : '▸' }),
+        h('span', { class: 'badge ' + (g.severity === 'error' ? 'warn' : g.severity === 'warn' ? 'mid' : 'ok'), text: SEV_LABEL[g.severity] }),
+        h('span', { class: 'cg-name', text: RULE_NAMES[g.rule] || g.rule }),
+        h('span', { class: 'muted', text: g.items.length + ' finding' + (g.items.length > 1 ? 's' : '') }),
+        h('span', { style: 'flex:1' }),
+        h('span', {
+          class: 'cg-hide', text: 'Hide',
+          title: 'Mute this check everywhere (restore from the “Hidden checks” row)',
+          onclick: function (ev) {
+            ev.stopPropagation();
+            state.hiddenRules[g.rule] = true;
+            savePrefs();
+            render();
+          }
+        })
+      ]);
+      head.addEventListener('click', function () {
+        state.checksOpen[g.rule] = !open;
+        render();
+      });
+      box.appendChild(head);
+      if (open) {
+        var body = h('div', { class: 'cg-body' });
+        g.items.forEach(function (f) {
+          var row = h('div', { class: 'cg-row' });
+          row.appendChild(h('div', { class: 'cg-msg', text: f.message }));
+          var refs = h('div', { class: 'cg-refs' });
+          f.refs.slice(0, 12).forEach(function (r) { refs.appendChild(chip(r, f.severity === 'error' ? 'write' : 'read')); });
+          if (f.refs.length > 12) refs.appendChild(h('span', { class: 'muted', text: ' +' + (f.refs.length - 12) + ' more' }));
+          row.appendChild(refs);
+          body.appendChild(row);
+        });
+        box.appendChild(body);
+      }
+      pane.appendChild(box);
+    });
   }
 
   /* ---- positions tab ---- */
@@ -1157,59 +1288,79 @@
     var x = state.xref;
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Library cross-reference' }),
-      h('span', { class: 'muted', text: 'every register, position register, I/O point, and timer across all ' + Object.keys(state.programs).length + ' programs — click a reference to jump to it' })
+      h('span', { class: 'muted', text: 'across all ' + Object.keys(state.programs).length + ' programs — expand an item to see every read/write and click to jump' })
     ]));
+
+    var bar = h('div', { class: 'search-bar' });
+    var fIn = h('input', { type: 'search', placeholder: 'Filter… e.g. R[10], DO, pallet, gripper' });
+    fIn.value = state.xrefFilter || '';
+    bar.appendChild(fIn);
+    bar.appendChild(h('button', {
+      class: 'btn subtle', text: 'Collapse all',
+      onclick: function () { state.xrefOpen = {}; render(); }
+    }));
+    pane.appendChild(bar);
+
     var wrap = h('div', { class: 'xref' });
+    pane.appendChild(wrap);
 
-    xrefSection(wrap, 'Registers R[n]', x.registers, function (n) { return 'R[' + n + ']'; });
-    xrefSection(wrap, 'Position registers PR[n]', x.posRegs, function (n) { return 'PR[' + n + ']'; });
-
-    var ioKeys = Object.keys(x.io).sort(function (a, b) {
-      var ta = x.io[a], tb = x.io[b];
-      return ta.type === tb.type ? ta.index - tb.index : ta.type.localeCompare(tb.type);
-    });
-    if (ioKeys.length) {
-      wrap.appendChild(h('h3', { text: 'I/O points' }));
-      var tw = h('div', { class: 'table-wrap' });
-      var tbl = h('table', { class: 'xref-table' });
-      tbl.appendChild(h('tr', {}, [h('th', { text: 'Point' }), h('th', { text: 'Label' }), h('th', { text: 'References (read / write)' })]));
-      ioKeys.forEach(function (k) {
-        var e = x.io[k];
-        var refs = h('td');
-        e.refs.forEach(function (r) { refs.appendChild(chip(r, r.write ? 'write' : 'read')); });
-        tbl.appendChild(h('tr', {}, [
-          h('td', { class: 'n', text: k }),
-          h('td', { text: e.label || '' }),
-          refs
-        ]));
+    function entriesOf(map, fmt) {
+      return Object.keys(map).map(Number).sort(function (a, b) { return a - b; }).map(function (n) {
+        return { key: fmt(n), label: map[n].label, refs: map[n].refs };
       });
-      tw.appendChild(tbl);
-      wrap.appendChild(tw);
     }
 
-    xrefSection(wrap, 'Timers', x.timers, function (n) { return 'TIMER[' + n + ']'; });
-    pane.appendChild(wrap);
-  }
-
-  function xrefSection(wrap, title, map, fmt) {
-    var keys = Object.keys(map).map(Number).sort(function (a, b) { return a - b; });
-    if (!keys.length) return;
-    wrap.appendChild(h('h3', { text: title }));
-    var tw = h('div', { class: 'table-wrap' });
-    var tbl = h('table', { class: 'xref-table' });
-    tbl.appendChild(h('tr', {}, [h('th', { text: 'Item' }), h('th', { text: 'Label' }), h('th', { text: 'References (read / write)' })]));
-    keys.forEach(function (n) {
-      var e = map[n];
-      var refs = h('td');
-      e.refs.forEach(function (r) { refs.appendChild(chip(r, r.write ? 'write' : 'read')); });
-      tbl.appendChild(h('tr', {}, [
-        h('td', { class: 'n', text: fmt(n) }),
-        h('td', { text: e.label || '' }),
-        refs
-      ]));
-    });
-    tw.appendChild(tbl);
-    wrap.appendChild(tw);
+    function draw() {
+      state.xrefFilter = fIn.value;
+      var q = fIn.value.trim().toLowerCase();
+      wrap.innerHTML = '';
+      var sections = [
+        ['Registers R[n]', entriesOf(x.registers, function (n) { return 'R[' + n + ']'; })],
+        ['Position registers PR[n]', entriesOf(x.posRegs, function (n) { return 'PR[' + n + ']'; })],
+        ['I/O points', Object.keys(x.io).sort(function (a, b) {
+          var ta = x.io[a], tb = x.io[b];
+          return ta.type === tb.type ? ta.index - tb.index : ta.type.localeCompare(tb.type);
+        }).map(function (k) { return { key: k, label: x.io[k].label, refs: x.io[k].refs }; })],
+        ['Timers', entriesOf(x.timers, function (n) { return 'TIMER[' + n + ']'; })]
+      ];
+      sections.forEach(function (sec) {
+        var entries = sec[1].filter(function (e) {
+          if (!q) return true;
+          return e.key.toLowerCase().indexOf(q) !== -1 || (e.label || '').toLowerCase().indexOf(q) !== -1;
+        });
+        if (!entries.length) return;
+        wrap.appendChild(h('h3', { text: sec[0] + ' (' + entries.length + ')' }));
+        entries.forEach(function (e) {
+          var open = !!state.xrefOpen[e.key];
+          var reads = 0, writes = 0;
+          e.refs.forEach(function (r) { if (r.write) writes++; else reads++; });
+          var item = h('div', { class: 'xref-item' + (open ? ' open' : '') });
+          var head = h('button', { class: 'xi-head' }, [
+            h('span', { class: 'xi-caret', text: open ? '▾' : '▸' }),
+            h('span', { class: 'xi-key mono', text: e.key }),
+            h('span', { class: 'xi-label', text: e.label || '' }),
+            h('span', { style: 'flex:1' }),
+            reads ? h('span', { class: 'chip read', text: reads + ' read' + (reads > 1 ? 's' : '') }) : null,
+            writes ? h('span', { class: 'chip write', text: writes + ' write' + (writes > 1 ? 's' : '') }) : null
+          ]);
+          head.addEventListener('click', function () {
+            if (state.xrefOpen[e.key]) delete state.xrefOpen[e.key];
+            else state.xrefOpen[e.key] = true;
+            render();
+          });
+          item.appendChild(head);
+          if (open) {
+            var body = h('div', { class: 'xi-body' });
+            e.refs.forEach(function (r) { body.appendChild(chip(r, r.write ? 'write' : 'read')); });
+            item.appendChild(body);
+          }
+          wrap.appendChild(item);
+        });
+      });
+      if (!wrap.children.length) wrap.appendChild(h('p', { class: 'muted', text: 'Nothing matches the filter.' }));
+    }
+    fIn.addEventListener('input', draw);
+    draw();
   }
 
   /* ---- search tab ---- */
@@ -1349,7 +1500,7 @@
         if (state.pair.a === state.pair.b) {
           pane.appendChild(h('p', { class: 'muted', text: 'Same program on both sides — pick two different programs (or two revisions imported under different names).' }));
         } else {
-          pane.appendChild(renderDiffBody(pa.source, pb.source, true));
+          pane.appendChild(renderDiffBody(pa.source, pb.source, true, state.pair.a, state.pair.b));
         }
       }
     } else {
@@ -1432,7 +1583,7 @@
           h('span', { class: 'diff-adds', text: '+' + ch.adds }),
           h('span', { class: 'diff-dels', text: '−' + ch.dels })
         ]));
-        if (isOpen) pane.appendChild(renderDiffBody(c.programs[ch.name], state.programs[ch.name].source));
+        if (isOpen) pane.appendChild(renderDiffBody(c.programs[ch.name], state.programs[ch.name].source, false, ch.name + ' — backup', ch.name + ' — current'));
       });
     }
     progList('New since the baseline', r.added, 'added');
@@ -1440,32 +1591,52 @@
     progList('Header-only changes (dates / sizes — code identical)', r.headerOnly, 'header');
   }
 
-  function renderDiffBody(baselineSrc, currentSrc, fullSource) {
+  /* Side-by-side diff: baseline/A on the left, current/B on the right. */
+  function renderDiffBody(baselineSrc, currentSrc, fullSource, aLabel, bLabel) {
     var ops = fullSource
       ? D.diffLines(baselineSrc, currentSrc)
       : D.diffLines(D.bodyOf(baselineSrc), D.bodyOf(currentSrc));
-    var box = h('div', { class: 'codebox diffbox' });
+    var rows = D.sideBySide(ops);
+
+    var box = h('div', { class: 'codebox sbs-box' });
+    var grid = h('div', { class: 'sbs' });
+    box.appendChild(grid);
+
+    function cell(side, data, type) {
+      var cls = 'sbs-cell ' + side;
+      if (data === null) cls += ' empty';
+      else if (type === 'del' || (type === 'change' && side === 'a')) cls += ' del';
+      else if (type === 'add' || (type === 'change' && side === 'b')) cls += ' add';
+      return h('div', { class: cls }, [
+        h('span', { class: 'ln', text: data ? data.n : '' }),
+        h('span', { class: 'src', text: data ? data.text : '' })
+      ]);
+    }
+
+    grid.appendChild(h('div', { class: 'sbs-cell head a' }, [h('span', { class: 'src', text: aLabel || 'baseline (old)' })]));
+    grid.appendChild(h('div', { class: 'sbs-cell head b' }, [h('span', { class: 'src', text: bLabel || 'current (new)' })]));
+
     var ctx = 2, shown = {};
-    // mark which indexes to show: changes plus context
-    ops.forEach(function (o, i) {
-      if (o.t === '=') return;
-      for (var k = Math.max(0, i - ctx); k <= Math.min(ops.length - 1, i + ctx); k++) shown[k] = true;
+    rows.forEach(function (r, i) {
+      if (r.t === 'same') return;
+      for (var k = Math.max(0, i - ctx); k <= Math.min(rows.length - 1, i + ctx); k++) shown[k] = true;
     });
+    if (!Object.keys(shown).length) {
+      grid.appendChild(h('div', { class: 'sbs-cell' }, [h('span', { class: 'src muted', text: 'identical' })]));
+      grid.appendChild(h('div', { class: 'sbs-cell' }, [h('span', { class: 'src muted', text: 'identical' })]));
+      return box;
+    }
     var lastShown = -1;
-    ops.forEach(function (o, i) {
+    rows.forEach(function (r, i) {
       if (!shown[i]) return;
       if (i > lastShown + 1) {
-        box.appendChild(h('div', { class: 'cline skip' }, [h('span', { class: 'ln', text: '···' }), h('span', { class: 'src muted', text: ' ' })]));
+        grid.appendChild(h('div', { class: 'sbs-cell skip' }, [h('span', { class: 'ln', text: '···' })]));
+        grid.appendChild(h('div', { class: 'sbs-cell skip' }, [h('span', { class: 'ln', text: '···' })]));
       }
       lastShown = i;
-      var cls = o.t === '+' ? ' diff-add' : o.t === '-' ? ' diff-del' : '';
-      var mark = o.t === '+' ? '+' : o.t === '-' ? '−' : ' ';
-      box.appendChild(h('div', { class: 'cline' + cls }, [
-        h('span', { class: 'ln', text: o.t === '-' ? (o.an || '') : (o.bn || '') }),
-        h('span', { class: 'src', text: mark + ' ' + o.text })
-      ]));
+      grid.appendChild(cell('a', r.a, r.t));
+      grid.appendChild(cell('b', r.b, r.t));
     });
-    if (!Object.keys(shown).length) box.appendChild(h('div', { class: 'cline' }, [h('span', { class: 'src muted', text: 'bodies identical' })]));
     return box;
   }
 
@@ -1749,6 +1920,7 @@
       if (e.dataTransfer.files.length) importFiles(e.dataTransfer.files);
     });
 
+    loadPrefs();
     restore();
     rebuildDerived();
     render();

@@ -193,6 +193,32 @@ check(!externFindings.some(f => f.message.includes('R[78]')), 'unlabeled R[78] n
 check(externFindings.some(f => f.rule === 'labeled-never-used-io' && f.message.includes('DI[555]')),
   'DI[555] "spare input" flagged: labeled but never used');
 
+console.log('\n-- flow ignore + handshake pass-through --');
+const ignored = { GRIPPER: true };
+const orderIg = FL.callOrder(programs, A.buildCallGraph(programs), 'MAIN', ignored);
+check(!orderIg.some(r => r.name === 'GRIPPER'), 'GRIPPER hidden from call order when ignored');
+check(orderIg.some(r => r.name === 'PICK') && orderIg.some(r => r.name === 'PALLET'), 'other programs still shown');
+const ptSrc = `/PROG PT
+/MN
+   1:  DO[30:go]=ON ;
+   2:  CALL _SET_OFFS ;
+   3:  WAIT DI[31:done]=ON ;
+/END
+`;
+const ptParsed = P.parseLS(ptSrc, 'PT.LS');
+const ptLib = { PT: { parsed: ptParsed, analysis: A.analyzeProgram(ptParsed), source: ptSrc } };
+const without = L.lint(ptLib, A.buildCallGraph(ptLib), A.buildGlobalXref(ptLib)).filter(f => f.rule === 'handshake-without-motion');
+const withPT = L.lint(ptLib, A.buildCallGraph(ptLib), A.buildGlobalXref(ptLib), null, { passThroughCalls: { _SET_OFFS: true } }).filter(f => f.rule === 'handshake-without-motion');
+check(without.length === 0, 'normally: CALL clears the handshake window (call may move)');
+check(withPT.length === 1, 'with _SET_OFFS marked utility: handshake still flagged through the call');
+
+console.log('\n-- side-by-side pairing --');
+const D0 = require('../js/diff.js');
+const sbs = D0.sideBySide(D0.diffLines('a\nb\nc', 'a\nX\nc\nd'));
+check(sbs.length === 4, '4 rows (got ' + sbs.length + ')');
+check(sbs[1].t === 'change' && sbs[1].a.text === 'b' && sbs[1].b.text === 'X', 'changed line paired b|X');
+check(sbs[3].t === 'add' && sbs[3].a === null && sbs[3].b.text === 'd', 'added line has empty left cell');
+
 console.log('\n-- diff --');
 const D = require('../js/diff.js');
 const ops = D.diffLines('a\nb\nc\nd', 'a\nX\nc\nd\ne');
