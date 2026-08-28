@@ -91,7 +91,9 @@
     state.programs[parsed.name] = {
       parsed: parsed,
       analysis: A.analyzeProgram(parsed),
-      source: source,
+      // parsed.source is the cleaned listing — HTTP fetches from a controller
+      // arrive wrapped in the iPendant HTML page, which parseLS strips
+      source: parsed.source,
       origin: origin || { type: 'upload' }
     };
     return parsed.name;

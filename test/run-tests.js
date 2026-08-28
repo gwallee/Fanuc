@@ -208,6 +208,43 @@ const rbLib = { RB: { parsed: rbParsed, analysis: rbA, source: rbSrc } };
 const rbFind = L.lint(rbLib, A.buildCallGraph(rbLib), A.buildGlobalXref(rbLib));
 check(!rbFind.some(f => f.rule === 'unreachable-code'), 'blank line + LBL after JMP not flagged unreachable');
 
+console.log('\n-- iPendant HTML-wrapped programs (HTTP fetch) --');
+const wrapped = `<html>
+<head>
+<meta http-equiv="Cache-Control" content="no-cache">
+<title> LIDPICK (robot) Homepage </title>
+<script language=javascript>
+var appConf = [{page: "vsfrmn.stm", width: 1070, height: 960}];
+</script>
+</head>
+<BODY bgcolor= #FFF9e3>
+<strong>Hostname: LIDPICK<br>File Name: /MD/_PL_TRASH.LS<br></strong>
+<A HREF="../">Home Page</A>
+<PRE>
+<XMP>
+/PROG  _PL_TRASH
+/ATTR
+COMMENT\t\t= "Place Box Lid";
+/MN
+   1:  !*******PLACE LID AT TRASH******* ;
+   2:  LBL[100] ;
+   3:  IF (F[101:OFF:Sys Checks]),CALL _SYS_CHECKS ;
+   4:J PR[51:Trash Appr] R[204:LidSpd-J]% CNT100    ;
+/POS
+/END
+
+</XMP></PRE>
+</BODY>
+</HTML>`;
+const unwrapped = P.unwrapMd(wrapped);
+check(unwrapped.trim().startsWith('/PROG') && unwrapped.includes('/END'), 'HTML wrapper stripped to the bare listing');
+check(!/[<>]/.test(unwrapped.replace(/<>/g, '')), 'no HTML tags left in the source');
+const wp = P.parseLS(wrapped, '_PL_TRASH.LS');
+check(wp.name === '_PL_TRASH' && wp.lines.length === 4, 'wrapped program parses (' + wp.lines.length + ' lines)');
+check(wp.source.trim().startsWith('/PROG'), 'parsed.source is the CLEAN listing — safe to edit and send back');
+check(P.unwrapMd('/PROG X\n/MN\n   1:  END ;\n/END\n').startsWith('/PROG'), 'clean listings pass through untouched');
+check(P.unwrapMd("[1] = 5  'x'\n") === "[1] = 5  'x'\n", 'non-program VA content passes through untouched');
+
 console.log('\n-- comments must never read as instructions --');
 const cmSrc = `/PROG CM
 /MN

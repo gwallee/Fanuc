@@ -6,7 +6,22 @@
 (function (global) {
   'use strict';
 
-  function parseLS(source, filename) {
+  /* Controllers with the web server enabled serve MD: files wrapped in an
+   * HTML page (the iPendant homepage) with the real listing inside <XMP>.
+   * Unwrap that so the stored source is the clean .LS. */
+  function unwrapMd(source) {
+    if (!/^\s*</.test(source)) return source;
+    var m = source.match(/<XMP>\r?\n?([\s\S]*?)<\/XMP>/i);
+    if (m) return m[1];
+    // no closing tag (truncated page) — take /PROG through /END
+    var start = source.search(/^\/PROG\b/m);
+    if (start === -1) return source;
+    var endM = /^\/END\b.*$/m.exec(source.slice(start));
+    return endM ? source.slice(start, start + endM.index + endM[0].length) + '\n' : source.slice(start);
+  }
+
+  function parseLS(rawSource, filename) {
+    var source = unwrapMd(rawSource);
     var result = {
       name: null,
       filename: filename || '',
@@ -164,7 +179,7 @@
     return g;
   }
 
-  var api = { parseLS: parseLS };
+  var api = { parseLS: parseLS, unwrapMd: unwrapMd };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucParser = api;
 })(typeof window !== 'undefined' ? window : globalThis);

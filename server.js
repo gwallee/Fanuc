@@ -19,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 const { Ftp } = require('./lib/ftp.js');
+const { unwrapMd } = require('./js/parser.js');
 
 const ROOT = __dirname;
 const SNAPSHOT_DIR = path.join(ROOT, 'backups', 'pre-upload');
@@ -163,7 +164,8 @@ async function handleApi(req, res, u) {
     if (!t) return fail(res, 400, 'missing or invalid ?ip=');
     if (!name || !ROBOT_NAME.test(name)) return fail(res, 400, 'missing or invalid ?name=');
     try {
-      const content = await robotGet(t.host, '/MD/' + encodeURIComponent(name.toUpperCase()));
+      // the controller web server wraps MD: files in an HTML page — unwrap it
+      const content = unwrapMd(await robotGet(t.host, '/MD/' + encodeURIComponent(name.toUpperCase())));
       return json(res, 200, { ip: t.ip, name: name.toUpperCase(), via: 'http', content });
     } catch (httpErr) {
       try {
