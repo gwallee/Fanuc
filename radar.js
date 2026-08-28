@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V9 — radar.js
+   What the Wether V10 — radar.js
    Canvas radar scope with a real basemap underneath.
 
    Layers, bottom to top, all projected in EPSG:3857 so they align:
@@ -12,6 +12,9 @@
    Controls: play/pause, stop, refresh, my location, zoom in/out,
    drag to pan, recenter, and a timeline that scrubs real frames by
    clock time (or simulated minutes in fallback mode).
+
+   Tap or click the scope to expand it to fullscreen; tap again, press
+   Escape, or use the close button to come back.
    ============================================================ */
 
 const WTWRadar = (() => {
@@ -33,8 +36,9 @@ const WTWRadar = (() => {
     center: null,           // current scope centre (pans away from coords)
     rangeKm: 150,
     alerts: [],             // GeoJSON features with geometry
-    dragging: false, dragLast: null, moved: false,
+    dragging: false, dragLast: null, dragStart: null, moved: false,
     refetchTimer: null,
+    fullscreen: false,
   };
 
   /* ================= Real imagery (NOAA WMS, EPSG:3857) ================= */
@@ -470,8 +474,15 @@ const WTWRadar = (() => {
     const canvas = state.canvas;
     if (!canvas) return;
     const rect = canvas.parentElement.getBoundingClientRect();
-    const viewportCap = Math.max(200, (window.innerWidth || 520) - 56);
-    const size = Math.max(200, Math.min(rect.width || 300, 520, viewportCap));
+    let size;
+    if (state.fullscreen) {
+      // Fill the screen, leaving room for the controls beneath.
+      const chrome = window.innerWidth < 640 ? 300 : 250;
+      size = Math.max(220, Math.min(window.innerWidth - 24, window.innerHeight - chrome));
+    } else {
+      const viewportCap = Math.max(200, (window.innerWidth || 520) - 56);
+      size = Math.max(200, Math.min(rect.width || 300, 520, viewportCap));
+    }
     state.dpr = window.devicePixelRatio || 1;
     state.width = size;
     state.height = size;
@@ -582,10 +593,16 @@ const WTWRadar = (() => {
     scheduleRefetch();
   }
 
+  // A press that barely moves is a tap (fullscreen); anything past
+  // this many pixels is a pan.
+  const TAP_SLOP_PX = 6;
+  const TAP_MAX_MS = 600;
+
   function initPointer(canvas) {
     canvas.addEventListener('pointerdown', (e) => {
       state.dragging = true;
       state.moved = false;
+      state.dragStart = { x: e.clientX, y: e.clientY, t: Date.now() };
       state.dragLast = { x: e.clientX, y: e.clientY };
       canvas.setPointerCapture(e.pointerId);
     });
@@ -594,22 +611,99 @@ const WTWRadar = (() => {
       const dx = e.clientX - state.dragLast.x;
       const dy = e.clientY - state.dragLast.y;
       if (Math.abs(dx) + Math.abs(dy) < 1) return;
-      state.moved = true;
+      if (state.dragStart &&
+          Math.hypot(e.clientX - state.dragStart.x, e.clientY - state.dragStart.y) > TAP_SLOP_PX) {
+        state.moved = true;
+      }
       state.dragLast = { x: e.clientX, y: e.clientY };
       const radius = Math.min(state.width, state.height) / 2 - 10;
-      const next = WTWMap.panCenter(state.center.lat, state.center.lon,
+      state.center = WTWMap.panCenter(state.center.lat, state.center.lon,
         currentView(), radius * 2, dx, dy);
-      state.center = next;
       draw();
     });
     const end = (e) => {
       if (!state.dragging) return;
       state.dragging = false;
-      if (state.moved) scheduleRefetch();
       try { canvas.releasePointerCapture(e.pointerId); } catch (_) { /* already released */ }
+
+      if (state.moved) {
+        scheduleRefetch();
+        return;
+      }
+      // Didn't move: treat it as a tap on the scope.
+      const quick = state.dragStart && (Date.now() - state.dragStart.t) < TAP_MAX_MS;
+      if (quick && cfg().fullscreenOnTap !== false) toggleFullscreen();
     };
     canvas.addEventListener('pointerup', end);
     canvas.addEventListener('pointercancel', end);
+
+    // The scope is exposed as a button, so it must respond to keys too.
+    canvas.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        toggleFullscreen();
+      }
+    });
+  }
+
+  /* ================= Fullscreen ================= */
+
+  function card() { return document.getElementById('radarCard'); }
+
+  function updateFullscreenUI() {
+    const el = card();
+    if (el) el.classList.toggle('fullscreen', state.fullscreen);
+    document.body.classList.toggle('radar-fullscreen', state.fullscreen);
+    const btn = document.getElementById('radarFullscreenBtn');
+    if (btn) {
+      btn.textContent = state.fullscreen ? '✕ Exit fullscreen' : '⛶ Fullscreen';
+      btn.setAttribute('aria-pressed', state.fullscreen ? 'true' : 'false');
+    }
+    const canvas = state.canvas;
+    if (canvas) {
+      canvas.setAttribute('title', state.fullscreen
+        ? 'Tap the scope to exit fullscreen'
+        : 'Tap the scope for fullscreen');
+    }
+  }
+
+  async function enterFullscreen() {
+    if (state.fullscreen) return;
+    state.fullscreen = true;
+    updateFullscreenUI();
+    // The CSS class alone gives a full-viewport scope, which is all
+    // iOS Safari supports for non-video elements. Where the real
+    // Fullscreen API exists, use it too so browser chrome hides.
+    const el = card();
+    if (el && el.requestFullscreen) {
+      try { await el.requestFullscreen(); }
+      catch (err) { console.info('[radar] native fullscreen unavailable, using overlay', err && err.message); }
+    }
+    resize();
+  }
+
+  async function exitFullscreen() {
+    if (!state.fullscreen) return;
+    state.fullscreen = false;
+    updateFullscreenUI();
+    if (document.fullscreenElement && document.exitFullscreen) {
+      try { await document.exitFullscreen(); } catch (_) { /* already exited */ }
+    }
+    resize();
+  }
+
+  function toggleFullscreen() {
+    state.fullscreen ? exitFullscreen() : enterFullscreen();
+  }
+
+  function initFullscreen() {
+    // Esc, or the browser's own exit, must keep our state in sync.
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement && state.fullscreen) exitFullscreen();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && state.fullscreen) exitFullscreen();
+    });
   }
 
   /* ================= Public API ================= */
@@ -679,6 +773,8 @@ const WTWRadar = (() => {
     window.addEventListener('resize', resize);
     if (window.ResizeObserver) new ResizeObserver(resize).observe(state.canvas.parentElement);
     initPointer(state.canvas);
+    initFullscreen();
+    updateFullscreenUI();
 
     const slider = document.getElementById('radarTimeline');
     if (slider) {
@@ -714,7 +810,11 @@ const WTWRadar = (() => {
     draw();
   }
 
-  return { init, play, stop, toggle, refresh, setLocation, setAlerts, zoom, recenter, onThemeChange };
+  return {
+    init, play, stop, toggle, refresh, setLocation, setAlerts, zoom, recenter,
+    onThemeChange, enterFullscreen, exitFullscreen, toggleFullscreen,
+    isFullscreen: () => state.fullscreen,
+  };
 })();
 
 window.WTWRadar = WTWRadar;

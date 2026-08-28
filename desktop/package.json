@@ -1,8 +1,8 @@
 {
   "name": "what-the-wether-desktop",
   "productName": "What the Wether",
-  "version": "9.0.0",
-  "description": "What the Wether V9 desktop app — neon weather with a real-map radar, 48-hour outlook and a local roast AI. No API keys.",
+  "version": "10.0.0",
+  "description": "What the Wether V10 desktop app — neon weather with a fullscreen real-map radar, 48-hour outlook and a local roast AI. No API keys.",
   "main": "main.js",
   "scripts": {
     "start": "electron ."

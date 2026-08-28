@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V8 — storage.js
+   What the Wether V10 — storage.js
    Safe localStorage wrapper. Everything is namespaced and
    JSON-encoded, and every call is guarded so the app never
    crashes in private-browsing / blocked-storage situations.
@@ -44,31 +44,38 @@ const WTWStorage = (() => {
   }
 
   /* ------------------------------------------------------------
-     One-time migration from the V8 namespace.
-     V9 uses its own prefix, but upgrading must not cost anyone their
-     username, favorites or settings — so on first run we copy any
-     V8 keys across. The V8 data is left untouched so downgrading
-     still works.
+     One-time migration from older namespaces.
+     Upgrading must never cost anyone their username, favorites or
+     settings. Legacy prefixes are tried newest-first, and the old
+     data is left in place so downgrading still works.
+
+     From V10 the prefix is version-neutral, so this runs once and
+     future versions need no migration at all.
      ------------------------------------------------------------ */
-  function migrateFromV8() {
-    const OLD = 'wtw8:';
-    if (PREFIX === OLD) return;
+  function migrateLegacy() {
+    const legacy = (window.WTW_CONFIG && WTW_CONFIG.legacyStoragePrefixes) || [];
+    if (!legacy.length) return;
     try {
       if (localStorage.getItem(key('migrated')) === 'true') return;
-      const names = ['settings', 'favorites', 'lastLocation', 'roastHistory'];
+      const names = ['settings', 'favorites', 'lastLocation', 'roastHistory',
+                     'roastLog', 'snapshot'];
       let moved = 0;
       names.forEach((name) => {
-        const existing = localStorage.getItem(key(name));
-        const old = localStorage.getItem(OLD + name);
-        if (existing === null && old !== null) {
-          localStorage.setItem(key(name), old);
-          moved++;
+        if (localStorage.getItem(key(name)) !== null) return;   // already set
+        for (const prefix of legacy) {                          // newest first
+          if (prefix === PREFIX) continue;
+          const old = localStorage.getItem(prefix + name);
+          if (old !== null) {
+            localStorage.setItem(key(name), old);
+            moved++;
+            break;
+          }
         }
       });
       localStorage.setItem(key('migrated'), 'true');
-      if (moved) console.info(`[storage] migrated ${moved} item(s) from V8`);
+      if (moved) console.info(`[storage] migrated ${moved} item(s) from a previous version`);
     } catch (err) {
-      console.warn('[storage] V8 migration skipped', err);
+      console.warn('[storage] migration skipped', err);
     }
   }
 
@@ -147,7 +154,7 @@ const WTWStorage = (() => {
     return get('snapshot', null);
   }
 
-  migrateFromV8();
+  migrateLegacy();
 
   return {
     get, set, remove,

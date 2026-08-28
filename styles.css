@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V9 — styles.css
+   What the Wether V10 — styles.css
    All colors come from CSS variables so themes are one block
    each. Default theme: Neon Dark. Others: Midnight, Light.
    ============================================================ */
@@ -548,8 +548,55 @@ input[type="range"]::-moz-range-thumb {
   color: var(--text-dim);
   text-align: center;
 }
-#radarCanvas { cursor: grab; }
+#radarCanvas { cursor: zoom-in; }
 #radarCanvas:active { cursor: grabbing; }
+.radar-card.fullscreen #radarCanvas { cursor: zoom-out; }
+#radarCanvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+
+/* ---------------- Fullscreen radar ---------------- */
+
+.radar-fs-btn { margin-left: 0.35rem; }
+
+/* Lock the page behind the expanded scope. */
+body.radar-fullscreen { overflow: hidden; }
+
+/* The overlay works everywhere, including iOS Safari, which will not
+   grant the Fullscreen API to a non-video element. Where the real API
+   is available it is used as well, and this styling still applies. */
+.radar-card.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  max-width: none;
+  background: radial-gradient(900px 600px at 50% 0%, var(--bg-2), var(--bg));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.9rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+.radar-card.fullscreen .card-head {
+  width: 100%;
+  max-width: 900px;
+  margin-bottom: 0.2rem;
+}
+.radar-card.fullscreen .radar-timeline,
+.radar-card.fullscreen .radar-controls,
+.radar-card.fullscreen .radar-attribution {
+  width: 100%;
+  max-width: 900px;
+}
+.radar-card.fullscreen .radar-wrap { padding: 0; }
+
+/* Native fullscreen paints its own backdrop black by default. */
+.radar-card:fullscreen {
+  background: radial-gradient(900px 600px at 50% 0%, var(--bg-2), var(--bg));
+}
 
 /* Radar source badge */
 .radar-source {

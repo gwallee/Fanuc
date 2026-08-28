@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V9 — app.js
+   What the Wether V10 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -164,7 +164,7 @@
 
   /* ------------------------------------------------------------
      Source strategy.
-     Both services are free and key-less, so V9 asks them in
+     Both services are free and key-less, so the app asks them in
      parallel: NWS is authoritative for US observations, forecasts
      and alerts, while Open-Meteo covers the rest of the world and
      fills the fields NWS does not publish (UV index, sunrise and
@@ -775,6 +775,7 @@
     $('radarZoomIn').addEventListener('click', () => WTWRadar.zoom('in'));
     $('radarZoomOut').addEventListener('click', () => WTWRadar.zoom('out'));
     $('radarRecenter').addEventListener('click', () => WTWRadar.recenter());
+    $('radarFullscreenBtn').addEventListener('click', () => WTWRadar.toggleFullscreen());
 
     $('welcomeGeoBtn').addEventListener('click', handleGeolocate);
     $('welcomeSearchBtn').addEventListener('click', () => $('searchInput').focus());

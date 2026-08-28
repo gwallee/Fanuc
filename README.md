@@ -1,4 +1,4 @@
-# What the Wether V9 ⚡🌩️
+# What the Wether V10 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -59,6 +59,21 @@ enforces a few rules before anything reaches the screen:
 - Active NWS watches, warnings, and advisories for the current location
 - Colour-coded by severity (extreme/severe, moderate, minor)
 - Hidden entirely when there's nothing active
+
+### 🔍 Fullscreen radar
+**Tap or click the scope** and it expands to fill the screen — bigger sweep,
+same controls, timeline and zoom. Tap it again, press `Escape`, or use the
+Fullscreen button to come back.
+
+- Works everywhere: the overlay fills the viewport on its own, and where the
+  browser grants the Fullscreen API it hides the browser chrome too. iOS
+  Safari refuses that API for non-video elements, so the overlay is what
+  makes this work there
+- A **drag pans instead** — anything past 6px of movement is a pan, not a tap,
+  so exploring the map never opens fullscreen by accident
+- Keyboard accessible: the scope is a focusable control, `Enter`/`Space`
+  toggles it
+- Set `radar.fullscreenOnTap = false` in `config.js` to require the button
 
 ### 📡 Radar over a real map
 
@@ -165,7 +180,7 @@ bucket, a USB stick...
 ## Project structure
 
 ```
-WhatTheWether-V8/
+WhatTheWether-V10/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
@@ -234,11 +249,13 @@ Open the site in a browser, then:
 The service worker only registers over `https://` or on `localhost` — opening
 `index.html` straight from disk works, just without offline caching.
 
-## Upgrading from V8
+## Upgrading
 
-V9 uses its own storage namespace but migrates your V8 username, favorites,
-settings and last location automatically on first run. The V8 data is left
-in place, so downgrading loses nothing.
+V10 moves to a **version-neutral storage namespace** (`wtw:`), so from here on
+upgrading never touches your data again. On first run it migrates your
+username, favorites, settings, roast history, last location and saved
+snapshot from the V9 or V8 namespaces, newest first. The old keys are left in
+place, so downgrading loses nothing.
 
 There is intentionally **no `.env.example`** — the app needs zero environment
 variables and zero secrets.

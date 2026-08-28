@@ -1,12 +1,12 @@
 /* ============================================================
-   What the Wether V8 — config.js
+   What the Wether V10 — config.js
    Central configuration. No API keys required, ever.
    ============================================================ */
 
 const WTW_CONFIG = {
   app: {
     name: 'What the Wether',
-    version: 'V9',
+    version: 'V10',
     tagline: 'Weather with an attitude problem.',
   },
 
@@ -75,6 +75,7 @@ const WTW_CONFIG = {
   },
 
   radar: {
+    fullscreenOnTap: true,   // tap/click the scope to go fullscreen
     frameMinutes: 60,     // timeline spans the last 60 minutes
     sweepSecondsPerRev: 4,
     maxStormCells: 7,
@@ -91,7 +92,11 @@ const WTW_CONFIG = {
   // Roast history shown in the app (Local AI 3.0).
   roastLog: { maxEntries: 50 },
 
-  storagePrefix: 'wtw9:',
+  // Version-neutral from V10 onward: bumping the app version no longer
+  // orphans anyone's data. storage.js migrates the old V8/V9 namespaces
+  // across once.
+  storagePrefix: 'wtw:',
+  legacyStoragePrefixes: ['wtw9:', 'wtw8:'],
 };
 
 // Expose globally (plain <script> loading, works from file:// too).
