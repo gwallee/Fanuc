@@ -366,14 +366,27 @@ function serveStatic(res, pathname) {
   });
 }
 
-http.createServer((req, res) => {
+const httpServer = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://localhost');
   if (u.pathname.startsWith('/api/')) {
     handleApi(req, res, u).catch((e) => fail(res, 500, e.message));
   } else {
     serveStatic(res, u.pathname);
   }
-}).listen(PORT, () => {
+});
+
+httpServer.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') {
+    console.log('The bridge is already running (port ' + PORT + ' is in use).');
+    console.log('Just open http://localhost:' + PORT + ' in your browser.');
+    console.log('This window will close; the other bridge window keeps serving.');
+    process.exit(0);
+  }
+  console.error('[bridge] could not start: ' + e.message);
+  process.exit(1);
+});
+
+httpServer.listen(PORT, () => {
   console.log('FANUC TP Program Studio bridge running:');
   console.log('  this PC:    http://localhost:' + PORT);
   console.log('  your phone: http://<this-pc-ip>:' + PORT + '  (same network)');
