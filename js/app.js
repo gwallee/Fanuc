@@ -378,9 +378,53 @@
     return s;
   }
 
+  /* ================= browser-history navigation =================
+   * Every view change (tab / program / split) becomes a history entry,
+   * so the mouse back/forward buttons walk the view trail —
+   * Flow → click a block → Code → back button → Flow again. */
+
+  var nav = { restoring: false, last: null };
+
+  function navSnapshot() {
+    return { tab: state.tab, selected: state.selected, split: state.split };
+  }
+
+  function sameNav(a, b) {
+    return a && b && a.tab === b.tab && a.selected === b.selected && a.split === b.split;
+  }
+
+  function recordNav() {
+    var snap = navSnapshot();
+    if (nav.restoring || sameNav(snap, nav.last)) { nav.last = snap; return; }
+    try {
+      if (nav.last === null) history.replaceState(snap, '');
+      else history.pushState(snap, '');
+    } catch (e) { /* history unavailable (some sandboxes) — nav buttons just won't work */ }
+    nav.last = snap;
+  }
+
+  function onPopState(e) {
+    var s = e.state;
+    if (!s || !s.tab) return;
+    if (state.editing) {
+      if (!confirm('Leave the editor? Unsaved changes will be lost.')) {
+        try { history.pushState(navSnapshot(), ''); } catch (err) { /* ignore */ }
+        return;
+      }
+      state.editing = false;
+    }
+    state.tab = s.tab;
+    if (s.selected && state.programs[s.selected]) state.selected = s.selected;
+    state.split = (s.split && state.programs[s.split]) ? s.split : null;
+    nav.restoring = true;
+    render();
+    nav.restoring = false;
+  }
+
   /* ================= renderers ================= */
 
   function render() {
+    recordNav();
     renderSidebar();
     renderConnect();
     renderTabs();
@@ -1643,6 +1687,8 @@
         reader.readAsText(f);
       });
     });
+
+    window.addEventListener('popstate', onPopState);
 
     // Ctrl+E: cross-reference the selection (Studio 5000 habit)
     window.addEventListener('keydown', function (e) {
