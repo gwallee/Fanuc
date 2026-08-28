@@ -1107,6 +1107,22 @@
 
   /* ---------------- Desktop downloads ---------------- */
 
+  // Running inside the packaged desktop app already — no point offering
+  // to download it.
+  function isDesktopApp() {
+    return / Electron\//.test(navigator.userAgent || '');
+  }
+
+  function hideDownloadEntryPointsInDesktop() {
+    if (!isDesktopApp()) return;
+    ['downloadBtn', 'settingsDownloadBtn', 'footerDownloadLink'].forEach((id) => {
+      const el = $(id);
+      if (el) el.hidden = true;
+    });
+    const group = $('settingsDownloadBtn');
+    if (group && group.parentElement) group.parentElement.hidden = true;
+  }
+
   function openDownloads(open) {
     const modal = $('downloadModal');
     const overlay = $('downloadOverlay');
@@ -1262,6 +1278,7 @@
     registerServiceWorker();
     watchConnectivity();
     watchResize();
+    hideDownloadEntryPointsInDesktop();
 
     $('appVersion').textContent = WTW_CONFIG.app.version;
     const footerVersion = $('appVersionFooter');

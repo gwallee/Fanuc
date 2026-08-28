@@ -19,6 +19,7 @@ const RELEASE = {
     { name: 'WhatTheWether-13.0.0.AppImage', size: 108_000_000, browser_download_url: 'https://example.test/app.AppImage' },
     { name: 'what-the-wether_13.0.0_amd64.deb', size: 74_000_000, browser_download_url: 'https://example.test/app.deb' },
     { name: 'what-the-wether-13.0.0.rpm', size: 75_000_000, browser_download_url: 'https://example.test/app.rpm' },
+    { name: 'SHA256SUMS.txt', size: 900, browser_download_url: 'https://example.test/SHA256SUMS.txt' },
     // Noise electron-builder also uploads; must not be offered as downloads.
     { name: 'latest.yml', size: 400, browser_download_url: 'https://example.test/latest.yml' },
     { name: 'WhatTheWether-Setup-13.0.0.exe.blockmap', size: 90_000, browser_download_url: 'https://example.test/bm' },
@@ -97,7 +98,7 @@ function omBody() {
   });
   await check('real release assets are listed', async () => {
     await page.waitForSelector('.dl-asset', { timeout: 8000 });
-    return (await page.locator('.dl-asset').count()) === 7;
+    return (await page.locator('.dl-asset').count()) === 7;   // checksums excluded
   });
   await check('build noise (latest.yml, blockmap) is not offered', async () => {
     const text = await page.textContent('#downloadBody');
@@ -123,6 +124,15 @@ function omBody() {
   });
   await check('the unsigned-build caveat is stated', async () =>
     /unsigned/i.test(await page.textContent('#downloadBody')));
+  await check('checksums are offered for verification', async () => {
+    const link = page.locator('#downloadBody a', { hasText: 'SHA256' });
+    return (await link.count()) === 1 &&
+           (await link.first().getAttribute('href')).includes('SHA256SUMS.txt');
+  });
+  await check('the checksum file is not listed as a platform download', async () => {
+    const kinds = await page.locator('.dl-kind').allInnerTexts();
+    return !kinds.some((k) => /sha256/i.test(k));
+  });
   await check('Escape closes it', async () => {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(400);
@@ -149,6 +159,42 @@ function omBody() {
   });
   await page.keyboard.press('Escape');
   await ctx.close();
+
+  console.log('\n=== Inside the packaged desktop app ===');
+  {
+    const dctx = await browser.newContext({
+      viewport: { width: 1280, height: 900 },
+      serviceWorkers: 'block',
+      userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) ' +
+                 'WhatTheWether/13.0.0 Chrome/126.0.0.0 Electron/31.7.7 Safari/537.36',
+    });
+    const dpage = await dctx.newPage();
+    await dpage.route('https://api.github.com/**', r => r.fulfill({contentType:'application/json', body: JSON.stringify(RELEASE)}));
+    await dpage.route('https://geocoding-api.open-meteo.com/**', r => r.fulfill({contentType:'application/json',
+      body: JSON.stringify({results:[{name:'Austin',admin1:'Texas',country:'United States',latitude:30.2672,longitude:-97.7431}]})}));
+    await dpage.route('https://api.open-meteo.com/**', r => r.fulfill({contentType:'application/json', body: omBody()}));
+    await dpage.route('https://api.weather.gov/**', r => r.fulfill({status:404, body:'{}'}));
+    await dpage.route('https://api.met.no/**', r => r.abort());
+    await dpage.route('https://air-quality-api.open-meteo.com/**', r => r.abort());
+    await dpage.route('https://api.rainviewer.com/**', r => r.abort());
+    await dpage.route('https://opengeo.ncep.noaa.gov/**', r => r.fulfill({contentType:'image/png', body:PNG}));
+    await dpage.route('https://basemaps.cartocdn.com/**', r => r.fulfill({contentType:'image/png', body:PNG}));
+    await dpage.goto(BASE_URL + '/index.html', { waitUntil:'networkidle' });
+    await dpage.waitForTimeout(800);
+
+    await check('the header download button is hidden in the desktop app', async () =>
+      !(await dpage.isVisible('#downloadBtn')));
+    await check('the footer download link is hidden too', async () =>
+      !(await dpage.isVisible('#footerDownloadLink')));
+    await check('the settings download entry is hidden', async () => {
+      await dpage.click('#settingsBtn');
+      await dpage.waitForTimeout(400);
+      return !(await dpage.isVisible('#settingsDownloadBtn'));
+    });
+    await check('the rest of settings still works', async () =>
+      dpage.isVisible('#themeSelect'));
+    await dctx.close();
+  }
 
   console.log('\n=== No release published yet ===');
   ({ ctx, page } = await mk((r) => r.fulfill({ status: 404, contentType:'application/json', body: '{"message":"Not Found"}' })));

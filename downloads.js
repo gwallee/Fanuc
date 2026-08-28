@@ -48,7 +48,7 @@ const WTWDownloads = (() => {
     if (n.endsWith('.deb')) return { platform: 'linux', kind: 'Debian / Ubuntu' };
     if (n.endsWith('.rpm')) return { platform: 'linux', kind: 'Fedora / RHEL' };
     if (n.endsWith('.tar.gz')) return { platform: 'linux', kind: 'Tarball' };
-    return null;   // checksums, blockmaps, latest.yml and friends
+    return null;   // blockmaps, latest.yml and friends
   }
 
   function formatSize(bytes) {
@@ -87,7 +87,11 @@ const WTWDownloads = (() => {
         };
       }).filter(Boolean);
 
+      const checksums = (data.assets || [])
+        .find((a) => /sha256sums/i.test(a.name));
+
       state.release = {
+        checksums: checksums ? checksums.browser_download_url : null,
         tag: data.tag_name,
         name: data.name,
         published: data.published_at ? new Date(data.published_at) : null,
@@ -175,9 +179,13 @@ const WTWDownloads = (() => {
 
     const warn = document.createElement('p');
     warn.className = 'dl-note';
-    warn.textContent = 'These builds are unsigned, so Windows SmartScreen and ' +
-      'macOS Gatekeeper warn on first launch. On Windows choose “More info → ' +
-      'Run anyway”; on macOS right-click the app and choose Open.';
+    warn.innerHTML = 'These builds are unsigned, so Windows SmartScreen and ' +
+      'macOS Gatekeeper warn on first launch. On Windows choose &ldquo;More info &rarr; ' +
+      'Run anyway&rdquo;; on macOS right-click the app and choose Open.' +
+      (state.release.checksums
+        ? ` <a href="${state.release.checksums}" target="_blank" rel="noopener">SHA256 checksums ↗</a>
+            let you verify what you downloaded.`
+        : '');
     container.appendChild(warn);
   }
 
