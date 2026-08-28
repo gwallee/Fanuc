@@ -587,10 +587,23 @@
   function renderSidebar() {
     var list = document.getElementById('prog-list');
     list.innerHTML = '';
-    var names = Object.keys(state.programs).sort();
-    document.getElementById('lib-count').textContent = names.length ? names.length + ' program' + (names.length > 1 ? 's' : '') : '';
-    if (!names.length) {
+    var all = Object.keys(state.programs).sort();
+    var q = (document.getElementById('lib-filter').value || '').trim().toLowerCase();
+    var names = !q ? all : all.filter(function (n) {
+      var p = state.programs[n];
+      return n.toLowerCase().indexOf(q) !== -1 ||
+        (p.parsed.attrs.COMMENT || '').toLowerCase().indexOf(q) !== -1;
+    });
+    document.getElementById('lib-count').textContent =
+      !all.length ? '' :
+      q ? names.length + ' of ' + all.length :
+      all.length + ' program' + (all.length > 1 ? 's' : '');
+    if (!all.length) {
       list.appendChild(h('div', { class: 'empty', text: 'No programs yet. Import .LS files or load the sample cell.' }));
+      return;
+    }
+    if (!names.length) {
+      list.appendChild(h('div', { class: 'empty', text: 'No programs match “' + q + '”.' }));
       return;
     }
     names.forEach(function (n) {
@@ -2103,6 +2116,7 @@
       document.getElementById('folder-input').click();
     });
     document.getElementById('btn-samples').addEventListener('click', loadSamples);
+    document.getElementById('lib-filter').addEventListener('input', renderSidebar);
     document.getElementById('btn-clear').addEventListener('click', function () {
       if (!Object.keys(state.programs).length) return;
       if (!confirm('Remove all programs from the library? Your original files are untouched.')) return;

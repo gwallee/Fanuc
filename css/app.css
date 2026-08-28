@@ -215,6 +215,19 @@ button { font: inherit; }
   padding: 14px 14px 8px;
 }
 
+.lib-filter { padding: 0 14px 8px; }
+.lib-filter input {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel-2);
+  color: var(--ink);
+}
+.lib-filter input:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+
 .prog-list { overflow-y: auto; flex: 1; padding: 0 8px 12px; }
 
 .prog-item {
