@@ -18,8 +18,10 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
+const { Ftp } = require('./lib/ftp.js');
 
 const ROOT = __dirname;
+const SNAPSHOT_DIR = path.join(ROOT, 'backups', 'pre-upload');
 const PORT = parseInt(process.argv[2], 10) || 8642;
 const ROBOT_TIMEOUT_MS = 6000;
 const MAX_BODY = 5 * 1024 * 1024;
@@ -133,26 +135,179 @@ async function handleApi(req, res, u) {
   }
 
   if (u.pathname === '/api/robot/list') {
-    const ip = q.get('ip');
-    if (!ip || !ROBOT_HOST.test(ip)) return fail(res, 400, 'missing or invalid ?ip=');
+    const t = target(q);
+    if (!t) return fail(res, 400, 'missing or invalid ?ip=');
     try {
-      const html = await robotGet(ip, '/MD/');
-      return json(res, 200, { ip, files: scrapeFileNames(html) });
-    } catch (e) { return fail(res, 502, e.message); }
+      const html = await robotGet(t.host, '/MD/');
+      return json(res, 200, { ip: t.ip, via: 'http', files: scrapeFileNames(html) });
+    } catch (httpErr) {
+      try {
+        const files = await withFtp(t, q, (ftp) => ftp.nlst());
+        return json(res, 200, { ip: t.ip, via: 'ftp', files: files.map((f) => f.toUpperCase()).sort() });
+      } catch (ftpErr) {
+        return fail(res, 502, 'HTTP: ' + httpErr.message + ' / FTP: ' + ftpErr.message);
+      }
+    }
   }
 
   if (u.pathname === '/api/robot/file') {
-    const ip = q.get('ip');
+    const t = target(q);
     const name = q.get('name');
-    if (!ip || !ROBOT_HOST.test(ip)) return fail(res, 400, 'missing or invalid ?ip=');
+    if (!t) return fail(res, 400, 'missing or invalid ?ip=');
     if (!name || !ROBOT_NAME.test(name)) return fail(res, 400, 'missing or invalid ?name=');
     try {
-      const content = await robotGet(ip, '/MD/' + encodeURIComponent(name.toUpperCase()));
-      return json(res, 200, { ip, name: name.toUpperCase(), content });
-    } catch (e) { return fail(res, 502, e.message); }
+      const content = await robotGet(t.host, '/MD/' + encodeURIComponent(name.toUpperCase()));
+      return json(res, 200, { ip: t.ip, name: name.toUpperCase(), via: 'http', content });
+    } catch (httpErr) {
+      try {
+        const buf = await withFtp(t, q, (ftp) => ftp.retr(name.toUpperCase()));
+        return json(res, 200, { ip: t.ip, name: name.toUpperCase(), via: 'ftp', content: buf.toString('utf8') });
+      } catch (ftpErr) {
+        return fail(res, 502, 'HTTP: ' + httpErr.message + ' / FTP: ' + ftpErr.message);
+      }
+    }
+  }
+
+  /* Safe .LS upload over FTP.
+   * The controller translates .LS -> TP on STOR; a translation error leaves the
+   * program DELETED on the robot. So: snapshot first, upload, verify by reading
+   * the file back, and auto-restore the snapshot if the new version vanished. */
+  if (u.pathname === '/api/robot/upload' && req.method === 'POST') {
+    const body = await readBody(req);
+    let payload;
+    try { payload = JSON.parse(body); } catch (e) { return fail(res, 400, 'invalid JSON body'); }
+    const { ip, name, content, user, pass } = payload;
+    if (!ip || !ROBOT_HOST.test(String(ip).split(':')[0])) return fail(res, 400, 'missing or invalid ip');
+    if (!name || !/^[A-Za-z0-9_-]+\.LS$/i.test(name)) return fail(res, 400, 'name must be NAME.LS');
+    if (typeof content !== 'string' || !content.trim()) return fail(res, 400, 'missing content');
+    const t = parseTarget(ip);
+    const result = { ok: false, name: name.toUpperCase(), snapshot: null, restored: false };
+    let ftp;
+    try {
+      ftp = await Ftp.connect(t.host, t.port, user, pass);
+      // 1. snapshot what's on the robot now
+      let prev = null;
+      try { prev = await ftp.retr(result.name); } catch (e) { /* program not on robot yet */ }
+      if (prev && prev.length) {
+        fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        result.snapshot = path.join(SNAPSHOT_DIR, t.ip.replace(/[:.]/g, '-') + '_' + result.name.replace(/\.LS$/i, '') + '_' + stamp + '.LS');
+        fs.writeFileSync(result.snapshot, prev);
+      }
+      // 2. upload
+      let uploadError = null;
+      try { await ftp.stor(result.name, Buffer.from(content, 'utf8')); }
+      catch (e) { uploadError = e.message; }
+      // 3. verify the program still exists (translation errors delete it)
+      let verified = false;
+      try {
+        const back = await ftp.retr(result.name);
+        verified = back && back.length > 0;
+      } catch (e) { verified = false; }
+      if (uploadError || !verified) {
+        result.error = uploadError
+          ? 'The controller rejected the upload: ' + uploadError
+          : 'Upload finished but the program is GONE on the robot — the .LS→TP translation failed and the controller deleted it.';
+        // 4. auto-restore the snapshot so nothing is lost on the robot
+        if (result.snapshot) {
+          try {
+            await ftp.stor(result.name, fs.readFileSync(result.snapshot));
+            const check = await ftp.retr(result.name);
+            result.restored = !!(check && check.length);
+          } catch (e) { result.restoreError = e.message; }
+        }
+        await ftp.quit();
+        return json(res, 200, result);
+      }
+      await ftp.quit();
+      result.ok = true;
+      result.verified = true;
+      return json(res, 200, result);
+    } catch (e) {
+      if (ftp) try { await ftp.quit(); } catch (e2) { /* already gone */ }
+      result.error = e.message;
+      return json(res, 200, result);
+    }
+  }
+
+  /* Full backup over FTP into <name-or-ip>_<YYYY-MM-DD>_<NN>/ */
+  if (u.pathname === '/api/robot/backup' && req.method === 'POST') {
+    const body = await readBody(req);
+    let payload;
+    try { payload = JSON.parse(body); } catch (e) { return fail(res, 400, 'invalid JSON body'); }
+    const { ip, user, pass, dest } = payload;
+    if (!ip || !ROBOT_HOST.test(String(ip).split(':')[0])) return fail(res, 400, 'missing or invalid ip');
+    const t = parseTarget(ip);
+    let robotName = null;
+    try {
+      const dg = await robotGet(t.host, '/MD/SUMMARY.DG');
+      const m = dg.match(/(?:Host\s*name|Hostname|Robot\s*Name|\$HOSTNAME)\s*[:=]?\s*([A-Za-z0-9_-]{2,32})/i);
+      if (m) robotName = m[1];
+    } catch (e) { /* HTTP not available — fall back to IP naming */ }
+    const base = (robotName || t.ip.replace(/[:.]/g, '-')) + '_' + new Date().toISOString().slice(0, 10);
+    const destRoot = dest ? path.resolve(dest) : path.join(ROOT, 'backups');
+    fs.mkdirSync(destRoot, { recursive: true });
+    let nn = 1;
+    for (const e of fs.readdirSync(destRoot)) {
+      const m = e.match(new RegExp('^' + base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '_(\\d+)$'));
+      if (m) nn = Math.max(nn, parseInt(m[1], 10) + 1);
+    }
+    const folder = path.join(destRoot, base + '_' + String(nn).padStart(2, '0'));
+    try {
+      const ftp = await Ftp.connect(t.host, t.port, user, pass, 20000);
+      const files = await ftp.nlst();
+      fs.mkdirSync(folder, { recursive: true });
+      let saved = 0, bytes = 0;
+      const failed = [];
+      for (const f of files) {
+        if (!ROBOT_NAME.test(f)) continue;
+        try {
+          const buf = await ftp.retr(f);
+          fs.writeFileSync(path.join(folder, f.toUpperCase()), buf);
+          saved++;
+          bytes += buf.length;
+        } catch (e) { failed.push(f); }
+      }
+      await ftp.quit();
+      return json(res, 200, { ok: true, folder, robotName, files: saved, failed, bytes });
+    } catch (e) {
+      return fail(res, 502, 'backup failed: ' + e.message);
+    }
   }
 
   return fail(res, 404, 'unknown API route');
+}
+
+function parseTarget(ipField) {
+  const parts = String(ipField).split(':');
+  return { ip: String(ipField), host: parts[0], port: parts[1] ? parseInt(parts[1], 10) : 21 };
+}
+
+function target(q) {
+  const ip = q.get('ip');
+  if (!ip || !ROBOT_HOST.test(ip.split(':')[0])) return null;
+  return parseTarget(ip);
+}
+
+async function withFtp(t, q, fn) {
+  const ftp = await Ftp.connect(t.host, t.port, q.get('user') || undefined, q.get('pass') || undefined);
+  try {
+    return await fn(ftp);
+  } finally {
+    try { await ftp.quit(); } catch (e) { /* already gone */ }
+  }
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', (c) => {
+      body += c;
+      if (body.length > MAX_BODY) { req.destroy(); reject(new Error('body too large')); }
+    });
+    req.on('end', () => resolve(body));
+    req.on('error', reject);
+  });
 }
 
 function walk(dir, depth) {
@@ -170,6 +325,7 @@ function walk(dir, depth) {
 }
 
 function serveStatic(res, pathname) {
+  if (pathname === '/favicon.ico') { res.writeHead(204); return res.end(); }
   const rel = pathname === '/' ? 'index.html' : pathname.slice(1);
   const full = path.join(ROOT, path.normalize(rel));
   if (!full.startsWith(ROOT)) return fail(res, 403, 'forbidden');

@@ -20,8 +20,10 @@ node server.js           # zero dependencies; then open http://localhost:8642
 
 The bridge serves this same app and adds what a browser alone cannot do — browsers can't reach a FANUC controller directly (plain HTTP/FTP, no CORS), so the bridge proxies for them:
 
-- **Robot by IP** — reads the program list, any `.LS`, live register values (`NUMREG.VA`), and I/O configuration (`DIOCFGSV.IO`) from the controller's web server (`http://<robot-ip>/MD/`). Enable HTTP on the controller under *MENU → SETUP → Host Comm*. The bridge **only ever reads** from robots — writing to a controller is deliberately not supported.
-- **Local directory by path** — point at a backup folder; every `.LS` in it (3 levels deep) loads into the library, and edits can be saved back to disk.
+- **Robot by IP** — reads the program list, any `.LS`, live register values (`NUMREG.VA`), and I/O configuration (`DIOCFGSV.IO`). Tries the controller web server (`http://<robot-ip>/MD/`) first and falls back to FTP automatically, so either protocol being enabled is enough. Optional FTP credentials (default anonymous).
+- **Safe upload over FTP** — sending a `.LS` to the controller triggers LS→TP translation, and a translation error makes the controller **delete the program**. The bridge makes that impossible to lose work to: it snapshots the robot's current version first, uploads, reads the file back to verify it survived, and if it's gone it **auto-restores the snapshot** — then the UI keeps your editor open so the fix is one keystroke away. Snapshots land in `backups/pre-upload/`.
+- **Backups** — one click pulls every file off `MD:` into `backups/<robot-name-or-ip>_<YYYY-MM-DD>_<NN>/`; `NN` auto-increments for same-day backups, and the robot name is read from the controller when available.
+- **Local directory by path** — point at a backup folder; every `.LS` loads into the library (plus `NUMREG.VA`/`DIOCFGSV.IO` label data if present), and edits can be saved back to disk.
 - **Phone access** — run the bridge on a shop-floor PC and open `http://<that-pc-ip>:8642` from your phone on the same network: full app, live robot data.
 
 Want a double-click desktop install later? Wrap this same code in Electron/Tauri — no rewrite needed.
@@ -33,13 +35,24 @@ Want a double-click desktop install later? Wrap this same code in Electron/Tauri
 
 ### Edit
 - Full-source editor per program: **Save to library** re-parses and refreshes every view and re-runs all checks; for programs opened from a directory via the bridge, **Save to library + disk** writes the file back
-- Robot-sourced programs stay read-only toward the controller: edit in the library, export, and load via the pendant after review
+- **Save + send to robot** uploads over FTP with the snapshot/verify/auto-restore safety net; if the checks find errors that would fail translation, it warns before sending
+- ON in green, OFF in red, comments recognized, full syntax highlighting in viewer and search results
+
+### Find in files
+- The Search tab greps every line of every program, grouped by program, with match-case / whole-word / regex options
+- An item query like `R[10]` or `DO[104]` also matches its labeled form (`R[10:pallet slot]`)
+- **Ctrl+E** (Studio 5000 habit): select anything — in the viewer or the editor — and Ctrl+E cross-references it library-wide; clicking any register/I-O token in the Code view does the same
+- Click a `CALL`ed program name to open it (open-selection)
+
+### Compare (diff against a backup)
+- Load a baseline (backup folder path via the bridge, or pick `.LS` files anywhere) and see everything that changed: changed / new / missing / header-only / identical, with per-program green/red line diffs
+- Header-only differences (dates, sizes the controller rewrites on every touch) are classified separately so real code changes stand out
 
 ### Check (Checks tab)
 Static analysis across the whole library — comment lines (`!…`) never count as uses:
 - **error** — `JMP`/`TIMEOUT`/`Skip` to a `LBL[n]` that is never defined (INTP-267 at runtime); duplicate label definitions
 - **warn** — unlabeled registers, position registers, or I/O points used on active lines; `CALL` to a program not in the library; unreachable code after an unconditional `JMP`/`END`/`ABORT`
-- **info** — labels nothing jumps to; registers read but never written
+- **info** — labels nothing jumps to; registers read but never written; **registers/I-O labeled on the controller but never used in any program** (fed by `NUMREG.VA` / `DIOCFGSV.IO` from the connected robot or an opened backup folder)
 
 The Checks tab count updates live as you edit.
 
@@ -56,18 +69,24 @@ The Checks tab count updates live as you edit.
 
 ```
 index.html        app shell
-server.js         bridge server (robot proxy + directory access), zero deps
+server.js         bridge server (robot HTTP/FTP proxy, safe upload, backups,
+                  directory access) — zero deps
+lib/ftp.js        minimal FTP client (passive mode, zero deps)
 css/app.css       styling (light/dark aware)
 js/parser.js      .LS parser (header, /ATTR, /MN, /POS)
 js/analyzer.js    per-program + library analysis (xref, call graph, labels)
 js/linter.js      static checks
 js/flow.js        control-flow blocks/edges + call-order computation
+js/diff.js        line diff + program-set comparison
 js/explain.js     instruction → plain-English rules
-js/vaparse.js     NUMREG.VA / raw variable-file parsing
+js/vaparse.js     NUMREG.VA / DIOCFGSV.IO parsing
 js/app.js         UI
 samples/          demo cell: MAIN, PICK, PLACE, GRIPPER, PALLET
-test/run-tests.js test suite — run with:  node test/run-tests.js
-tools/build-samples.js  regenerates js/samples.js from samples/
+test/run-tests.js      unit tests:         node test/run-tests.js
+test/server-tests.js   bridge integration: node test/server-tests.js
+                       (runs against a mock FANUC FTP controller, including
+                       the translation-failure → auto-restore path)
+tools/build-samples.js regenerates js/samples.js from samples/
 ```
 
 ## File format notes

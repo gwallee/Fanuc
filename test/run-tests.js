@@ -144,6 +144,43 @@ console.log('\n-- VA parser --');
 const regs = VA.parseNumreg("  [1] = 25  'part count'\n  [2] = 1.5  ''\n  [3] = -4  'offset'\n");
 check(regs.length === 3 && regs[0].value === 25 && regs[0].comment === 'part count', 'NUMREG.VA lines parsed');
 check(regs[1].value === 1.5 && regs[1].comment === '', 'real value with empty comment parsed');
+const ioc = VA.parseIOComments("DI[  1]  'door closed'\nDO[ 12]  ''\nRO[2] STATUS: ON 'gripper open'\njunk line\n");
+check(ioc.length === 2 && ioc[0].type === 'DI' && ioc[0].comment === 'door closed', 'I/O comments parsed from config lines');
+check(ioc[1].type === 'RO' && ioc[1].index === 2, 'unlabeled DO[12] skipped, RO[2] captured');
+
+console.log('\n-- labeled but never used --');
+const extern = {
+  source: 'test',
+  registers: [{ index: 1, comment: 'part count' }, { index: 77, comment: 'spare counter' }, { index: 78, comment: '' }],
+  io: [{ type: 'DO', index: 104, comment: 'cell running' }, { type: 'DI', index: 555, comment: 'spare input' }]
+};
+const externFindings = L.lint(programs, A.buildCallGraph(programs), A.buildGlobalXref(programs), extern);
+check(externFindings.some(f => f.rule === 'labeled-never-used-register' && f.message.includes('R[77]')),
+  'R[77] "spare counter" flagged: labeled but never used');
+check(!externFindings.some(f => f.rule === 'labeled-never-used-register' && f.message.includes('R[1]')),
+  'R[1] not flagged (it is used)');
+check(!externFindings.some(f => f.message.includes('R[78]')), 'unlabeled R[78] not flagged');
+check(externFindings.some(f => f.rule === 'labeled-never-used-io' && f.message.includes('DI[555]')),
+  'DI[555] "spare input" flagged: labeled but never used');
+
+console.log('\n-- diff --');
+const D = require('../js/diff.js');
+const ops = D.diffLines('a\nb\nc\nd', 'a\nX\nc\nd\ne');
+check(ops.filter(o => o.t === '-').map(o => o.text).join() === 'b', 'diff: "b" removed');
+check(ops.filter(o => o.t === '+').map(o => o.text).join() === 'X,e', 'diff: "X" and "e" added');
+check(ops.filter(o => o.t === '=').length === 3, 'diff: 3 unchanged lines');
+const oldMain = main.parsed && programs.MAIN.source;
+const headerTouched = oldMain.replace(/MODIFIED\t= DATE [^;]*/, 'MODIFIED\t= DATE 26-08-28  TIME 01:02:03');
+const bodyTouched = oldMain.replace('R[1:part count]=0', 'R[1:part count]=5');
+const cmp = D.comparePrograms(
+  { MAIN: oldMain, GONE: '/PROG GONE\n/MN\n   1:  END ;\n/END\n' },
+  { MAIN: headerTouched, EXTRA: '/PROG EXTRA\n/MN\n   1:  END ;\n/END\n' }
+);
+check(cmp.headerOnly.includes('MAIN'), 'header-only change classified separately');
+check(cmp.added.includes('EXTRA') && cmp.removed.includes('GONE'), 'added/removed programs detected');
+const cmp2 = D.comparePrograms({ MAIN: oldMain }, { MAIN: bodyTouched });
+check(cmp2.changed.length === 1 && cmp2.changed[0].adds === 1 && cmp2.changed[0].dels === 1,
+  'real body change: 1 added + 1 removed line');
 
 console.log('');
 if (failures) {

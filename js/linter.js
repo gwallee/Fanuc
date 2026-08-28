@@ -1,12 +1,14 @@
 /* Static program checks over the parsed library.
- * lint(programs, graph, xref) -> findings:
+ * lint(programs, graph, xref, extern?) -> findings:
  *   { severity: 'error'|'warn'|'info', rule, message, refs: [{prog, line}] }
  * Comment lines are never counted as uses — the analyzer skips them.
+ * extern (optional): controller-side data for labeled-but-never-used checks —
+ *   { source, registers: [{index, comment}], io: [{type, index, comment}] }
  */
 (function (global) {
   'use strict';
 
-  function lint(programs, graph, xref) {
+  function lint(programs, graph, xref, extern) {
     var findings = [];
     var names = Object.keys(programs).sort();
 
@@ -110,6 +112,30 @@
         });
       }
     });
+
+    // --- labeled on the controller but never used in any program ---
+    if (extern) {
+      var src = extern.source ? ' (' + extern.source + ')' : '';
+      (extern.registers || []).forEach(function (r) {
+        if (!r.comment || xref.registers[r.index]) return;
+        findings.push({
+          severity: 'info',
+          rule: 'labeled-never-used-register',
+          message: 'R[' + r.index + '] ("' + r.comment + '") is labeled on the controller' + src + ' but no program in the library uses it.',
+          refs: []
+        });
+      });
+      (extern.io || []).forEach(function (p) {
+        var key = p.type + '[' + p.index + ']';
+        if (!p.comment || xref.io[key]) return;
+        findings.push({
+          severity: 'info',
+          rule: 'labeled-never-used-io',
+          message: key + ' ("' + p.comment + '") is labeled on the controller' + src + ' but no program in the library uses it.',
+          refs: []
+        });
+      });
+    }
 
     var order = { error: 0, warn: 1, info: 2 };
     findings.sort(function (x, y) {

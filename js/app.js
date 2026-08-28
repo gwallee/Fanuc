@@ -3,7 +3,7 @@
   'use strict';
 
   var P = window.FanucParser, A = window.FanucAnalyzer, X = window.FanucExplain;
-  var L = window.FanucLinter, FL = window.FanucFlow, VA = window.FanucVA;
+  var L = window.FanucLinter, FL = window.FanucFlow, VA = window.FanucVA, D = window.FanucDiff;
   var STORE_KEY_V1 = 'fanuc-tp-studio.programs.v1';
   var STORE_KEY = 'fanuc-tp-studio.programs.v2';
 
@@ -17,16 +17,32 @@
     xref: null,
     findings: [],
     server: false,         // bridge server reachable?
-    robot: { ip: '', files: [], registers: null, rawIO: null, error: null, loadedAt: null },
-    dirStatus: null
+    robot: { ip: '', ftpUser: '', ftpPass: '', files: [], registers: null, rawIO: null, ioComments: null, error: null, loadedAt: null, backup: null },
+    dirExtern: null,       // register/IO label data found in an opened folder
+    dirStatus: null,
+    compare: null,         // { label, programs: {NAME: source}, results, open: name|null }
+    upload: null           // last robot-upload result banner
   };
 
   /* ================= library ================= */
 
+  function buildExtern() {
+    var regs = null, io = null, source = null;
+    if (state.robot.registers && !state.robot.registers.error) {
+      regs = state.robot.registers;
+      source = 'robot ' + state.robot.ip;
+    }
+    if (state.robot.ioComments) { io = state.robot.ioComments; source = 'robot ' + state.robot.ip; }
+    if (!regs && state.dirExtern && state.dirExtern.registers) { regs = state.dirExtern.registers; source = state.dirExtern.source; }
+    if (!io && state.dirExtern && state.dirExtern.io) { io = state.dirExtern.io; source = source || state.dirExtern.source; }
+    if (!regs && !io) return null;
+    return { registers: regs || [], io: io || [], source: source };
+  }
+
   function rebuildDerived() {
     state.graph = A.buildCallGraph(state.programs);
     state.xref = A.buildGlobalXref(state.programs);
-    state.findings = L.lint(state.programs, state.graph, state.xref);
+    state.findings = L.lint(state.programs, state.graph, state.xref, buildExtern());
   }
 
   function addProgram(source, filename, origin) {
@@ -130,11 +146,18 @@
       .catch(function () { state.server = false; renderConnect(); });
   }
 
+  function ftpQS() {
+    var s = '';
+    if (state.robot.ftpUser) s += '&user=' + encodeURIComponent(state.robot.ftpUser);
+    if (state.robot.ftpPass) s += '&pass=' + encodeURIComponent(state.robot.ftpPass);
+    return s;
+  }
+
   function connectRobot(ip) {
-    state.robot = { ip: ip, files: [], registers: null, rawIO: null, error: null, loadedAt: null };
+    state.robot = { ip: ip, ftpUser: state.robot.ftpUser, ftpPass: state.robot.ftpPass, files: [], registers: null, rawIO: null, ioComments: null, error: null, loadedAt: null, backup: null };
     state.tab = 'robot';
     render();
-    api('/api/robot/list?ip=' + encodeURIComponent(ip)).then(function (b) {
+    api('/api/robot/list?ip=' + encodeURIComponent(ip) + ftpQS()).then(function (b) {
       state.robot.files = b.files;
       state.robot.loadedAt = new Date();
       render();
@@ -147,9 +170,10 @@
 
   function loadRobotRegisters() {
     var ip = state.robot.ip;
-    api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=NUMREG.VA').then(function (b) {
+    api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=NUMREG.VA' + ftpQS()).then(function (b) {
       state.robot.registers = VA.parseNumreg(b.content);
       state.robot.loadedAt = new Date();
+      rebuildDerived();
       if (state.tab === 'robot') render();
     }).catch(function (e) {
       state.robot.registers = { error: e.message };
@@ -159,8 +183,10 @@
 
   function loadRobotIO() {
     var ip = state.robot.ip;
-    api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=DIOCFGSV.IO').then(function (b) {
+    api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=DIOCFGSV.IO' + ftpQS()).then(function (b) {
       state.robot.rawIO = VA.rawLines(b.content);
+      state.robot.ioComments = VA.parseIOComments(b.content);
+      rebuildDerived();
       if (state.tab === 'robot') render();
     }).catch(function (e) {
       state.robot.rawIO = { error: e.message };
@@ -168,9 +194,64 @@
     });
   }
 
+  function takeBackup() {
+    state.robot.backup = { running: true };
+    render();
+    fetch('/api/robot/backup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip: state.robot.ip, user: state.robot.ftpUser || undefined, pass: state.robot.ftpPass || undefined })
+    }).then(function (r) { return r.json(); }).then(function (b) {
+      if (b.error) throw new Error(b.error);
+      state.robot.backup = b;
+      render();
+    }).catch(function (e) {
+      state.robot.backup = { error: e.message };
+      render();
+    });
+  }
+
+  function sendToRobot(name, content, onDone) {
+    fetch('/api/robot/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ip: state.robot.ip,
+        name: name + '.LS',
+        content: content,
+        user: state.robot.ftpUser || undefined,
+        pass: state.robot.ftpPass || undefined
+      })
+    }).then(function (r) { return r.json(); }).then(function (b) {
+      state.upload = b;
+      onDone(b);
+    }).catch(function (e) {
+      state.upload = { ok: false, name: name + '.LS', error: e.message };
+      onDone(state.upload);
+    });
+  }
+
+  function uploadBanner() {
+    var u = state.upload;
+    if (!u) return null;
+    var el = h('div', { class: 'banner ' + (u.ok ? 'good' : 'bad') });
+    if (u.ok) {
+      el.appendChild(h('strong', { text: u.name + ' uploaded to ' + state.robot.ip + ' and verified on the robot. ' }));
+      if (u.snapshot) el.appendChild(h('span', { text: 'The previous version was snapshotted to ' + u.snapshot + ' before the upload.' }));
+    } else {
+      el.appendChild(h('strong', { text: u.name + ' — upload failed. ' }));
+      el.appendChild(h('span', { text: (u.error || 'unknown error') + ' ' }));
+      if (u.restored) el.appendChild(h('span', { text: 'The previous version was automatically restored on the robot from the pre-upload snapshot — nothing was lost. Fix the program here and send again.' }));
+      else if (u.snapshot) el.appendChild(h('span', { text: 'Auto-restore did not succeed' + (u.restoreError ? ' (' + u.restoreError + ')' : '') + ' — the previous version is saved at ' + u.snapshot + '.' }));
+      else el.appendChild(h('span', { text: 'The program did not exist on the robot before this upload, so there is nothing to restore. Your source is safe in the library.' }));
+    }
+    el.appendChild(h('button', { class: 'btn subtle', text: 'Dismiss', onclick: function () { state.upload = null; render(); } }));
+    return el;
+  }
+
   function importFromRobot(name) {
     var ip = state.robot.ip;
-    return api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=' + encodeURIComponent(name))
+    return api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=' + encodeURIComponent(name) + ftpQS())
       .then(function (b) {
         var prog = addProgram(b.content, b.name, { type: 'robot', ip: ip, name: b.name });
         rebuildDerived();
@@ -183,6 +264,21 @@
     state.dirStatus = 'Reading ' + dirPath + '…';
     renderConnect();
     api('/api/dir/list?path=' + encodeURIComponent(dirPath)).then(function (b) {
+      // pick up controller label data if the folder is a backup
+      var numreg = b.files.find(function (f) { return /^numreg\.va$/i.test(f.name); });
+      var iocfg = b.files.find(function (f) { return /^diocfgsv\.io$/i.test(f.name); });
+      var extern = { source: 'backup ' + b.path, registers: null, io: null };
+      var externLoads = [];
+      if (numreg) externLoads.push(api('/api/dir/file?path=' + encodeURIComponent(numreg.path)).then(function (f) {
+        extern.registers = VA.parseNumreg(f.content);
+      }).catch(function () {}));
+      if (iocfg) externLoads.push(api('/api/dir/file?path=' + encodeURIComponent(iocfg.path)).then(function (f) {
+        extern.io = VA.parseIOComments(f.content);
+      }).catch(function () {}));
+      Promise.all(externLoads).then(function () {
+        if (extern.registers || extern.io) { state.dirExtern = extern; rebuildDerived(); render(); }
+      });
+
       var lsFiles = b.files.filter(function (f) { return /\.ls$/i.test(f.name); });
       if (!lsFiles.length) {
         state.dirStatus = 'No .LS files found in ' + b.path;
@@ -272,7 +368,9 @@
       return '<span class="tok-io">' + m0 + '</span>';
     });
     s = s.replace(/\bP\[[^\]]*\]/g, function (m0) { return '<span class="tok-num">' + m0 + '</span>'; });
-    s = s.replace(/\b(IF|THEN|ELSE|ENDIF|SELECT|FOR|ENDFOR|TO|JMP|WAIT|TIMEOUT|SKIP|CONDITION|PULSE|ON|OFF|END|ABORT|PAUSE|UALM|OVERRIDE|PAYLOAD|UFRAME_NUM|UTOOL_NUM|MOD|DIV|AND|OR|NOT|START|STOP|RESET|Offset|Tool_Offset)\b/g,
+    s = s.replace(/\bON\b/g, '<span class="tok-on">ON</span>');
+    s = s.replace(/\bOFF\b/g, '<span class="tok-off">OFF</span>');
+    s = s.replace(/\b(IF|THEN|ELSE|ENDIF|SELECT|FOR|ENDFOR|TO|JMP|WAIT|TIMEOUT|SKIP|CONDITION|PULSE|END|ABORT|PAUSE|UALM|OVERRIDE|PAYLOAD|UFRAME_NUM|UTOOL_NUM|MOD|DIV|AND|OR|NOT|START|STOP|RESET|Offset|Tool_Offset)\b/g,
       '<span class="tok-kw">$1</span>');
     s = s.replace(/\b(FINE|CNT\d+|ACC\d+|max_speed|BREAK|RTCP|Wjnt|PTH)\b/g, '<span class="tok-num">$1</span>');
     return s;
@@ -333,11 +431,40 @@
     ['summary', 'Summary'],
     ['flow', 'Flow'],
     ['checks', 'Checks'],
+    ['compare', 'Compare'],
     ['positions', 'Positions'],
     ['xref', 'Cross-reference'],
     ['search', 'Search'],
     ['robot', 'Robot']
   ];
+
+  /* Ctrl+E (Studio 5000 style): cross-reference the selected text.
+   * Recognizes R[n], PR[n], I/O points, TIMER[n], and program names. */
+  function crossRefToken(raw) {
+    var t = (raw || '').trim();
+    if (!t) { state.tab = 'search'; render(); return; }
+    var m = t.match(/^(R|PR|DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|AI|AO|F|M|TIMER|LBL|AR)\s*\[\s*(\d+)/i);
+    if (m) t = m[1].toUpperCase() + '[' + m[2] + ']';
+    else if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(t) && state.programs[t.toUpperCase()]) t = t.toUpperCase();
+    state.searchQuery = t;
+    state.tab = 'search';
+    render();
+  }
+
+  function selectedText() {
+    var el = document.activeElement;
+    if (el && el.tagName === 'TEXTAREA') {
+      var sel = el.value.slice(el.selectionStart, el.selectionEnd);
+      if (sel) return sel;
+      // no selection: take the token around the cursor
+      var pos = el.selectionStart;
+      var left = el.value.slice(0, pos).match(/[A-Za-z0-9_$]*(\[\s*\d*)?$/);
+      var right = el.value.slice(pos).match(/^[A-Za-z0-9_$]*(\[\s*\d+\s*\])?/);
+      return ((left ? left[0] : '') + (right ? right[0] : '')).trim();
+    }
+    var s = window.getSelection && window.getSelection();
+    return s ? String(s) : '';
+  }
 
   function renderTabs() {
     var bar = document.getElementById('tabs');
@@ -374,6 +501,7 @@
       case 'summary': renderSummary(pane); break;
       case 'flow': renderFlow(pane); break;
       case 'checks': renderChecks(pane); break;
+      case 'compare': renderCompare(pane); break;
       case 'positions': renderPositions(pane); break;
       case 'xref': renderXref(pane); break;
       case 'search': renderSearch(pane); break;
@@ -411,6 +539,14 @@
         return lab;
       })(),
       h('button', { class: 'btn', text: 'Edit', onclick: function () { state.editing = true; render(); } }),
+      (state.server && state.robot.ip) ? h('button', {
+        class: 'btn', text: 'Send to robot',
+        title: 'Upload ' + p.parsed.name + '.LS to ' + state.robot.ip + ' over FTP (snapshot + verify + auto-restore on failure)',
+        onclick: function () {
+          if (!confirm('Send ' + p.parsed.name + '.LS to robot ' + state.robot.ip + ' over FTP?\n\nThe current version on the robot is snapshotted first. If the controller rejects the translation, that snapshot is restored automatically.')) return;
+          sendToRobot(p.parsed.name, p.source, function () { render(); });
+        }
+      }) : null,
       h('button', { class: 'btn subtle', text: 'Export .LS', onclick: function () { exportProgram(p); } }),
       h('button', {
         class: 'btn subtle', text: 'Remove',
@@ -420,6 +556,8 @@
       })
     ]);
     pane.appendChild(bar);
+    var banner = uploadBanner();
+    if (banner) pane.appendChild(banner);
 
     var box = h('div', { class: 'codebox' });
     p.parsed.lines.forEach(function (line) {
@@ -440,8 +578,14 @@
     box.addEventListener('click', function (ev) {
       var t = ev.target;
       if (t.classList.contains('tok-call')) {
+        // open-selection: click a CALLed program to open it
         var name = t.getAttribute('data-call').toUpperCase();
         if (state.programs[name]) { state.selected = name; render(); }
+        return;
+      }
+      if (t.classList.contains('tok-reg') || t.classList.contains('tok-io')) {
+        // find-in-files: click any register / I/O token to see every use
+        crossRefToken(t.textContent);
       }
     });
   }
@@ -482,6 +626,32 @@
       render();
     }
 
+    function saveAndSend() {
+      // save to library first so nothing is ever lost, then upload with the
+      // snapshot/verify/restore safety net
+      var src = ta.value;
+      var parsed = P.parseLS(src, oldName + '.LS');
+      if (parsed.name !== oldName) delete state.programs[oldName];
+      state.programs[parsed.name] = { parsed: parsed, analysis: A.analyzeProgram(parsed), source: src, origin: p.origin };
+      state.selected = parsed.name;
+      rebuildDerived();
+      persist();
+      var blocking = state.findings.filter(function (f) {
+        return f.severity === 'error' && f.refs.some(function (r) { return r.prog === parsed.name; });
+      });
+      if (blocking.length && !confirm('Checks found ' + blocking.length + ' error(s) in ' + parsed.name + ' that will likely fail translation on the robot:\n\n' +
+        blocking.map(function (f) { return '• ' + f.message; }).join('\n') + '\n\nSend anyway? (The robot version is snapshotted and auto-restored if translation fails.)')) {
+        status.textContent = 'Saved to library — not sent. Fix the errors in the Checks tab.';
+        return;
+      }
+      status.textContent = 'Uploading to ' + state.robot.ip + '…';
+      sendToRobot(parsed.name, src, function (result) {
+        // on failure keep the editor open so the fix is one keystroke away
+        state.editing = !result.ok;
+        render();
+      });
+    }
+
     var bar = h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Editing ' + oldName }),
       status,
@@ -490,11 +660,16 @@
       (p.origin.type === 'dir' && state.server)
         ? h('button', { class: 'btn', text: 'Save to library + disk', title: p.origin.path, onclick: function () { save(true); } })
         : null,
+      (state.server && state.robot.ip)
+        ? h('button', { class: 'btn', text: 'Save + send to robot', title: 'FTP to ' + state.robot.ip + ' with snapshot + verify + auto-restore', onclick: saveAndSend })
+        : null,
       h('button', { class: 'btn subtle', text: 'Cancel', onclick: function () { state.editing = false; render(); } })
     ]);
     pane.appendChild(bar);
-    if (p.origin.type === 'robot') {
-      pane.appendChild(h('p', { class: 'muted', text: 'This program was read from robot ' + p.origin.ip + '. Edits stay in your library — writing back to a controller is deliberately not supported. Export the .LS and load it via the teach pendant / ASCII upload after review.' }));
+    var banner = uploadBanner();
+    if (banner) pane.appendChild(banner);
+    if (p.origin.type === 'robot' && !(state.server && state.robot.ip)) {
+      pane.appendChild(h('p', { class: 'muted', text: 'This program was read from robot ' + p.origin.ip + '. Connect to the robot (Robot tab) to send edits back over FTP with the snapshot/auto-restore safety net.' }));
     }
     pane.appendChild(ta);
     pane.appendChild(h('p', { class: 'muted', text: 'Saving re-parses the program, refreshes every view, and re-runs the checks. If you change the /PROG name the program is renamed in the library.' }));
@@ -931,12 +1106,53 @@
 
   /* ---- search tab ---- */
 
+  var searchOpts = { caseSensitive: false, wholeWord: false, regex: false };
+
+  /* Build a matcher(text) -> {index, length} | null for the query.
+   * A bare item like "R[10]" or "DO[104]" also matches its labeled form
+   * ("R[10:pallet slot]"), which is how the code actually reads. */
+  function buildMatcher(q) {
+    var flags = searchOpts.caseSensitive ? 'g' : 'gi';
+    var re = null;
+    var item = q.match(/^(R|PR|DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|AI|AO|F|M|TIMER|LBL|AR)\[(\d+)\]$/i);
+    if (item && !searchOpts.regex) {
+      var type = item[1].toUpperCase();
+      var guard = type === 'R' ? '(?:^|[^A-Z])' : '\\b';
+      re = new RegExp(guard + '(' + type + '\\[' + item[2] + '(?::[^\\]]*)?\\])', 'g');
+      return function (text) {
+        re.lastIndex = 0;
+        var m = re.exec(text);
+        return m ? { index: m.index + m[0].indexOf(m[1]), length: m[1].length } : null;
+      };
+    }
+    if (searchOpts.regex) {
+      try { re = new RegExp(q, flags); } catch (e) { return { error: 'Invalid regex: ' + e.message }; }
+    } else {
+      var escd = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (searchOpts.wholeWord) escd = '\\b' + escd + '\\b';
+      re = new RegExp(escd, flags);
+    }
+    return function (text) {
+      re.lastIndex = 0;
+      var m = re.exec(text);
+      return m ? { index: m.index, length: m[0].length || 1 } : null;
+    };
+  }
+
   function renderSearch(pane) {
     var bar = h('div', { class: 'search-bar' });
-    var input = h('input', { type: 'search', placeholder: 'Search all programs… e.g. R[10], DO[104], CALL PICK, pallet' });
+    var input = h('input', { type: 'search', placeholder: 'Find in all files… e.g. R[10], DO[104], CALL PICK, pallet' });
     input.value = state.searchQuery || '';
     bar.appendChild(input);
+    [['caseSensitive', 'Aa', 'Match case'], ['wholeWord', '|w|', 'Whole word'], ['regex', '.*', 'Regular expression']].forEach(function (o) {
+      bar.appendChild(h('button', {
+        class: 'btn opt' + (searchOpts[o[0]] ? ' active' : ''),
+        text: o[1], title: o[2],
+        onclick: function () { searchOpts[o[0]] = !searchOpts[o[0]]; render(); }
+      }));
+    });
     pane.appendChild(bar);
+    pane.appendChild(h('p', { class: 'muted', text: 'Tip: select any item in the code and press Ctrl+E to cross-reference it here. Clicking a register or I/O token in the Code view does the same.' }));
     var results = h('div');
     pane.appendChild(results);
 
@@ -948,31 +1164,174 @@
         results.appendChild(h('p', { class: 'muted', text: 'Type at least two characters to search every line of every program in the library.' }));
         return;
       }
-      var lower = q.toLowerCase();
-      var count = 0;
+      var match = buildMatcher(q);
+      if (match.error) {
+        results.appendChild(h('p', { class: 'muted', text: match.error }));
+        return;
+      }
+      var count = 0, shown = 0;
       Object.keys(state.programs).sort().forEach(function (n) {
+        var hits = [];
         state.programs[n].parsed.lines.forEach(function (line) {
           var full = (line.motion ? line.motion + ' ' : '') + line.text;
-          var idx = full.toLowerCase().indexOf(lower);
-          if (idx === -1) return;
+          var m = match(full);
+          if (!m) return;
           count++;
-          if (count > 400) return;
-          var hit = h('div', { class: 'hit' });
+          if (shown < 400) { hits.push({ line: line, full: full, m: m, commented: line.comment !== null }); shown++; }
+        });
+        if (!hits.length) return;
+        results.appendChild(h('div', { class: 'hit-group' }, [
+          h('span', { class: 'mono', text: n }),
+          h('span', { class: 'muted', text: '  ' + hits.length + ' match' + (hits.length > 1 ? 'es' : '') })
+        ]));
+        hits.forEach(function (hh) {
+          var hit = h('div', { class: 'hit' + (hh.commented ? ' commented' : '') });
           hit.appendChild(h('span', {
-            class: 'where', text: n + ':' + line.num,
-            onclick: function () { gotoLine(n, line.num); }
+            class: 'where', text: n + ':' + hh.line.num,
+            onclick: function () { gotoLine(n, hh.line.num); }
           }));
           var txt = h('span', { class: 'text' });
-          txt.innerHTML = esc(full.slice(0, idx)) + '<mark>' + esc(full.substr(idx, q.length)) + '</mark>' + esc(full.slice(idx + q.length));
+          txt.innerHTML = esc(hh.full.slice(0, hh.m.index)) + '<mark>' + esc(hh.full.substr(hh.m.index, hh.m.length)) + '</mark>' + esc(hh.full.slice(hh.m.index + hh.m.length));
           hit.appendChild(txt);
+          if (hh.commented) hit.appendChild(h('span', { class: 'muted', text: 'comment' }));
           results.appendChild(hit);
         });
       });
-      results.insertBefore(h('p', { class: 'muted', text: count ? count + ' match' + (count > 1 ? 'es' : '') + (count > 400 ? ' (showing first 400)' : '') : 'No matches.' }), results.firstChild);
+      results.insertBefore(h('p', { class: 'muted', text: count ? count + ' match' + (count > 1 ? 'es' : '') + ' across the library' + (count > 400 ? ' (showing first 400)' : '') : 'No matches.' }), results.firstChild);
     }
     input.addEventListener('input', run);
     run();
     input.focus();
+  }
+
+  /* ---- compare tab ---- */
+
+  function librarySources() {
+    var out = {};
+    Object.keys(state.programs).forEach(function (n) { out[n] = state.programs[n].source; });
+    return out;
+  }
+
+  function setBaseline(label, programs) {
+    state.compare = {
+      label: label,
+      programs: programs,
+      results: D.comparePrograms(programs, librarySources()),
+      open: null
+    };
+    render();
+  }
+
+  function renderCompare(pane) {
+    pane.appendChild(h('div', { class: 'code-toolbar' }, [
+      h('span', { class: 'title', text: 'Compare against a backup' }),
+      h('span', { class: 'muted', text: 'see everything that changed on the robot since a backup was taken' })
+    ]));
+
+    var src = h('div', { class: 'search-bar', style: 'flex-wrap:wrap' });
+    src.appendChild(h('button', {
+      class: 'btn', text: 'Pick backup .LS files…',
+      onclick: function () { document.getElementById('compare-input').click(); }
+    }));
+    if (state.server) {
+      var dirIn = h('input', { type: 'text', placeholder: 'or backup folder path on this PC' });
+      src.appendChild(dirIn);
+      src.appendChild(h('button', {
+        class: 'btn', text: 'Load folder',
+        onclick: function () {
+          var p = dirIn.value.trim();
+          if (!p) return;
+          api('/api/dir/list?path=' + encodeURIComponent(p)).then(function (b) {
+            var ls = b.files.filter(function (f) { return /\.ls$/i.test(f.name); });
+            var set = {}, pending = ls.length;
+            if (!pending) { setBaseline(b.path + ' (empty)', {}); return; }
+            ls.forEach(function (f) {
+              api('/api/dir/file?path=' + encodeURIComponent(f.path)).then(function (file) {
+                set[P.parseLS(file.content, file.name).name] = file.content;
+              }).catch(function () {}).then(function () {
+                if (--pending === 0) setBaseline('backup folder ' + b.path, set);
+              });
+            });
+          }).catch(function (e) { alert(e.message); });
+        }
+      }));
+    }
+    pane.appendChild(src);
+
+    if (!state.compare) {
+      pane.appendChild(h('p', { class: 'muted', text: 'Load a baseline — the .LS files from an old backup — and it is compared program-by-program against your current library' + (state.server ? ' (import the robot’s current programs from the Robot tab first to diff robot vs backup)' : '') + '. Header-only differences (dates, sizes) are separated from real code changes.' }));
+      return;
+    }
+
+    var c = state.compare;
+    var r = c.results;
+    pane.appendChild(h('p', {}, [
+      h('span', { class: 'muted', text: 'Baseline: ' }),
+      h('span', { class: 'mono', text: c.label }),
+      h('span', { class: 'muted', text: '  vs  current library (' + Object.keys(state.programs).length + ' programs)' })
+    ]));
+
+    var cards = h('div', { class: 'cards' });
+    [[r.changed.length, 'changed'], [r.added.length, 'new (not in baseline)'], [r.removed.length, 'missing (only in baseline)'], [r.headerOnly.length, 'header-only changes'], [r.same.length, 'identical']].forEach(function (x) {
+      cards.appendChild(h('div', { class: 'card' }, [h('div', { class: 'k', text: x[0] }), h('div', { class: 'l', text: x[1] })]));
+    });
+    pane.appendChild(cards);
+
+    function progList(title, names, note) {
+      if (!names.length) return;
+      pane.appendChild(h('h3', { text: title }));
+      var box = h('div', { class: 'robot-files' });
+      names.forEach(function (n) {
+        box.appendChild(h('span', {
+          class: 'chip ' + (note === 'removed' ? 'write' : 'read'), text: n,
+          onclick: state.programs[n] ? function () { state.selected = n; state.tab = 'code'; render(); } : null
+        }));
+      });
+      pane.appendChild(box);
+    }
+
+    if (r.changed.length) {
+      pane.appendChild(h('h3', { text: 'Changed programs — click to see the diff' }));
+      r.changed.forEach(function (ch) {
+        var isOpen = c.open === ch.name;
+        pane.appendChild(h('div', { class: 'diff-head' + (isOpen ? ' open' : ''), onclick: function () { c.open = isOpen ? null : ch.name; render(); } }, [
+          h('span', { class: 'mono', text: (isOpen ? '▾ ' : '▸ ') + ch.name }),
+          h('span', { class: 'diff-adds', text: '+' + ch.adds }),
+          h('span', { class: 'diff-dels', text: '−' + ch.dels })
+        ]));
+        if (isOpen) pane.appendChild(renderDiffBody(c.programs[ch.name], state.programs[ch.name].source));
+      });
+    }
+    progList('New since the baseline', r.added, 'added');
+    progList('In the baseline but missing now', r.removed, 'removed');
+    progList('Header-only changes (dates / sizes — code identical)', r.headerOnly, 'header');
+  }
+
+  function renderDiffBody(baselineSrc, currentSrc) {
+    var ops = D.diffLines(D.bodyOf(baselineSrc), D.bodyOf(currentSrc));
+    var box = h('div', { class: 'codebox diffbox' });
+    var ctx = 2, shown = {};
+    // mark which indexes to show: changes plus context
+    ops.forEach(function (o, i) {
+      if (o.t === '=') return;
+      for (var k = Math.max(0, i - ctx); k <= Math.min(ops.length - 1, i + ctx); k++) shown[k] = true;
+    });
+    var lastShown = -1;
+    ops.forEach(function (o, i) {
+      if (!shown[i]) return;
+      if (i > lastShown + 1) {
+        box.appendChild(h('div', { class: 'cline skip' }, [h('span', { class: 'ln', text: '···' }), h('span', { class: 'src muted', text: ' ' })]));
+      }
+      lastShown = i;
+      var cls = o.t === '+' ? ' diff-add' : o.t === '-' ? ' diff-del' : '';
+      var mark = o.t === '+' ? '+' : o.t === '-' ? '−' : ' ';
+      box.appendChild(h('div', { class: 'cline' + cls }, [
+        h('span', { class: 'ln', text: o.t === '-' ? (o.an || '') : (o.bn || '') }),
+        h('span', { class: 'src', text: mark + ' ' + o.text })
+      ]));
+    });
+    if (!Object.keys(shown).length) box.appendChild(h('div', { class: 'cline' }, [h('span', { class: 'src muted', text: 'bodies identical' })]));
+    return box;
   }
 
   /* ---- robot tab ---- */
@@ -1006,9 +1365,19 @@
     var form = h('div', { class: 'search-bar' });
     var ipIn = h('input', { type: 'text', placeholder: 'Robot IP, e.g. 192.168.0.10' });
     ipIn.value = state.robot.ip || '';
+    var userIn = h('input', { type: 'text', placeholder: 'FTP user (blank = anonymous)', style: 'max-width:200px' });
+    userIn.value = state.robot.ftpUser || '';
+    userIn.addEventListener('change', function () { state.robot.ftpUser = userIn.value.trim(); });
+    var passIn = h('input', { type: 'password', placeholder: 'FTP password', style: 'max-width:160px' });
+    passIn.value = state.robot.ftpPass || '';
+    passIn.addEventListener('change', function () { state.robot.ftpPass = passIn.value; });
     form.appendChild(ipIn);
-    form.appendChild(h('button', { class: 'btn primary', text: state.robot.ip ? 'Reconnect' : 'Connect', onclick: function () { if (ipIn.value.trim()) connectRobot(ipIn.value.trim()); } }));
+    form.appendChild(userIn);
+    form.appendChild(passIn);
+    form.appendChild(h('button', { class: 'btn primary', text: state.robot.ip ? 'Reconnect' : 'Connect', onclick: function () { state.robot.ftpUser = userIn.value.trim(); state.robot.ftpPass = passIn.value; if (ipIn.value.trim()) connectRobot(ipIn.value.trim()); } }));
     pane.appendChild(form);
+    var banner = uploadBanner();
+    if (banner) pane.appendChild(banner);
 
     if (state.robot.error) {
       pane.appendChild(h('p', {}, [h('span', { class: 'badge warn', text: 'connection failed' })]));
@@ -1051,6 +1420,28 @@
       pane.appendChild(h('p', { class: 'muted', text: 'No .LS files listed. Some controllers need ASCII upload support for .LS on MD:. The file list found: ' + (state.robot.files.join(', ') || 'nothing') }));
     } else {
       pane.appendChild(h('p', { class: 'muted', text: 'Reading…' }));
+    }
+
+    // backup
+    pane.appendChild(h('h3', { text: 'Backups' }));
+    var bk = state.robot.backup;
+    var today = new Date().toISOString().slice(0, 10);
+    pane.appendChild(h('p', { class: 'muted', text: 'Pulls every file off MD: over FTP into backups/<robot-name-or-ip>_' + today + '_NN on the bridge PC — NN increments automatically for multiple backups on the same day. The robot name is read from the controller when it answers over HTTP.' }));
+    pane.appendChild(h('p', {}, [
+      h('button', {
+        class: 'btn primary', text: (bk && bk.running) ? 'Backing up…' : 'Take backup now',
+        onclick: (bk && bk.running) ? null : takeBackup
+      })
+    ]));
+    if (bk && bk.error) pane.appendChild(h('p', {}, [h('span', { class: 'badge warn', text: 'backup failed' }), h('span', { class: 'muted', text: ' ' + bk.error })]));
+    if (bk && bk.ok) {
+      pane.appendChild(h('p', {}, [
+        h('span', { class: 'badge ok', text: 'backup complete' }),
+        h('span', { text: ' ' + bk.files + ' files (' + (bk.bytes / 1024).toFixed(0) + ' KB) → ' }),
+        h('span', { class: 'mono', text: bk.folder })
+      ]));
+      if (bk.failed && bk.failed.length) pane.appendChild(h('p', { class: 'muted', text: 'Could not read: ' + bk.failed.join(', ') }));
+      pane.appendChild(h('p', { class: 'muted', text: 'To diff a robot against this backup later: Compare tab → load this folder as the baseline.' }));
     }
 
     // registers
@@ -1138,6 +1529,29 @@
     document.getElementById('folder-input').addEventListener('change', function (ev) {
       importFiles(ev.target.files);
       ev.target.value = '';
+    });
+    document.getElementById('compare-input').addEventListener('change', function (ev) {
+      var files = Array.prototype.slice.call(ev.target.files).filter(function (f) { return /\.ls$/i.test(f.name); });
+      ev.target.value = '';
+      if (!files.length) return;
+      var set = {}, pending = files.length;
+      files.forEach(function (f) {
+        var reader = new FileReader();
+        reader.onload = function () {
+          var src = String(reader.result);
+          set[P.parseLS(src, f.name).name] = src;
+          if (--pending === 0) setBaseline('backup files (' + files.length + ')', set);
+        };
+        reader.readAsText(f);
+      });
+    });
+
+    // Ctrl+E: cross-reference the selection (Studio 5000 habit)
+    window.addEventListener('keydown', function (e) {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'e' || e.key === 'E')) {
+        e.preventDefault();
+        crossRefToken(selectedText());
+      }
     });
     document.getElementById('btn-import').addEventListener('click', function () {
       document.getElementById('file-input').click();
