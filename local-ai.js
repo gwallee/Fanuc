@@ -450,6 +450,10 @@ const LocalAI = (() => {
     doomer: ['Well, {name}.', 'So, {name} —', 'Here we are, {name}.', 'Anyway, {name}:'],
   };
 
+  // The most recent template id, held in memory rather than storage:
+  // it only has to survive from one roast to the next.
+  let lastId = null;
+
   /* ------------------------------------------------------------
      Anti-repeat picker: avoids any template used in the recent
      history (persisted via storage.js). When a pool is exhausted
@@ -473,7 +477,17 @@ const LocalAI = (() => {
       candidates = pool.map((text, i) => ({ id: `${poolKey}:${i}`, text }));
     }
 
+    // The reset above puts the line that was *just* used back in the
+    // running, so without this the bot can say the same thing twice in
+    // a row at exactly the moment a pool wraps around. Saying it back
+    // to back is the one repeat anybody actually notices.
+    if (candidates.length > 1 && lastId) {
+      const fresh = candidates.filter((c) => c.id !== lastId);
+      if (fresh.length) candidates = fresh;
+    }
+
     const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+    lastId = chosen.id;
     const newHistory = WTWStorage.getRoastHistory();
     newHistory.push(chosen.id);
     WTWStorage.saveRoastHistory(newHistory);

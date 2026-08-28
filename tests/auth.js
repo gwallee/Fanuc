@@ -1,4 +1,4 @@
-/* Optional Google sign-in, and the guest path that is the default. */
+/* Guest (the automatic default), logging out, and optional Google sign-in. */
 const { chromium } = require('playwright');
 const BASE_URL = process.env.WTW_BASE_URL || 'http://localhost:8901';
 const APP_DIR = process.env.WTW_APP_DIR || require('path').join(__dirname, '..');
@@ -98,37 +98,48 @@ function omBody() {
     await page.waitForSelector('#weatherPanels:not([hidden])', { timeout: 15000 });
     return /Austin/.test(await page.textContent('#wxCity'));
   });
-  await check('settings offers guest, not a dead sign-in control', async () => {
+  await check('guest is already the state, with nothing to click', async () => {
     await page.click('#settingsBtn');
     await page.waitForTimeout(700);
     return await page.isVisible('#accountGuest') &&
-           await page.isVisible('#continueGuestBtn') &&
+           /browsing as a guest/i.test(await page.textContent('#guestTitle')) &&
            !(await page.isVisible('#showSignInBtn')) &&
            (await page.locator('#fakeGoogleButton').count()) === 0;
   });
+  await check('nothing at all is stored to be a guest', async () =>
+    page.evaluate(() => Object.keys(localStorage)
+      .every((k) => !/guest/i.test(k))));
   await check('the hint says guest is the whole app, in plain words', async () => {
     const hint = await page.textContent('#accountHint');
     return /guest/i.test(hint) && !/client id|config\.js/i.test(hint);
   });
-  await check('continuing as guest is one click and sticks', async () => {
-    await page.click('#continueGuestBtn');
-    await page.waitForTimeout(400);
-    return /Guest/.test(await page.textContent('#guestBadge')) &&
-           !(await page.isVisible('#continueGuestBtn')) &&
-           /all set/i.test(await page.textContent('#guestTitle'));
+  await check('a log out button is there even with no sign-in', async () =>
+    page.isVisible('#guestLogoutBtn'));
+  await check('logging out as a guest says so instead of doing nothing', async () => {
+    await page.click('#guestLogoutBtn');
+    await page.waitForTimeout(300);
+    return /already a guest/i.test(await page.textContent('#toast'));
   });
-  await check('the guest choice is remembered across a reload', async () => {
+  await check('still a guest after a reload, with nothing to do', async () => {
     await page.reload({ waitUntil: 'networkidle' });
     await page.waitForTimeout(1200);
     await page.click('#settingsBtn');
     await page.waitForTimeout(500);
-    return !(await page.isVisible('#continueGuestBtn')) &&
-           await page.isVisible('#accountGuest');
+    return await page.isVisible('#accountGuest') &&
+           await page.isVisible('#guestLogoutBtn');
   });
   await check("Google's script is not even fetched when unconfigured", async () =>
     page.evaluate(() => !document.querySelector('script[src*="accounts.google.com"]')));
   await check('the default username is untouched', async () =>
     (await page.textContent('.brand-greeting strong')) === 'DJTheBest');
+  await check('logging out leaves a name you typed yourself alone', async () => {
+    await page.fill('#usernameInput', 'StormLord');
+    await page.click('#usernameSaveBtn');
+    await page.waitForTimeout(300);
+    await page.click('#guestLogoutBtn');
+    await page.waitForTimeout(300);
+    return (await page.textContent('.brand-greeting strong')) === 'StormLord';
+  });
   await ctx.close();
 
   console.log('\n=== Configured: guest still comes first ===');
@@ -139,18 +150,13 @@ function omBody() {
   await check('the guest row leads, with sign-in offered underneath', async () => {
     await page.click('#settingsBtn');
     await page.waitForTimeout(600);
-    return await page.isVisible('#continueGuestBtn') &&
+    return await page.isVisible('#accountGuest') &&
            await page.isVisible('#showSignInBtn') &&
            !(await page.isVisible('#googleButtonHost'));
   });
-  await check('staying a guest never contacts Google', async () => {
-    await page.click('#continueGuestBtn');
-    await page.waitForTimeout(500);
-    return page.evaluate(() => !document.querySelector('script[src*="accounts.google.com"]'));
-  });
-  await check('the guest flag is what was stored', async () =>
-    page.evaluate(() => localStorage.getItem('wtw:guestMode') === 'true'));
-  await check('sign-in is still reachable after choosing guest', async () => {
+  await check('a guest never contacts Google, even with sign-in available', async () =>
+    page.evaluate(() => !document.querySelector('script[src*="accounts.google.com"]')));
+  await check('sign-in opens on request', async () => {
     await page.click('#showSignInBtn');
     await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
     return page.isVisible('#fakeGoogleButton');
@@ -162,21 +168,26 @@ function omBody() {
            await page.isVisible('#showSignInBtn') &&
            await page.isVisible('#accountGuest');
   });
-  await check('signing in clears the guest flag', async () => {
+  await check('signing in replaces the guest row', async () => {
     await page.click('#showSignInBtn');
     await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
     await page.click('#fakeGoogleButton');
     await page.waitForTimeout(700);
     return await page.isVisible('#accountSignedIn') &&
-           await page.evaluate(() => localStorage.getItem('wtw:guestMode') === null);
+           !(await page.isVisible('#accountGuest'));
   });
-  await check('signing out returns to the guest panel, not a dead end', async () => {
+  await check('logging out hands back the name that came from Google', async () => {
     await page.click('#signOutBtn');
     await page.waitForTimeout(600);
-    return await page.isVisible('#accountGuest') &&
-           await page.isVisible('#continueGuestBtn') &&
-           await page.isVisible('#showSignInBtn');
+    return (await page.textContent('.brand-greeting strong')) === 'DJTheBest' &&
+           /logged out/i.test(await page.textContent('#toast'));
   });
+  await check('logging out returns to the guest panel, not a dead end', async () =>
+    await page.isVisible('#accountGuest') &&
+    await page.isVisible('#guestLogoutBtn') &&
+    await page.isVisible('#showSignInBtn'));
+  await check('no guest bookkeeping is left in storage either way', async () =>
+    page.evaluate(() => Object.keys(localStorage).every((k) => !/guestMode/.test(k))));
   await ctx.close();
 
   console.log('\n=== Configured: signing in ===');
@@ -215,7 +226,7 @@ function omBody() {
     await page.waitForTimeout(400);
     return /Ada/.test(await page.textContent('#roastText'));
   });
-  await check('signing out clears the profile and the avatar', async () => {
+  await check('logging out clears the profile and the avatar', async () => {
     await page.click('#settingsBtn');
     await page.waitForTimeout(500);
     await page.click('#signOutBtn');
@@ -224,7 +235,7 @@ function omBody() {
            !(await page.isVisible('#accountSignedIn')) &&
            !(await page.isVisible('#brandAvatar'));
   });
-  await check("signing out also clears Google's auto-select", async () =>
+  await check("logging out also clears Google's auto-select", async () =>
     page.evaluate(() => window.__autoSelectDisabled === true));
   await check('the profile is gone from storage', async () =>
     page.evaluate(() => localStorage.getItem('wtw:googleProfile') === null));
@@ -291,7 +302,7 @@ function omBody() {
     page.isVisible('#settingsPanel'));
   await ctx.close();
 
-  console.log(failures ? `\n${failures} FAILURE(S)` : '\nAll sign-in and guest checks passed.');
+  console.log(failures ? `\n${failures} FAILURE(S)` : '\nAll guest, log-out and sign-in checks passed.');
   await browser.close();
   process.exit(failures ? 1 : 0);
 })();

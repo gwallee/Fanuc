@@ -1062,6 +1062,7 @@
       }
       if (name.length > 24) { toast('Keep the username under 24 characters.', true); return; }
       WTWStorage.saveSettings({ username: name });
+      WTWStorage.remove('usernameFromGoogle');   // chosen by hand now
       renderUsernameEverywhere();
       toast(`Hello, ${name}! 👋`);
     };
@@ -1141,26 +1142,41 @@
   }
 
   /* ------------------------------------------------------------
-     Guest is the default and the whole app, so the signed-out panel
-     leads with it: one button, no sign-up, nothing to dismiss. Once
-     it has been taken the panel says so instead of asking again.
+     Guest is automatic: not signed in simply is a guest, from the
+     first load, with nothing to click and nothing stored. The panel
+     states that rather than asking for a decision.
      ------------------------------------------------------------ */
   function renderGuestChoice() {
-    const guest = WTWAuth.isGuest();
-    const badge = $('guestBadge');
-    const title = $('guestTitle');
     const note = $('guestNote');
-    const btn = $('continueGuestBtn');
-    if (!badge || !title || !note || !btn) return;
-
-    badge.textContent = guest ? '\u2713 Guest' : 'Guest';
-    badge.classList.toggle('is-set', guest);
-    title.textContent = guest ? "You're all set" : 'Continue as guest';
-    note.textContent = guest
-      ? 'Guest mode. Favourites and settings stay on this device.'
-      : 'No account needed \u2014 everything works.';
-    btn.hidden = guest;
+    if (note) {
+      note.textContent = WTWAuth.canSignIn()
+        ? 'No account needed \u2014 everything works. Sign in only if you want your name and picture.'
+        : 'No account needed \u2014 everything works.';
+    }
     showSignIn(false);
+  }
+
+  /* ------------------------------------------------------------
+     Log out. One button, present whether or not anyone is signed in,
+     and it always does something real: it clears the Google session
+     and the name and picture that came with it. A username typed in
+     by hand is left alone — it was never part of any account.
+     ------------------------------------------------------------ */
+  function logOut() {
+    const wasSignedIn = WTWAuth.isSignedIn();
+    const adopted = WTWStorage.get('usernameFromGoogle', false) === true;
+
+    if (wasSignedIn) WTWAuth.signOut();
+
+    if (adopted) {
+      WTWStorage.remove('usernameFromGoogle');
+      WTWStorage.saveSettings({ username: WTW_CONFIG.defaults.username });
+      renderUsernameEverywhere();
+      restateRoast();
+    }
+
+    if (wasSignedIn) toast('Logged out. You\u2019re a guest again.');
+    else toast('You\u2019re already a guest \u2014 nothing to log out of.');
   }
 
   // Google's script is only fetched when somebody actually asks to sign
@@ -1213,6 +1229,9 @@
     const current = WTWStorage.getSettings().username;
     if (current !== WTW_CONFIG.defaults.username) return;
     WTWStorage.saveSettings({ username: profile.givenName.slice(0, 24) });
+    // Remembered so logging out can hand the name back, and so a name
+    // typed in later is recognised as the user's own.
+    WTWStorage.set('usernameFromGoogle', true);
     renderUsernameEverywhere();
   }
 
@@ -1355,18 +1374,10 @@
         }
       });
     }
-    $('signOutBtn').addEventListener('click', () => {
-      WTWAuth.signOut();
-      toast('Signed out');
-    });
-
-    $('continueGuestBtn').addEventListener('click', () => {
-      WTWAuth.continueAsGuest();
-      toast('Continuing as guest');
-    });
+    $('signOutBtn').addEventListener('click', logOut);
+    $('guestLogoutBtn').addEventListener('click', logOut);
     $('showSignInBtn').addEventListener('click', () => showSignIn(true));
-    // "Never mind" is itself a guest choice, so record it and collapse.
-    $('cancelSignInBtn').addEventListener('click', () => WTWAuth.continueAsGuest());
+    $('cancelSignInBtn').addEventListener('click', () => showSignIn(false));
 
     $('downloadBtn').addEventListener('click', () => openDownloads(true));
     $('settingsDownloadBtn').addEventListener('click', () => {

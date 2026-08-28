@@ -77,8 +77,10 @@ for (let i = 0; i < 60; i++) {
   if (line === prev) repeats++;
   prev = line;
 }
-if (repeats > 2) fail(`anti-repeat weak: ${repeats} back-to-back repeats in 60 draws`);
-else console.log(`PASS - anti-repeat holds (${repeats} back-to-back repeats in 60 draws)`);
+// Back-to-back repeats must be impossible, not merely unlikely: the pool
+// reset used to hand the just-used line straight back.
+if (repeats > 0) fail(`anti-repeat weak: ${repeats} back-to-back repeats in 60 draws`);
+else console.log('PASS - anti-repeat holds (no back-to-back repeats in 60 draws)');
 
 // 4. Unknown personality must not throw.
 try {

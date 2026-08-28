@@ -19,9 +19,9 @@
 
    Signing in is entirely optional: with no client ID configured
    the app behaves exactly as before, so "works with zero keys"
-   stays true. Guest is the default and the full app — the guest
-   flag below only records that the choice was made, so the
-   Account panel can stop asking.
+   stays true. Guest is not a mode you switch into: anyone who
+   is not signed in simply is one, from the first load, with
+   nothing to click.
    ============================================================ */
 
 const WTWAuth = (() => {
@@ -63,8 +63,6 @@ const WTWAuth = (() => {
   function saveProfile(profile) {
     state.profile = profile;
     WTWStorage.set('googleProfile', profile);
-    // Signed in is not guest.
-    WTWStorage.remove('guestMode');
     if (typeof state.onChange === 'function') state.onChange(profile);
   }
 
@@ -84,22 +82,12 @@ const WTWAuth = (() => {
   }
 
   /* ---------------- Guest ----------------
-     Guest is not an account and needs no storage to work — this flag
-     exists purely so the Account panel can show "you're all set"
-     instead of asking again every time Settings is opened. */
+     Guest is the absence of a sign-in, not a setting: no flag, no
+     storage, nothing to opt into. Not signed in means guest, which is
+     the whole app. */
 
   function isGuest() {
-    return WTWStorage.get('guestMode', false) === true;
-  }
-
-  function continueAsGuest() {
-    WTWStorage.set('guestMode', true);
-    if (typeof state.onChange === 'function') state.onChange(getProfile());
-    return true;
-  }
-
-  function clearGuest() {
-    WTWStorage.remove('guestMode');
+    return !isSignedIn();
   }
 
   /* Signing in is the opposite of being a guest. */
@@ -227,6 +215,9 @@ const WTWAuth = (() => {
 
   function init({ onChange } = {}) {
     state.onChange = onChange;
+    // Guest used to be an explicit choice that was stored. It isn't any
+    // more, so tidy the leftover away rather than leaving it to rot.
+    WTWStorage.remove('guestMode');
     getProfile();
     if (typeof onChange === 'function') onChange(state.profile);
   }
@@ -234,7 +225,7 @@ const WTWAuth = (() => {
   return {
     init, renderButton, signOut, getProfile, isSignedIn,
     isConfigured, isSupportedHere, decodeCredential,
-    isGuest, continueAsGuest, clearGuest, canSignIn, unavailableReason,
+    isGuest, canSignIn, unavailableReason,
   };
 })();
 
