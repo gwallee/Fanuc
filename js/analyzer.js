@@ -28,15 +28,16 @@
       var m = text.match(/^LBL\[(\d+)(?::[^\]]*)?\]/);
       if (m) {
         var ln = parseInt(m[1], 10);
-        a.labels[ln] = a.labels[ln] || { defLine: null, jumps: [] };
-        a.labels[ln].defLine = line.num;
+        a.labels[ln] = a.labels[ln] || { defLine: null, defLines: [], jumps: [] };
+        if (a.labels[ln].defLine === null) a.labels[ln].defLine = line.num;
+        a.labels[ln].defLines.push(line.num);
       }
-      // Jumps: JMP LBL[n]
-      var jmpRe = /JMP\s+LBL\[(\d+)(?::[^\]]*)?\]/g;
+      // Jump references: JMP LBL[n], WAIT ... TIMEOUT,LBL[n], Skip,LBL[n]
+      var jmpRe = /(?:JMP\s+|TIMEOUT\s*,\s*|Skip\s*,\s*)LBL\[(\d+)(?::[^\]]*)?\]/g;
       var j;
       while ((j = jmpRe.exec(text)) !== null) {
         var tn = parseInt(j[1], 10);
-        a.labels[tn] = a.labels[tn] || { defLine: null, jumps: [] };
+        a.labels[tn] = a.labels[tn] || { defLine: null, defLines: [], jumps: [] };
         a.labels[tn].jumps.push(line.num);
       }
 

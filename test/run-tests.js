@@ -9,6 +9,9 @@ const path = require('path');
 const P = require('../js/parser.js');
 const A = require('../js/analyzer.js');
 const X = require('../js/explain.js');
+const L = require('../js/linter.js');
+const FL = require('../js/flow.js');
+const VA = require('../js/vaparse.js');
 
 let failures = 0;
 function check(cond, msg) {
@@ -82,6 +85,65 @@ check(/Wait here until digital input DI\[101\].*timeout.*label 900/i.test(ex(18)
 check(/Comment:/.test(ex(2)), 'comment line explained');
 const offLine = programs.PLACE.parsed.lines.find(l => l.num === 11);
 check(/Linear move .*300 mm\/sec.*offset by PR\[20\]/.test(X.explainLine(offLine)), 'Offset,PR explained: ' + X.explainLine(offLine));
+
+console.log('\n-- jump reference forms --');
+check(main.analysis.labels[900] && main.analysis.labels[900].jumps.includes(18),
+  'TIMEOUT,LBL[900] counted as a jump reference to LBL[900]');
+
+console.log('\n-- linter --');
+// Broken fixture: jump to missing label, duplicate label, unlabeled R/DO on
+// active lines, a commented-out use that must NOT count, unreachable code.
+const badSrc = `/PROG BAD
+/MN
+   1:  R[50]=1 ;
+   2:  !R[60]=1 ;
+   3:  DO[999]=ON ;
+   4:  JMP LBL[77] ;
+   5:  R[50]=2 ;
+   6:  LBL[5] ;
+   7:  CALL NOWHERE ;
+   8:  LBL[5] ;
+   9:  END ;
+/END
+`;
+const badParsed = P.parseLS(badSrc, 'BAD.LS');
+const lib2 = Object.assign({}, programs, { BAD: { parsed: badParsed, analysis: A.analyzeProgram(badParsed), source: badSrc } });
+const g2 = A.buildCallGraph(lib2);
+const x2 = A.buildGlobalXref(lib2);
+const findings = L.lint(lib2, g2, x2);
+const byRule = r => findings.filter(f => f.rule === r);
+check(byRule('jump-to-missing-label').some(f => f.refs.some(r => r.prog === 'BAD' && r.line === 4)),
+  'error: JMP LBL[77] with no LBL[77] defined');
+check(byRule('duplicate-label').some(f => f.message.includes('LBL[5]')), 'error: LBL[5] defined twice');
+check(byRule('unlabeled-register').some(f => f.message.startsWith('R[50]')), 'warn: R[50] used without a label');
+check(!byRule('unlabeled-register').some(f => f.message.startsWith('R[60]')),
+  'commented-out !R[60] is NOT reported (comment lines ignored)');
+check(byRule('unlabeled-io').some(f => f.message.startsWith('DO[999]')), 'warn: DO[999] used without an I/O comment');
+check(byRule('call-missing-program').some(f => f.message.includes('NOWHERE')), 'warn: CALL NOWHERE not in library');
+check(byRule('unreachable-code').some(f => f.refs.some(r => r.prog === 'BAD' && r.line === 5)),
+  'warn: line 5 unreachable after unconditional JMP');
+const cleanFindings = L.lint(programs, A.buildCallGraph(programs), A.buildGlobalXref(programs));
+check(!cleanFindings.some(f => f.severity === 'error'), 'sample cell has no errors');
+
+console.log('\n-- flow --');
+const flow = FL.buildFlow(main.parsed);
+check(flow.blocks.length >= 5, 'MAIN splits into blocks (' + flow.blocks.length + ')');
+const lbl10Block = flow.blocks.find(b => b.labelNum === 10);
+check(!!lbl10Block, 'LBL[10] starts its own block');
+const backEdge = flow.edges.find(e => e.kind === 'cond' && e.to === lbl10Block.idx && e.fromLine === 24);
+check(!!backEdge, 'conditional back-edge from line 24 to the LBL[10] block (the cycle loop)');
+const endBlock = flow.blocks.find(b => b.lastActive && /^END/.test(b.lastActive.text));
+check(endBlock && !flow.edges.some(e => e.kind === 'fall' && e.from === endBlock.idx),
+  'no fallthrough out of the END block');
+const order = FL.callOrder(programs, A.buildCallGraph(programs), 'MAIN');
+check(order[0].name === 'MAIN' && order[1].name === 'GRIPPER' && order[2].name === 'PICK',
+  'call order: MAIN → GRIPPER → PICK … (' + order.slice(0, 4).map(r => r.name).join(' → ') + ')');
+check(order.find(r => r.name === 'PICK').seq === '1.2', 'PICK is sequence 1.2');
+
+console.log('\n-- VA parser --');
+const regs = VA.parseNumreg("  [1] = 25  'part count'\n  [2] = 1.5  ''\n  [3] = -4  'offset'\n");
+check(regs.length === 3 && regs[0].value === 25 && regs[0].comment === 'part count', 'NUMREG.VA lines parsed');
+check(regs[1].value === 1.5 && regs[1].comment === '', 'real value with empty comment parsed');
 
 console.log('');
 if (failures) {
