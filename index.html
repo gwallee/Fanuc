@@ -26,7 +26,10 @@
       <img src="logo.svg" alt="What the Wether logo" class="brand-logo" />
       <div class="brand-text">
         <h1>What the Wether <span class="version-badge" id="appVersion">V13</span></h1>
-        <p class="brand-greeting">Yo, <strong data-username>DJTheBest</strong> ⚡</p>
+        <p class="brand-greeting">
+          <img class="brand-avatar" id="brandAvatar" alt="" width="20" height="20" hidden />
+          Yo, <strong data-username>DJTheBest</strong> ⚡
+        </p>
       </div>
     </div>
 
@@ -265,6 +268,24 @@
       <button type="button" id="settingsCloseBtn" class="btn btn-small" aria-label="Close settings">✕</button>
     </div>
 
+    <div class="setting-group" id="accountGroup">
+      <label>Account</label>
+      <div class="account-signed-out" id="accountSignedOut">
+        <div id="googleButtonHost"></div>
+      </div>
+      <div class="account-signed-in" id="accountSignedIn" hidden>
+        <img class="account-avatar" id="accountAvatar" alt="" width="36" height="36" />
+        <div class="account-meta">
+          <span class="account-name" id="accountName"></span>
+          <span class="account-email" id="accountEmail"></span>
+        </div>
+        <button type="button" id="signOutBtn" class="btn btn-small">Sign out</button>
+      </div>
+      <p class="setting-hint">Optional. Signing in sets your name and picture on
+        this device only — favourites and settings are not synced anywhere, and
+        nothing is sent to any server but Google's own sign-in.</p>
+    </div>
+
     <div class="setting-group">
       <label for="usernameInput">Username</label>
       <div class="setting-row">
@@ -386,6 +407,7 @@
   <script src="units.js"></script>
   <script src="search.js"></script>
   <script src="downloads.js"></script>
+  <script src="auth.js"></script>
   <script src="nws.js"></script>
   <script src="air.js"></script>
   <script src="rain.js"></script>

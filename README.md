@@ -244,6 +244,39 @@ alongside the headline stats.
 - Save locations, remove them, click to load
 - Stored in `localStorage`
 
+### 🔐 Sign in with Google (optional)
+
+Signing in sets your name and picture, and the roast bot starts using your
+first name. It is **off until you supply a client ID**, and the app is fully
+functional without it — "works with zero keys" still holds.
+
+**Turning it on:**
+
+1. Create an **OAuth 2.0 Client ID** (type: *Web application*) at
+   [console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials)
+2. Under **Authorised JavaScript origins**, add your site — for this project
+   that is `https://gwallee.github.io` (add `http://localhost:8000` too if you
+   test locally)
+3. Paste the ID into `auth.googleClientId` in `config.js`
+
+A web client ID is public by design and safe to commit — it is not a secret,
+and it only works from the origins you listed.
+
+**Two things this deliberately is not:**
+
+- **Not verified authentication.** Verifying a Google ID token means checking
+  its signature against Google's public keys *on a server*. This app has no
+  server, so the token is decoded, never verified. That is fine for showing a
+  name and an avatar, and nothing security-relevant depends on it — but don't
+  mistake it for real auth.
+- **Not account sync.** Favourites and settings stay in this browser's
+  `localStorage`. Syncing across devices needs somewhere to store them, which
+  again means a server.
+
+Signing out clears the stored profile and disables Google's auto-select, so you
+aren't silently signed back in. A username you chose yourself is never
+overwritten by the Google one.
+
 ### ⚙️ Settings
 - **Username** (default: `DJTheBest`) — shown throughout the app and used
   by the roast bot; change and save it in Settings
@@ -302,6 +335,7 @@ WhatTheWether-V13/
 ├── local-ai.js     # Local AI 3.0 roast generator (offline)
 ├── search.js       # Place search, candidates and recents
 ├── downloads.js    # Lists desktop builds from the latest release
+├── auth.js         # Optional Google sign-in (identity only)
 ├── units.js        # Imperial/metric + clock formatting (single source)
 ├── air.js          # Air quality, pollen, moon phase, sun figures
 ├── rain.js         # Chooses the most authoritative precipitation source
@@ -397,7 +431,8 @@ snapshot from the V9 or V8 namespaces, newest first. The old keys are left in
 place, so downgrading loses nothing.
 
 There is intentionally **no `.env.example`** — the app needs zero environment
-variables and zero secrets.
+variables and zero secrets. The optional Google client ID is public by design
+and lives in `config.js`, not in an environment file.
 
 ## Desktop apps
 

@@ -975,6 +975,13 @@
     panel.classList.toggle('open', open);
     if (overlay) overlay.hidden = !open;
     document.body.classList.toggle('settings-open', open);
+
+    // Google's script is only fetched if the panel is actually opened
+    // and nobody is signed in yet.
+    if (open && !googleButtonRendered && !WTWAuth.isSignedIn()) {
+      googleButtonRendered = true;
+      WTWAuth.renderButton($('googleButtonHost'));
+    }
   }
 
   function initSettingsUI() {
@@ -1103,6 +1110,63 @@
     $('settingsCloseBtn').addEventListener('click', () => openSettings(false));
     $('settingsOverlay').addEventListener('click', () => openSettings(false));
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') openSettings(false); });
+  }
+
+  /* ---------------- Account ---------------- */
+
+  let googleButtonRendered = false;
+
+  function renderAccount(profile) {
+    const signedIn = $('accountSignedIn');
+    const signedOut = $('accountSignedOut');
+    const avatar = $('brandAvatar');
+    if (!signedIn || !signedOut) return;
+
+    signedIn.hidden = !profile;
+    signedOut.hidden = !!profile;
+
+    if (profile) {
+      $('accountName').textContent = profile.name || '';
+      $('accountEmail').textContent = profile.email || '';
+      const pic = $('accountAvatar');
+      if (pic) {
+        if (profile.picture) { pic.src = profile.picture; pic.hidden = false; }
+        else { pic.hidden = true; }
+      }
+      if (avatar && profile.picture) {
+        avatar.src = profile.picture;
+        avatar.hidden = false;
+      }
+    } else if (avatar) {
+      avatar.hidden = true;
+      avatar.removeAttribute('src');
+    }
+  }
+
+  // Adopt the Google first name only while the username is still the
+  // stock default — never overwrite one the user chose themselves.
+  function applyProfileToUsername(profile) {
+    if (!profile || !profile.givenName) return;
+    const current = WTWStorage.getSettings().username;
+    if (current !== WTW_CONFIG.defaults.username) return;
+    WTWStorage.saveSettings({ username: profile.givenName.slice(0, 24) });
+    renderUsernameEverywhere();
+  }
+
+  function onAuthChange(profile) {
+    renderAccount(profile);
+    if (profile) {
+      applyProfileToUsername(profile);
+      toast(`Signed in as ${profile.name}`);
+      return;
+    }
+    // Signing out must leave a way back in. The button is skipped while
+    // signed in, so without this the area would just be empty.
+    googleButtonRendered = false;
+    if (document.body.classList.contains('settings-open')) {
+      googleButtonRendered = true;
+      WTWAuth.renderButton($('googleButtonHost'));
+    }
   }
 
   /* ---------------- Desktop downloads ---------------- */
@@ -1234,6 +1298,11 @@
         }
       });
     }
+    $('signOutBtn').addEventListener('click', () => {
+      WTWAuth.signOut();
+      toast('Signed out');
+    });
+
     $('downloadBtn').addEventListener('click', () => openDownloads(true));
     $('settingsDownloadBtn').addEventListener('click', () => {
       openSettings(false);
@@ -1272,6 +1341,7 @@
     renderRoastLog();
     renderCompare();
     WTWSearch.init({ onPick: (location) => loadLocation(location) });
+    WTWAuth.init({ onChange: onAuthChange });
     WTWRadar.init('radarCanvas');
     WTWHourly.init('hourlyCanvas');
     WTWTempChart.init('tempChartCanvas');

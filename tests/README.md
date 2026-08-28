@@ -34,6 +34,8 @@ project and no global state is touched.
 | `fs-fix.js` | Native fullscreen actually engages; network-first document caching |
 | `forceupdate.js` | Version readout and the cache-clearing force update |
 | `sw-offline.js` | Service worker precache and the offline snapshot path |
+| `downloads.js` | Desktop download panel, asset grouping, and the reorganised header |
+| `auth.js` | Optional Google sign-in: unconfigured behaviour, sign in/out, username handling, malformed tokens |
 
 ## Environment
 

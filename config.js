@@ -66,6 +66,24 @@ const WTW_CONFIG = {
     minutelyResolution: 15,
   },
 
+  // Optional Google sign-in. Leave the client ID empty and the app
+  // behaves exactly as before — sign-in simply does not appear.
+  //
+  // To turn it on, create an OAuth 2.0 Web client at
+  // https://console.cloud.google.com/apis/credentials and add your
+  // site to "Authorised JavaScript origins" (for this project that is
+  // https://gwallee.github.io). Paste the client ID below. A web
+  // client ID is public by design — it is not a secret — but it is
+  // still tied to the origins you list, so nobody else can use it.
+  //
+  // Without a server the returned token can only be decoded, never
+  // verified, so this provides a name and an avatar, not trustworthy
+  // authentication, and nothing security-relevant depends on it.
+  auth: {
+    googleClientId: '',
+    setupUrl: 'https://console.cloud.google.com/apis/credentials',
+  },
+
   // Where the desktop builds come from. The GitHub API is key-less and
   // CORS-enabled, so the app can list the real release assets.
   repo: {
