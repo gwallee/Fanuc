@@ -975,13 +975,6 @@
     panel.classList.toggle('open', open);
     if (overlay) overlay.hidden = !open;
     document.body.classList.toggle('settings-open', open);
-
-    // Google's script is only fetched if the panel is actually opened
-    // and nobody is signed in yet.
-    if (open && !googleButtonRendered && !WTWAuth.isSignedIn()) {
-      googleButtonRendered = true;
-      WTWAuth.renderButton($('googleButtonHost'));
-    }
   }
 
   function initSettingsUI() {
@@ -1137,9 +1130,79 @@
         avatar.src = profile.picture;
         avatar.hidden = false;
       }
-    } else if (avatar) {
-      avatar.hidden = true;
-      avatar.removeAttribute('src');
+    } else {
+      if (avatar) {
+        avatar.hidden = true;
+        avatar.removeAttribute('src');
+      }
+      renderGuestChoice();
+    }
+    renderAccountHint(profile);
+  }
+
+  /* ------------------------------------------------------------
+     Guest is the default and the whole app, so the signed-out panel
+     leads with it: one button, no sign-up, nothing to dismiss. Once
+     it has been taken the panel says so instead of asking again.
+     ------------------------------------------------------------ */
+  function renderGuestChoice() {
+    const guest = WTWAuth.isGuest();
+    const badge = $('guestBadge');
+    const title = $('guestTitle');
+    const note = $('guestNote');
+    const btn = $('continueGuestBtn');
+    if (!badge || !title || !note || !btn) return;
+
+    badge.textContent = guest ? '\u2713 Guest' : 'Guest';
+    badge.classList.toggle('is-set', guest);
+    title.textContent = guest ? "You're all set" : 'Continue as guest';
+    note.textContent = guest
+      ? 'Guest mode. Favourites and settings stay on this device.'
+      : 'No account needed \u2014 everything works.';
+    btn.hidden = guest;
+    showSignIn(false);
+  }
+
+  // Google's script is only fetched when somebody actually asks to sign
+  // in, so a guest never touches Google at all.
+  function showSignIn(open) {
+    const host = $('googleButtonHost');
+    const openBtn = $('showSignInBtn');
+    const cancelBtn = $('cancelSignInBtn');
+    if (!host || !openBtn || !cancelBtn) return;
+
+    const offered = WTWAuth.canSignIn();
+    const row = $('accountSignin');
+    if (row) row.hidden = !offered;
+    openBtn.hidden = !offered || open;
+    cancelBtn.hidden = !offered || !open;
+    host.hidden = !offered || !open;
+
+    if (offered && open && !googleButtonRendered) {
+      googleButtonRendered = true;
+      WTWAuth.renderButton(host);
+    }
+  }
+
+  function renderAccountHint(profile) {
+    const hint = $('accountHint');
+    if (!hint) return;
+    if (profile) {
+      hint.textContent = 'Signed in with Google. Your name and picture are kept ' +
+        'on this device only \u2014 nothing is synced anywhere.';
+      return;
+    }
+    const reason = WTWAuth.unavailableReason();
+    if (reason === 'unconfigured') {
+      hint.textContent = 'Sign-in is not set up on this build, so everyone is a ' +
+        'guest \u2014 which is the entire app, nothing held back.';
+    } else if (reason === 'unsupported') {
+      hint.textContent = 'Google sign-in needs a web address, so the desktop app ' +
+        'is guest only. Nothing is missing.';
+    } else {
+      hint.textContent = 'Guest is always enough. Signing in only sets your name ' +
+        'and picture on this device \u2014 nothing is synced, and nothing is sent ' +
+        "anywhere but Google's own sign-in.";
     }
   }
 
@@ -1154,18 +1217,12 @@
   }
 
   function onAuthChange(profile) {
+    // Signing out lands back on the guest panel, which always offers a
+    // way in again, so there is no dead end either way.
     renderAccount(profile);
     if (profile) {
       applyProfileToUsername(profile);
       toast(`Signed in as ${profile.name}`);
-      return;
-    }
-    // Signing out must leave a way back in. The button is skipped while
-    // signed in, so without this the area would just be empty.
-    googleButtonRendered = false;
-    if (document.body.classList.contains('settings-open')) {
-      googleButtonRendered = true;
-      WTWAuth.renderButton($('googleButtonHost'));
     }
   }
 
@@ -1302,6 +1359,14 @@
       WTWAuth.signOut();
       toast('Signed out');
     });
+
+    $('continueGuestBtn').addEventListener('click', () => {
+      WTWAuth.continueAsGuest();
+      toast('Continuing as guest');
+    });
+    $('showSignInBtn').addEventListener('click', () => showSignIn(true));
+    // "Never mind" is itself a guest choice, so record it and collapse.
+    $('cancelSignInBtn').addEventListener('click', () => WTWAuth.continueAsGuest());
 
     $('downloadBtn').addEventListener('click', () => openDownloads(true));
     $('settingsDownloadBtn').addEventListener('click', () => {

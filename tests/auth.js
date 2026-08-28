@@ -1,4 +1,4 @@
-/* Optional Google sign-in. */
+/* Optional Google sign-in, and the guest path that is the default. */
 const { chromium } = require('playwright');
 const BASE_URL = process.env.WTW_BASE_URL || 'http://localhost:8901';
 const APP_DIR = process.env.WTW_APP_DIR || require('path').join(__dirname, '..');
@@ -98,17 +98,85 @@ function omBody() {
     await page.waitForSelector('#weatherPanels:not([hidden])', { timeout: 15000 });
     return /Austin/.test(await page.textContent('#wxCity'));
   });
-  await check('settings explains sign-in is off, with no dead button', async () => {
+  await check('settings offers guest, not a dead sign-in control', async () => {
     await page.click('#settingsBtn');
     await page.waitForTimeout(700);
-    const note = await page.textContent('#accountSignedOut');
-    return /no Google client ID is set/i.test(note) &&
+    return await page.isVisible('#accountGuest') &&
+           await page.isVisible('#continueGuestBtn') &&
+           !(await page.isVisible('#showSignInBtn')) &&
            (await page.locator('#fakeGoogleButton').count()) === 0;
+  });
+  await check('the hint says guest is the whole app, in plain words', async () => {
+    const hint = await page.textContent('#accountHint');
+    return /guest/i.test(hint) && !/client id|config\.js/i.test(hint);
+  });
+  await check('continuing as guest is one click and sticks', async () => {
+    await page.click('#continueGuestBtn');
+    await page.waitForTimeout(400);
+    return /Guest/.test(await page.textContent('#guestBadge')) &&
+           !(await page.isVisible('#continueGuestBtn')) &&
+           /all set/i.test(await page.textContent('#guestTitle'));
+  });
+  await check('the guest choice is remembered across a reload', async () => {
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForTimeout(1200);
+    await page.click('#settingsBtn');
+    await page.waitForTimeout(500);
+    return !(await page.isVisible('#continueGuestBtn')) &&
+           await page.isVisible('#accountGuest');
   });
   await check("Google's script is not even fetched when unconfigured", async () =>
     page.evaluate(() => !document.querySelector('script[src*="accounts.google.com"]')));
   await check('the default username is untouched', async () =>
     (await page.textContent('.brand-greeting strong')) === 'DJTheBest');
+  await ctx.close();
+
+  console.log('\n=== Configured: guest still comes first ===');
+  ({ ctx, page } = await mk('test-client-id.apps.googleusercontent.com'));
+  await page.fill('#searchInput', 'Austin');
+  await page.click('#searchBtn');
+  await page.waitForSelector('#weatherPanels:not([hidden])', { timeout: 15000 });
+  await check('the guest row leads, with sign-in offered underneath', async () => {
+    await page.click('#settingsBtn');
+    await page.waitForTimeout(600);
+    return await page.isVisible('#continueGuestBtn') &&
+           await page.isVisible('#showSignInBtn') &&
+           !(await page.isVisible('#googleButtonHost'));
+  });
+  await check('staying a guest never contacts Google', async () => {
+    await page.click('#continueGuestBtn');
+    await page.waitForTimeout(500);
+    return page.evaluate(() => !document.querySelector('script[src*="accounts.google.com"]'));
+  });
+  await check('the guest flag is what was stored', async () =>
+    page.evaluate(() => localStorage.getItem('wtw:guestMode') === 'true'));
+  await check('sign-in is still reachable after choosing guest', async () => {
+    await page.click('#showSignInBtn');
+    await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
+    return page.isVisible('#fakeGoogleButton');
+  });
+  await check('"never mind" folds it back to guest', async () => {
+    await page.click('#cancelSignInBtn');
+    await page.waitForTimeout(400);
+    return !(await page.isVisible('#googleButtonHost')) &&
+           await page.isVisible('#showSignInBtn') &&
+           await page.isVisible('#accountGuest');
+  });
+  await check('signing in clears the guest flag', async () => {
+    await page.click('#showSignInBtn');
+    await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
+    await page.click('#fakeGoogleButton');
+    await page.waitForTimeout(700);
+    return await page.isVisible('#accountSignedIn') &&
+           await page.evaluate(() => localStorage.getItem('wtw:guestMode') === null);
+  });
+  await check('signing out returns to the guest panel, not a dead end', async () => {
+    await page.click('#signOutBtn');
+    await page.waitForTimeout(600);
+    return await page.isVisible('#accountGuest') &&
+           await page.isVisible('#continueGuestBtn') &&
+           await page.isVisible('#showSignInBtn');
+  });
   await ctx.close();
 
   console.log('\n=== Configured: signing in ===');
@@ -117,8 +185,10 @@ function omBody() {
   await page.click('#searchBtn');
   await page.waitForSelector('#weatherPanels:not([hidden])', { timeout: 15000 });
   await page.waitForTimeout(1500);
-  await check('the sign-in button renders', async () => {
+  await check('the sign-in button renders once asked for', async () => {
     await page.click('#settingsBtn');
+    await page.waitForTimeout(400);
+    await page.click('#showSignInBtn');
     await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
     return page.isVisible('#fakeGoogleButton');
   });
@@ -158,9 +228,11 @@ function omBody() {
     page.evaluate(() => window.__autoSelectDisabled === true));
   await check('the profile is gone from storage', async () =>
     page.evaluate(() => localStorage.getItem('wtw:googleProfile') === null));
-  await check('a sign-in button is offered again straight away', async () =>
-    page.isVisible('#fakeGoogleButton'));
+  await check('a way back in is offered straight away', async () =>
+    page.isVisible('#showSignInBtn'));
   await check('signing back in works without a reload', async () => {
+    await page.click('#showSignInBtn');
+    await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
     await page.click('#fakeGoogleButton');
     await page.waitForTimeout(700);
     return (await page.textContent('#accountName')) === 'Ada Lovelace';
@@ -187,6 +259,8 @@ function omBody() {
   await page.waitForTimeout(800);
   await check('a custom username survives signing in', async () => {
     await page.click('#settingsBtn');
+    await page.waitForTimeout(400);
+    await page.click('#showSignInBtn');
     await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
     await page.click('#fakeGoogleButton');
     await page.waitForTimeout(700);
@@ -199,6 +273,8 @@ function omBody() {
   await check('garbage tokens do not sign anyone in', async () => {
     await page.evaluate(() => { window.__fakeToken = 'not.a.jwt'; });
     await page.click('#settingsBtn');
+    await page.waitForTimeout(400);
+    await page.click('#showSignInBtn');
     await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
     await page.click('#fakeGoogleButton');
     await page.waitForTimeout(600);
@@ -215,7 +291,7 @@ function omBody() {
     page.isVisible('#settingsPanel'));
   await ctx.close();
 
-  console.log(failures ? `\n${failures} FAILURE(S)` : '\nAll sign-in checks passed.');
+  console.log(failures ? `\n${failures} FAILURE(S)` : '\nAll sign-in and guest checks passed.');
   await browser.close();
   process.exit(failures ? 1 : 0);
 })();

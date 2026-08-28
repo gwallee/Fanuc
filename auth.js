@@ -19,7 +19,9 @@
 
    Signing in is entirely optional: with no client ID configured
    the app behaves exactly as before, so "works with zero keys"
-   stays true.
+   stays true. Guest is the default and the full app — the guest
+   flag below only records that the choice was made, so the
+   Account panel can stop asking.
    ============================================================ */
 
 const WTWAuth = (() => {
@@ -61,6 +63,8 @@ const WTWAuth = (() => {
   function saveProfile(profile) {
     state.profile = profile;
     WTWStorage.set('googleProfile', profile);
+    // Signed in is not guest.
+    WTWStorage.remove('guestMode');
     if (typeof state.onChange === 'function') state.onChange(profile);
   }
 
@@ -77,6 +81,38 @@ const WTWAuth = (() => {
     state.profile = null;
     WTWStorage.remove('googleProfile');
     if (typeof state.onChange === 'function') state.onChange(null);
+  }
+
+  /* ---------------- Guest ----------------
+     Guest is not an account and needs no storage to work — this flag
+     exists purely so the Account panel can show "you're all set"
+     instead of asking again every time Settings is opened. */
+
+  function isGuest() {
+    return WTWStorage.get('guestMode', false) === true;
+  }
+
+  function continueAsGuest() {
+    WTWStorage.set('guestMode', true);
+    if (typeof state.onChange === 'function') state.onChange(getProfile());
+    return true;
+  }
+
+  function clearGuest() {
+    WTWStorage.remove('guestMode');
+  }
+
+  /* Signing in is the opposite of being a guest. */
+  function canSignIn() {
+    return isConfigured() && isSupportedHere();
+  }
+
+  // Why signing in isn't on offer, in words meant for whoever is using
+  // the app rather than whoever is building it.
+  function unavailableReason() {
+    if (!isConfigured()) return 'unconfigured';
+    if (!isSupportedHere()) return 'unsupported';
+    return null;
   }
 
   /* ------------------------------------------------------------
@@ -198,6 +234,7 @@ const WTWAuth = (() => {
   return {
     init, renderButton, signOut, getProfile, isSignedIn,
     isConfigured, isSupportedHere, decodeCredential,
+    isGuest, continueAsGuest, clearGuest, canSignIn, unavailableReason,
   };
 })();
 

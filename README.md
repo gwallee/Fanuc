@@ -244,7 +244,18 @@ alongside the headline stats.
 - Save locations, remove them, click to load
 - Stored in `localStorage`
 
-### 🔐 Sign in with Google (optional)
+### 👤 Account — guest first (optional sign-in)
+
+**Settings → Account** leads with **Continue as guest**: one button, no sign-up,
+and the entire app. Guest is not a limited mode — nothing is held back, and no
+feature anywhere asks for an account. Taking it is remembered, so the panel
+stops asking and just says *You're all set*.
+
+Signing in with Google sits underneath, behind its own **Sign in with Google
+instead** button, so Google's script is never even fetched unless somebody asks
+for it. A **Never mind, stay a guest** button folds it back. If no client ID is
+configured (the shipped default), the sign-in row simply isn't there — the panel
+says everyone is a guest rather than showing a developer note.
 
 Signing in sets your name and picture, and the roast bot starts using your
 first name. It is **off until you supply a client ID**, and the app is fully
@@ -274,7 +285,8 @@ and it only works from the origins you listed.
   again means a server.
 
 Signing out clears the stored profile and disables Google's auto-select, so you
-aren't silently signed back in. A username you chose yourself is never
+aren't silently signed back in, and lands back on the guest panel — there is no
+state you can reach with no way forward. A username you chose yourself is never
 overwritten by the Google one.
 
 ### ⚙️ Settings
@@ -335,7 +347,7 @@ WhatTheWether-V13/
 ├── local-ai.js     # Local AI 3.0 roast generator (offline)
 ├── search.js       # Place search, candidates and recents
 ├── downloads.js    # Lists desktop builds from the latest release
-├── auth.js         # Optional Google sign-in (identity only)
+├── auth.js         # Guest mode + optional Google sign-in (identity only)
 ├── units.js        # Imperial/metric + clock formatting (single source)
 ├── air.js          # Air quality, pollen, moon phase, sun figures
 ├── rain.js         # Chooses the most authoritative precipitation source
