@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V12 — styles.css
+   What the Wether V13 — styles.css
    All colors come from CSS variables so themes are one block
    each. Default theme: Neon Dark. Others: Midnight, Light.
    ============================================================ */
@@ -136,6 +136,70 @@ body.loading { cursor: progress; }
 .btn-small { padding: 0.35rem 0.65rem; min-height: 34px; font-size: 0.85rem; }
 
 .btn.saved { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
+
+/* ---------------- Accessibility helpers ---------------- */
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: -3rem;
+  z-index: 200;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
+  padding: 0.5rem 0.9rem;
+  border-radius: 0 0 10px 10px;
+  transition: top 0.15s ease;
+}
+.skip-link:focus { top: 0; }
+
+/* ---------------- Search results ---------------- */
+
+.search-field { position: relative; flex: 1; min-width: 0; }
+.search-field input { width: 100%; }
+
+.search-results {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  list-style: none;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden auto;
+  max-height: 60vh;
+}
+.search-heading {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-dim);
+  padding: 0.5rem 0.9rem 0.2rem;
+}
+.search-result {
+  padding: 0.6rem 0.9rem;
+  cursor: pointer;
+  font-size: 0.92rem;
+  border-top: 1px solid transparent;
+}
+.search-result:hover,
+.search-result.active {
+  background: var(--btn-hover);
+  color: var(--text);
+}
 
 /* ---------------- Header ---------------- */
 

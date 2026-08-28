@@ -1,12 +1,12 @@
 /* ============================================================
-   What the Wether V12 — config.js
+   What the Wether V13 — config.js
    Central configuration. No API keys required, ever.
    ============================================================ */
 
 const WTW_CONFIG = {
   app: {
     name: 'What the Wether',
-    version: 'V12',
+    version: 'V13',
     tagline: 'Weather with an attitude problem.',
   },
 
@@ -64,6 +64,11 @@ const WTW_CONFIG = {
     // Open-Meteo serves 15-minute data for much of Europe and North
     // America; elsewhere the hourly series is used instead.
     minutelyResolution: 15,
+  },
+
+  search: {
+    maxResults: 6,   // candidates offered in the picker
+    maxRecent: 6,    // remembered searches
   },
 
   compare: {

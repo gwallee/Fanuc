@@ -12,3 +12,7 @@ node_modules/
 dist/
 out/
 *.log
+
+# Playwright
+test-results/
+playwright-report/

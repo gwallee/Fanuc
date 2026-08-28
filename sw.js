@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V12 — sw.js
+   What the Wether V13 — sw.js
    Service worker: precaches the app shell so the app opens
    instantly and works offline, and keeps a runtime cache of the
    last successful weather responses to fall back on.
@@ -8,7 +8,7 @@
    is deleted on activate.
    ============================================================ */
 
-const CACHE_VERSION = 'wtw-v12-2';
+const CACHE_VERSION = 'wtw-v13-1';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 
@@ -21,6 +21,7 @@ const SHELL = [
   './themes.js',
   './nws.js',
   './units.js',
+  './search.js',
   './air.js',
   './rain.js',
   './precip.js',

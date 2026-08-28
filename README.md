@@ -1,4 +1,4 @@
-# What the Wether V12 ⚡🌩️
+# What the Wether V13 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -10,6 +10,18 @@ connection.
 ![What the Wether logo](logo.svg)
 
 ## Features
+
+### 🔎 Search that shows you the choices
+Through V12 the box silently took the first geocoding hit, so
+"Springfield", "Portland" and every other duplicated place name resolved to
+whichever one the API happened to rank first. Now you get the actual
+candidates, disambiguated by region and country, with:
+
+- Type-ahead results as you type (debounced, so it isn't a request per keystroke)
+- Arrow keys and `Enter` to pick, `Escape` to dismiss
+- Recent picks offered when the box is empty
+- A US ZIP still loads directly — there's only one answer
+- Proper combobox semantics (`aria-expanded`, `aria-activedescendant`)
 
 ### 🌡️ Weather
 - City / place search and US ZIP code search
@@ -116,6 +128,21 @@ unavailable instead of emptying the grid.
 Optional browser notifications for extreme and severe NWS alerts, deduplicated
 so a refresh doesn't re-notify. Opt-in, permission-gated, and honest about its
 limit: there is no push server, so they fire only while the app is open.
+
+### ♿ Accessibility
+- A skip link as the first focusable element
+- Loading a place is announced to screen readers through a polite live
+  region ("Beverly Hills, CA. Clear sky. 70°F, feels like 68°F…") — a canvas
+  repaint says nothing on its own
+- Interactive canvases and stats are real controls: focusable, labelled,
+  and operable with `Enter`/`Space`
+- Honours `prefers-reduced-motion`
+
+### 🔋 Doesn't run when nobody's looking
+The radar drove a `requestAnimationFrame` loop continuously, even scrolled
+off-screen or in a background tab. It now parks the loop when the scope
+leaves the viewport (`IntersectionObserver`) or the tab is hidden
+(`visibilitychange`), and resumes the moment it's visible again.
 
 ### 🔍 Fullscreen radar
 **Tap or click the scope** and it expands to fill the screen — bigger sweep,
@@ -247,15 +274,33 @@ bucket, a USB stick...
 > **GitHub Pages:** Settings → Pages → deploy from the repo root of your
 > default branch. Done.
 
+## Tests
+
+The app ships with its own browser test suite — 282 checks across 14 suites,
+driving the real app in Chromium with every external service stubbed:
+
+```bash
+npm install
+npx playwright install chromium   # one-time
+npm test                          # all suites
+node tests/run.js v13 smoke       # just these
+```
+
+The runner serves the project on a free port, runs each suite against it, and
+prints a combined summary. See [`tests/README.md`](tests/README.md) for what
+each suite covers. The app itself still has **no build step and no runtime
+dependencies** — `package.json` exists only for the tests.
+
 ## Project structure
 
 ```
-WhatTheWether-V12/
+WhatTheWether-V13/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
 ├── radar.js        # Animated canvas radar engine
 ├── local-ai.js     # Local AI 3.0 roast generator (offline)
+├── search.js       # Place search, candidates and recents
 ├── units.js        # Imperial/metric + clock formatting (single source)
 ├── air.js          # Air quality, pollen, moon phase, sun figures
 ├── rain.js         # Chooses the most authoritative precipitation source
@@ -276,6 +321,8 @@ WhatTheWether-V12/
 ├── logo.svg        # The logo (also used as the favicon)
 ├── README.md
 ├── .gitignore
+├── tests/          # Browser test suite + runner (npm test)
+├── package.json    # Test scripts only — the app itself has no build
 ├── assets/         # Extra static assets
 └── desktop/        # Desktop packaging scaffold (Electron-ready)
     ├── README.txt
@@ -284,7 +331,7 @@ WhatTheWether-V12/
 ```
 
 Script load order matters and is already correct in `index.html`:
-`config.js → storage.js → themes.js → units.js → nws.js → air.js →
+`config.js → storage.js → themes.js → units.js → search.js → nws.js → air.js →
 rain.js → precip.js → tempchart.js → compare.js → map.js → radarsource.js →
 hourly.js → share.js → local-ai.js → radar.js → app.js`.
 

@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V12 — app.js
+   What the Wether V13 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -52,6 +52,16 @@
 
   /* ---------------- Toasts ---------------- */
 
+  // Screen readers get nothing from a silent canvas repaint, so the
+  // headline conditions are announced when a location finishes loading.
+  function announceLoad(message) {
+    const el = $('srAnnouncer');
+    if (!el) return;
+    el.textContent = '';
+    // Re-setting the text is what triggers the announcement.
+    setTimeout(() => { el.textContent = message; }, 60);
+  }
+
   let toastTimer = null;
   function toast(message, isError = false) {
     const el = $('toast');
@@ -69,36 +79,6 @@
     return res.json();
   }
 
-  /* ---------------- Geocoding ---------------- */
-
-  async function geocode(query) {
-    const q = query.trim();
-    if (!q) return null;
-
-    if (/^\d{5}(-\d{4})?$/.test(q)) {
-      try {
-        const data = await getJSON(WTW_CONFIG.api.zip + q.slice(0, 5));
-        const place = data.places && data.places[0];
-        if (place) {
-          return {
-            name: `${place['place name']}, ${place['state abbreviation']}`,
-            lat: parseFloat(place.latitude),
-            lon: parseFloat(place.longitude),
-          };
-        }
-      } catch (err) {
-        console.warn('[geo] ZIP lookup failed, trying name search', err);
-      }
-    }
-
-    const url = `${WTW_CONFIG.api.geocoding}?name=${encodeURIComponent(q)}&count=1&language=en&format=json`;
-    const data = await getJSON(url);
-    const hit = data.results && data.results[0];
-    if (!hit) return null;
-    const region = hit.admin1 && hit.admin1 !== hit.name ? `, ${hit.admin1}` : '';
-    const country = hit.country_code ? ` (${hit.country_code})` : '';
-    return { name: `${hit.name}${region}${country}`, lat: hit.latitude, lon: hit.longitude };
-  }
 
   /* ---------------- Open-Meteo ---------------- */
 
@@ -826,7 +806,7 @@
     if (btn) btn.disabled = on;
   }
 
-  async function loadLocation(location, { announce = true } = {}) {
+  async function loadLocation(location, { announce: announceToast = true } = {}) {
     if (state.loading) return;
     state.loading = true;
     setLoading(true);
@@ -856,7 +836,13 @@
       saveSnapshot();
 
       if (WTWStorage.getSettings().autoRoast) doRoast();
-      if (announce) toast(`Weather loaded for ${location.name}`);
+
+      const w = result.weather;
+      const [conditionLabel] = describeCode(w.weatherCode);
+      announceLoad(`${location.name}. ${w.conditionText || conditionLabel}. ` +
+        `${U().temp(w.tempF, { withUnit: true })}, feels like ${U().temp(w.feelsLikeF, { withUnit: true })}. ` +
+        `High ${U().temp(w.highF)}, low ${U().temp(w.lowF)}.`);
+      if (announceToast) toast(`Weather loaded for ${location.name}`);
     } catch (err) {
       console.error('[app] weather load failed', err);
       if (restoreSnapshot()) {
@@ -870,16 +856,28 @@
     }
   }
 
+  /* ------------------------------------------------------------
+     Search shows the candidates rather than silently taking the
+     first hit — there are a lot of Springfields. A single exact
+     match (a ZIP) loads straight away.
+     ------------------------------------------------------------ */
   async function handleSearch() {
     const input = $('searchInput');
     const q = input.value.trim();
     if (!q) { toast('Type a city, place, or US ZIP code first.', true); input.focus(); return; }
     setLoading(true);
     try {
-      const loc = await geocode(q);
-      if (!loc) { toast(`No results for "${q}". Try another spelling.`, true); return; }
-      await loadLocation(loc);
-      input.value = '';
+      const results = await WTWSearch.lookup(q);
+      if (!results.length) {
+        toast(`No results for "${q}". Try another spelling.`, true);
+        WTWSearch.close();
+        return;
+      }
+      if (results.length === 1) {
+        WTWSearch.pickDirect(results[0]);
+        return;
+      }
+      WTWSearch.render(results);
     } catch (err) {
       console.error('[app] search failed', err);
       toast('Search failed. Check your connection.', true);
@@ -1228,6 +1226,7 @@
     renderFavorites();
     renderRoastLog();
     renderCompare();
+    WTWSearch.init({ onPick: (location) => loadLocation(location) });
     WTWRadar.init('radarCanvas');
     WTWHourly.init('hourlyCanvas');
     WTWTempChart.init('tempChartCanvas');

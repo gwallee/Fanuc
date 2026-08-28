@@ -1,8 +1,8 @@
 {
   "name": "what-the-wether-desktop",
   "productName": "What the Wether",
-  "version": "12.0.0",
-  "description": "What the Wether V12 desktop app — neon weather with a timestamped real-map radar, independent rain sources, temperature trends and a local roast AI. No API keys.",
+  "version": "13.0.0",
+  "description": "What the Wether V13 desktop app — neon weather with a timestamped real-map radar, independent rain sources, temperature trends and a local roast AI. No API keys.",
   "main": "main.js",
   "scripts": {
     "start": "electron ."

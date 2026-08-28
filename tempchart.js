@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V12 — tempchart.js
+   What the Wether V13 — tempchart.js
    The temperature trend chart behind the High / Low readout.
 
    Draws the 7-day forecast as a high/low band with both curves and

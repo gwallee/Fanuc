@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V12 — radar.js
+   What the Wether V13 — radar.js
    Canvas radar scope with a real basemap underneath.
 
    Layers, bottom to top, all projected in EPSG:3857 so they align:
@@ -41,6 +41,8 @@ const WTWRadar = (() => {
     dragging: false, dragLast: null, dragStart: null, moved: false,
     refetchTimer: null,
     fullscreen: false,
+    visible: true,          // scope is on screen
+    pageVisible: true,      // tab is in the foreground
   };
 
   /* ================= Real imagery (NOAA WMS, EPSG:3857) ================= */
@@ -464,12 +466,16 @@ const WTWRadar = (() => {
     return target >= from || target <= to;
   }
 
+  function shouldAnimate() {
+    return state.playing && state.visible && state.pageVisible;
+  }
+
   function frame(now) {
     if (!state.lastFrameTime) state.lastFrameTime = now;
     const dt = Math.min(0.1, (now - state.lastFrameTime) / 1000);
     state.lastFrameTime = now;
 
-    if (state.playing) {
+    if (shouldAnimate()) {
       const secsPerRev = cfg().sweepSecondsPerRev || 4;
       const prev = state.sweepAngle;
       state.sweepAngle = (state.sweepAngle + (Math.PI * 2 / secsPerRev) * dt) % (Math.PI * 2);
@@ -500,8 +506,43 @@ const WTWRadar = (() => {
       }
     }
 
+    // Repainting an off-screen or backgrounded scope burns battery for
+    // nothing, so the loop parks itself and is restarted by the
+    // observers below.
+    if (!state.visible || !state.pageVisible) {
+      state.rafId = null;
+      return;
+    }
+
     draw();
     state.rafId = requestAnimationFrame(frame);
+  }
+
+  function startLoop() {
+    if (state.rafId !== null) return;
+    state.lastFrameTime = 0;
+    state.rafId = requestAnimationFrame(frame);
+  }
+
+  /* ------------------------------------------------------------
+     Pause the loop when the scope scrolls out of view or the tab
+     goes to the background; resume as soon as it is visible again.
+     ------------------------------------------------------------ */
+  function initVisibility() {
+    document.addEventListener('visibilitychange', () => {
+      state.pageVisible = !document.hidden;
+      if (state.pageVisible) startLoop();
+    });
+
+    if (window.IntersectionObserver && state.canvas) {
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          state.visible = entry.isIntersecting;
+          if (state.visible) startLoop();
+        });
+      }, { threshold: 0.05 });
+      io.observe(state.canvas);
+    }
   }
 
   /* ================= Sizing ================= */
@@ -787,6 +828,7 @@ const WTWRadar = (() => {
     state.lastFrameTime = 0;
     setStatus('SCANNING', true);
     updatePlayButton();
+    startLoop();
   }
 
   function stop() {
@@ -873,7 +915,8 @@ const WTWRadar = (() => {
     updateRangeLabel();
     setStatus('STANDBY', false);
     updatePlayButton();
-    state.rafId = requestAnimationFrame(frame);
+    initVisibility();
+    startLoop();
     play();
   }
 
@@ -887,6 +930,7 @@ const WTWRadar = (() => {
     init, play, stop, toggle, refresh, setLocation, setAlerts, zoom, recenter,
     onThemeChange, onUnitsChange, enterFullscreen, exitFullscreen, toggleFullscreen,
     isFullscreen: () => state.fullscreen,
+    isAnimating: () => state.rafId !== null,
   };
 })();
 
