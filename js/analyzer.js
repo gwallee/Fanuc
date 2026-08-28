@@ -25,7 +25,7 @@
       if (line.motion) a.motions[line.motion] = (a.motions[line.motion] || 0) + 1;
 
       // Label definitions: line begins with LBL[n]
-      var m = text.match(/^LBL\[(\d+)(?::[^\]]*)?\]/);
+      var m = text.match(/^LBL\[\s*(\d+)(?::[^\]]*)?\]/);
       if (m) {
         var ln = parseInt(m[1], 10);
         a.labels[ln] = a.labels[ln] || { defLine: null, defLines: [], jumps: [] };
@@ -33,7 +33,7 @@
         a.labels[ln].defLines.push(line.num);
       }
       // Jump references: JMP LBL[n], WAIT ... TIMEOUT,LBL[n], Skip,LBL[n]
-      var jmpRe = /(?:JMP\s+|TIMEOUT\s*,\s*|Skip\s*,\s*)LBL\[(\d+)(?::[^\]]*)?\]/g;
+      var jmpRe = /(?:JMP\s+|TIMEOUT\s*,\s*|Skip\s*,\s*)LBL\[\s*(\d+)(?::[^\]]*)?\]/g;
       var j;
       while ((j = jmpRe.exec(text)) !== null) {
         var tn = parseInt(j[1], 10);

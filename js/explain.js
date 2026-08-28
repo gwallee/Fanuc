@@ -50,7 +50,7 @@
     if (/\bRTCP\b/.test(text)) opts.push('remote TCP');
     if (/\bPTH\b/.test(text)) opts.push('path priority (PTH)');
     if ((m = text.match(/\bWjnt\b/))) opts.push('wrist joint motion (no wrist flip control)');
-    if ((m = text.match(/Skip,\s*LBL\[(\d+)[^\]]*\]/))) opts.push('skip to LBL[' + m[1] + '] if the skip condition is met');
+    if ((m = text.match(/Skip,\s*LBL\[\s*(\d+)[^\]]*\]/))) opts.push('skip to LBL[' + m[1] + '] if the skip condition is met');
     if ((m = text.match(/\bAP_LD\s*(\d+)/))) opts.push('approach linear distance ' + m[1]);
     if ((m = text.match(/\bBREAK\b/))) opts.push('BREAK (stop lookahead)');
     return opts;
@@ -96,13 +96,13 @@
     { re: /^OVERRIDE\s*=\s*(\d+)\s*%/, fn: function (m) { return 'Set the general speed override to ' + m[1] + '%.'; } },
     { re: /^CALL\s+([A-Z0-9_]+)(\((.*)\))?/i, fn: function (m) { return 'Call subprogram ' + m[1] + (m[3] ? ' with arguments (' + m[3] + ')' : '') + ', then continue here when it finishes.'; } },
     { re: /^RUN\s+([A-Z0-9_]+)/i, fn: function (m) { return 'Start program ' + m[1] + ' as a parallel task (multitasking) and continue immediately.'; } },
-    { re: /^LBL\[(\d+)(?::([^\]]*))?\]/, fn: function (m) { return 'Label ' + m[1] + label(m[2]) + ' — a jump target; does nothing by itself.'; } },
-    { re: /^JMP\s+LBL\[(\d+)(?::([^\]]*))?\]/, fn: function (m) { return 'Jump unconditionally to label ' + m[1] + label(m[2]) + '.'; } },
+    { re: /^LBL\[\s*(\d+)(?::([^\]]*))?\]/, fn: function (m) { return 'Label ' + m[1] + label(m[2]) + ' — a jump target; does nothing by itself.'; } },
+    { re: /^JMP\s+LBL\[\s*(\d+)(?::([^\]]*))?\]/, fn: function (m) { return 'Jump unconditionally to label ' + m[1] + label(m[2]) + '.'; } },
     { re: /^IF\s+(.*?),\s*JMP\s+LBL\[R\[(\d+)[^\]]*\]\]/, fn: function (m) { return 'If ' + humanizeExpr(m[1]) + ', jump to the label whose number is in R[' + m[2] + '] (computed jump).'; } },
-    { re: /^IF\s+(.*?),\s*JMP\s+LBL\[(\d+)[^\]]*\]/, fn: function (m) { return 'If ' + humanizeExpr(m[1]) + ', jump to label ' + m[2] + '; otherwise continue to the next line.'; } },
+    { re: /^IF\s+(.*?),\s*JMP\s+LBL\[\s*(\d+)[^\]]*\]/, fn: function (m) { return 'If ' + humanizeExpr(m[1]) + ', jump to label ' + m[2] + '; otherwise continue to the next line.'; } },
     { re: /^IF\s+(.*?),\s*CALL\s+([A-Z0-9_]+)/i, fn: function (m) { return 'If ' + humanizeExpr(m[1]) + ', call subprogram ' + m[2] + '.'; } },
     { re: /^IF\s*\((.*)\)\s*THEN/, fn: function (m) { return 'If ' + humanizeExpr(m[1]) + ', run the block until ENDIF (mixed-logic IF/THEN).'; } },
-    { re: /^IF\s*\((.*)\)\s*,\s*(JMP\s+LBL\[R\[(\d+)[^\]]*\]\]|JMP\s+LBL\[(\d+)[^\]]*\]|CALL\s+([A-Z0-9_]+).*)$/i, fn: function (m) {
+    { re: /^IF\s*\((.*)\)\s*,\s*(JMP\s+LBL\[R\[(\d+)[^\]]*\]\]|JMP\s+LBL\[\s*(\d+)[^\]]*\]|CALL\s+([A-Z0-9_]+).*)$/i, fn: function (m) {
         var act = m[3] ? 'jump to the label whose number is in R[' + m[3] + ']'
           : m[4] ? 'jump to label ' + m[4]
           : 'call subprogram ' + m[5];
@@ -121,19 +121,19 @@
       } },
     { re: /^ELSE\b/, fn: function () { return 'Otherwise — run this block when the IF condition was false.'; } },
     { re: /^ENDIF\b/, fn: function () { return 'End of the IF/THEN block.'; } },
-    { re: /^SELECT\s+R\[(\d+)(?::([^\]]*))?\]\s*=\s*(\d+),\s*(JMP\s+LBL\[(\d+)[^\]]*\]|CALL\s+([A-Z0-9_]+))/, fn: function (m) {
+    { re: /^SELECT\s+R\[(\d+)(?::([^\]]*))?\]\s*=\s*(\d+),\s*(JMP\s+LBL\[\s*(\d+)[^\]]*\]|CALL\s+([A-Z0-9_]+))/, fn: function (m) {
         return 'Multi-way branch on R[' + m[1] + ']' + label(m[2]) + ': if it equals ' + m[3] + ', ' + (m[5] ? 'jump to label ' + m[5] : 'call ' + m[6]) + '. Following "= value" lines are the other cases.';
       } },
-    { re: /^\s*=\s*(\d+),\s*(JMP\s+LBL\[(\d+)[^\]]*\]|CALL\s+([A-Z0-9_]+))/, fn: function (m) {
+    { re: /^\s*=\s*(\d+),\s*(JMP\s+LBL\[\s*(\d+)[^\]]*\]|CALL\s+([A-Z0-9_]+))/, fn: function (m) {
         return 'SELECT case: if the tested register equals ' + m[1] + ', ' + (m[3] ? 'jump to label ' + m[3] : 'call ' + m[4]) + '.';
       } },
-    { re: /^ELSE,\s*(JMP\s+LBL\[(\d+)[^\]]*\]|CALL\s+([A-Z0-9_]+))/, fn: function (m) {
+    { re: /^ELSE,\s*(JMP\s+LBL\[\s*(\d+)[^\]]*\]|CALL\s+([A-Z0-9_]+))/, fn: function (m) {
         return 'SELECT default case: ' + (m[2] ? 'jump to label ' + m[2] : 'call ' + m[3]) + ' when no case matched.';
       } },
     { re: /^FOR\s+R\[(\d+)[^\]]*\]\s*=\s*(.+?)\s+TO\s+(.+)/, fn: function (m) { return 'Loop: repeat the block until ENDFOR, counting R[' + m[1] + '] from ' + m[2] + ' to ' + m[3] + '.'; } },
     { re: /^ENDFOR\b/, fn: function () { return 'End of the FOR loop — jumps back to the FOR line while the counter is in range.'; } },
     { re: /^WAIT\s+([\d.]+)\s*\(?sec\)?/, fn: function (m) { return 'Pause the program for ' + m[1] + ' seconds.'; } },
-    { re: /^WAIT\s+(.*?)(?:\s+TIMEOUT,?\s*LBL\[(\d+)[^\]]*\])?$/, fn: function (m) {
+    { re: /^WAIT\s+(.*?)(?:\s+TIMEOUT,?\s*LBL\[\s*(\d+)[^\]]*\])?$/, fn: function (m) {
         var s = 'Wait here until ' + humanizeExpr(m[1]) + '.';
         if (m[2]) s += ' If the $WAITTMOUT timeout expires first, jump to label ' + m[2] + '.';
         return s;

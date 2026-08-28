@@ -208,6 +208,31 @@ const rbLib = { RB: { parsed: rbParsed, analysis: rbA, source: rbSrc } };
 const rbFind = L.lint(rbLib, A.buildCallGraph(rbLib), A.buildGlobalXref(rbLib));
 check(!rbFind.some(f => f.rule === 'unreachable-code'), 'blank line + LBL after JMP not flagged unreachable');
 
+console.log('\n-- padded label indices: LBL[ 610 ] --');
+const padSrc = `/PROG PAD
+/MN
+   1:  IF (GI[3:1030:Meas Dist]>(R[222:Lsr2BtmTL Offs]+25)),JMP LBL[610] ;
+   2:  JMP LBL[620] ;
+   3:  LBL[ 610] ;
+   4:  JMP LBL[999] ;
+   5:  LBL[620] ;
+   6:  JMP LBL[  999 ] ;
+   7:  LBL[999] ;
+/END
+`;
+const padParsed = P.parseLS(padSrc, 'PAD.LS');
+const padA = A.analyzeProgram(padParsed);
+check(padA.labels[610] && padA.labels[610].defLine === 3, 'LBL[ 610] with padding recognized as a definition');
+check(padA.labels[999] && padA.labels[999].jumps.length === 2, 'JMP LBL[  999 ] padded reference counted');
+const padLib = { PAD: { parsed: padParsed, analysis: padA, source: padSrc } };
+const padFindings = L.lint(padLib, A.buildCallGraph(padLib), A.buildGlobalXref(padLib));
+check(!padFindings.some(f => f.rule === 'jump-to-missing-label'),
+  'no false "jump to missing label" for padded definitions');
+const padFlow = FL.buildFlow(padParsed);
+check(padFlow.blocks.some(b => b.labelNum === 610), 'flow block created for the padded label');
+check(!padFlow.edges.some(e => e.missing), 'no missing-label edges in flow');
+check(/Label 610/.test(X.explainLine(padParsed.lines.find(l => l.num === 3))), 'padded label explained');
+
 console.log('\n-- iPendant HTML-wrapped programs (HTTP fetch) --');
 const wrapped = `<html>
 <head>

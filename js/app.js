@@ -532,9 +532,9 @@
       var el = node && (node.nodeType === 3 ? node.parentElement : node);
       var tokEl = el && el.closest ? el.closest('.tok-reg, .tok-io, .tok-lbl') : null;
       if (tokEl) {
-        var m = tokEl.textContent.match(/^(R|PR|AR|SR|DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|AI|AO|F|M|TIMER|LBL)\[(\d+)/);
-        // component references (PR[20,1]) count as uses of the same item
-        if (m) itemRe = new RegExp('\\b' + m[1] + '\\[' + m[2] + '(?:\\s*,\\s*\\d+)?(?::[^\\]]*)?\\]', 'g');
+        var m = tokEl.textContent.match(/^(R|PR|AR|SR|DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|AI|AO|F|M|TIMER|LBL)\[\s*(\d+)/);
+        // component references (PR[20,1]) count as uses; indices may be padded (LBL[ 610])
+        if (m) itemRe = new RegExp('\\b' + m[1] + '\\[\\s*' + m[2] + '(?:\\s*,\\s*\\d+)?\\s*(?::[^\\]]*)?\\]', 'g');
       }
     } else {
       text = '';
@@ -1672,7 +1672,7 @@
     if (item && !searchOpts.regex) {
       var type = item[1].toUpperCase();
       var guard = type === 'R' ? '(?:^|[^A-Z])' : '\\b';
-      re = new RegExp(guard + '(' + type + '\\[' + item[2] + '(?::[^\\]]*)?\\])', 'g');
+      re = new RegExp(guard + '(' + type + '\\[\\s*' + item[2] + '\\s*(?::[^\\]]*)?\\])', 'g');
       return function (text) {
         re.lastIndex = 0;
         var m = re.exec(text);
