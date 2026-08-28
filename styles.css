@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V11 — styles.css
+   What the Wether V12 — styles.css
    All colors come from CSS variables so themes are one block
    each. Default theme: Neon Dark. Others: Midnight, Light.
    ============================================================ */
@@ -509,6 +509,52 @@ input[type="range"]::-moz-range-thumb {
   display: inline-block; width: 8px; height: 12px;
   background: var(--accent-2); opacity: 0.45; border-radius: 2px; margin-left: 0.35rem;
 }
+
+/* ---------------- Actionable stat + temperature modal ---------------- */
+
+.stat-action { cursor: pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+.stat-action:hover { border-color: var(--accent); box-shadow: var(--glow); }
+.stat-action:active { transform: scale(0.98); }
+.stat-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stat-hint { opacity: 0.75; font-size: 0.8em; }
+
+body.modal-open { overflow: hidden; }
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+  z-index: 130;
+}
+
+.temp-modal {
+  position: fixed;
+  z-index: 140;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(760px, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: var(--shadow), var(--glow);
+  padding: 1.1rem 1.2rem calc(1.1rem + env(safe-area-inset-bottom));
+}
+.temp-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.7rem;
+}
+.temp-modal-head h2 { font-size: 1.05rem; letter-spacing: 0.4px; }
+.temp-modal-summary { font-size: 0.8rem; color: var(--text-dim); margin-top: 0.15rem; }
+.temp-chart-wrap { width: 100%; overflow: hidden; }
+#tempChartCanvas { display: block; width: 100%; }
+.temp-modal-note { font-size: 0.72rem; color: var(--text-dim); margin-top: 0.6rem; }
 
 /* ---------------- Rain nowcast ---------------- */
 

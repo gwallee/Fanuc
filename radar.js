@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V11 — radar.js
+   What the Wether V12 — radar.js
    Canvas radar scope with a real basemap underneath.
 
    Layers, bottom to top, all projected in EPSG:3857 so they align:
@@ -28,8 +28,10 @@ const WTWRadar = (() => {
     timelineMinute: 60, scrubbing: false,
     cells: [], locationLabel: 'No location', weatherSeed: null,
 
-    source: 'sim',          // 'sim' | 'nws'
+    source: 'sim',          // 'sim' | 'tiles' | 'nws'
     frames: [], frameIndex: 0, frameAccum: 0,
+    tileHost: '',           // RainViewer host for the current frame set
+    frameAge: null,         // minutes since the newest frame
     loadToken: 0,
 
     coords: null,           // searched location (marker)
@@ -73,12 +75,35 @@ const WTWRadar = (() => {
     });
   }
 
+  // Timestamped worldwide frames. Preferred: every frame is a real
+  // observation at a known time, so the loop and its labels are true.
+  async function loadTileFrames(token) {
+    const index = await WTWRadarSource.getFrames();
+    if (!index || token !== state.loadToken) return false;
+    state.source = 'tiles';
+    state.tileHost = index.host;
+    state.frames = index.frames.map((f) => ({ time: f.time, path: f.path }));
+    state.frameIndex = state.frames.length - 1;
+    state.frameAccum = 0;
+    state.frameAge = WTWRadarSource.ageMinutes(state.frames);
+    return true;
+  }
+
   async function loadRealFrames() {
     const c = imgCfg();
-    if (!c.enabled || !state.center) return false;
+    if (!state.center) return false;
 
     const token = ++state.loadToken;
     setStatus('FETCHING', false);
+
+    // 1. Real frame index (worldwide).
+    try {
+      if (await loadTileFrames(token)) return true;
+    } catch (err) {
+      console.warn('[radar] tile frames failed', err && err.message);
+    }
+    if (token !== state.loadToken) return false;
+    if (!c.enabled) return false;
 
     const view = currentView();
     const stepMs = (c.frameStepMin || 10) * 60000;
@@ -101,6 +126,7 @@ const WTWRadar = (() => {
     state.frames = frames;
     state.frameIndex = frames.length - 1;
     state.frameAccum = 0;
+    state.frameAge = (Date.now() - frames[frames.length - 1].time.getTime()) / 60000;
     return true;
   }
 
@@ -229,7 +255,16 @@ const WTWRadar = (() => {
     }
 
     // 2. Precipitation
-    if (state.source === 'nws' && state.frames.length) {
+    if (state.source === 'tiles' && state.frames.length) {
+      const frame = state.frames[Math.min(state.frameIndex, state.frames.length - 1)];
+      if (frame) {
+        ctx.globalAlpha = 0.85;
+        WTWMap.drawTiles(ctx, view, size, originX, originY,
+          (z, x, y) => WTWRadarSource.tileUrl(state.tileHost, frame.path, z, x, y),
+          () => draw(), { maxZoom: 10 });
+        ctx.globalAlpha = 1;
+      }
+    } else if (state.source === 'nws' && state.frames.length) {
       const frame = state.frames[Math.min(state.frameIndex, state.frames.length - 1)];
       if (frame && frame.img) {
         ctx.globalAlpha = 0.85;
@@ -439,7 +474,7 @@ const WTWRadar = (() => {
       const prev = state.sweepAngle;
       state.sweepAngle = (state.sweepAngle + (Math.PI * 2 / secsPerRev) * dt) % (Math.PI * 2);
 
-      if (state.source === 'nws' && state.frames.length > 1) {
+      if (hasTimestampedFrames() && state.frames.length > 1) {
         if (!state.scrubbing) {
           state.frameAccum += dt * 1000;
           const stepMs = cfg().framePlaybackMs || 750;
@@ -509,19 +544,40 @@ const WTWRadar = (() => {
   function updateSourceBadge() {
     const badge = document.getElementById('radarSource');
     if (!badge) return;
-    const live = state.source === 'nws' && state.frames.length > 0;
-    badge.textContent = live ? 'NWS LIVE' : 'SIMULATED';
+    const hasFrames = state.frames.length > 0;
+    const maxAge = (window.WTW_CONFIG && WTW_CONFIG.radarTiles &&
+                    WTW_CONFIG.radarTiles.maxAgeMinutes) || 30;
+    const stale = state.frameAge !== null && state.frameAge > maxAge;
+
+    let text = 'SIMULATED';
+    let title = 'No live radar for this location — showing a simulation based on current conditions';
+    let live = false;
+
+    if (hasFrames && state.source === 'tiles') {
+      live = !stale;
+      text = stale ? 'RADAR (STALE)' : 'LIVE RADAR';
+      title = `RainViewer composite, newest frame ${Math.round(state.frameAge)} min old`;
+    } else if (hasFrames && state.source === 'nws') {
+      live = !stale;
+      text = stale ? 'NWS (STALE)' : 'NWS LIVE';
+      title = 'NOAA/NWS base reflectivity mosaic';
+    }
+
+    badge.textContent = text;
     badge.classList.toggle('live-source', live);
-    badge.title = live
-      ? 'Real NOAA/NWS base reflectivity imagery'
-      : 'No live NWS radar for this location — showing a simulation based on current conditions';
+    badge.title = title;
+  }
+
+  function hasTimestampedFrames() {
+    return (state.source === 'tiles' || state.source === 'nws') && state.frames.length > 0;
   }
 
   function timelineLabelText() {
-    if (state.source === 'nws' && state.frames.length) {
+    if (hasTimestampedFrames()) {
       const i = Math.min(state.frameIndex, state.frames.length - 1);
       if (i === state.frames.length - 1) return 'NOW';
-      return state.frames[i].time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      return window.WTWUnits ? WTWUnits.time(state.frames[i].time)
+        : state.frames[i].time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     }
     const back = (cfg().frameMinutes || 60) - Math.round(state.timelineMinute);
     return back <= 0 ? 'NOW' : `-${back} min`;
@@ -531,13 +587,14 @@ const WTWRadar = (() => {
     const slider = document.getElementById('radarTimeline');
     const caption = document.querySelector('.timeline-caption');
     if (!slider) return;
-    if (state.source === 'nws' && state.frames.length) {
+    if (hasTimestampedFrames()) {
       slider.min = '0';
       slider.max = String(state.frames.length - 1);
       slider.step = '1';
       slider.value = String(state.frameIndex);
-      if (caption) caption.textContent = state.frames[0].time
-        .toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      if (caption) caption.textContent = window.WTWUnits
+        ? WTWUnits.time(state.frames[0].time)
+        : state.frames[0].time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     } else {
       slider.min = '0';
       slider.max = String(cfg().frameMinutes || 60);
@@ -796,7 +853,7 @@ const WTWRadar = (() => {
     if (slider) {
       slider.addEventListener('input', () => {
         state.scrubbing = true;
-        if (state.source === 'nws' && state.frames.length) {
+        if (hasTimestampedFrames()) {
           state.frameIndex = Math.max(0, Math.min(state.frames.length - 1, Number(slider.value)));
         } else {
           state.timelineMinute = Number(slider.value);

@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V11 — map.js
+   What the Wether V12 — map.js
    Web Mercator projection helpers plus a basemap tile layer for
    the radar scope.
 
@@ -101,22 +101,19 @@ const WTWMap = (() => {
   }
 
   /* ------------------------------------------------------------
-     Draw the basemap covering `view` into a square canvas region
-     of `size` px, whose top-left is (originX, originY).
+     Draw any XYZ tile layer covering `view` into a square canvas
+     region of `size` px whose top-left is (originX, originY).
+     `buildUrl(z, x, y)` returns a URL or null to skip.
      Returns the number of tiles actually painted.
      ------------------------------------------------------------ */
-  function drawBasemap(ctx, view, size, originX, originY, onTileReady) {
-    const cfg = (window.WTW_CONFIG && WTW_CONFIG.map) || {};
-    if (!cfg.enabled) return 0;
-
-    const z = zoomFor(view, size);
+  function drawTiles(ctx, view, size, originX, originY, buildUrl, onTileReady, opts = {}) {
+    const z = Math.max(2, Math.min(opts.maxZoom || 12, zoomFor(view, size)));
     const span = tileSpan(z);
     const metersPerPx = (view.half * 2) / size;
     const n = Math.pow(2, z);
 
     const minTx = Math.floor((view.minX + WORLD) / span);
     const maxTx = Math.floor((view.maxX + WORLD) / span);
-    // Tile rows run north to south, so max latitude is the first row.
     const minTy = Math.floor((WORLD - view.maxY) / span);
     const maxTy = Math.floor((WORLD - view.minY) / span);
 
@@ -124,8 +121,8 @@ const WTWMap = (() => {
     for (let tx = minTx; tx <= maxTx; tx++) {
       for (let ty = minTy; ty <= maxTy; ty++) {
         if (ty < 0 || ty >= n) continue;
-        const wrappedX = ((tx % n) + n) % n;   // wrap across the antimeridian
-        const url = tileUrl(z, wrappedX, ty);
+        const wrappedX = ((tx % n) + n) % n;
+        const url = buildUrl(z, wrappedX, ty);
         const img = loadTile(url, onTileReady);
         if (!img || !img.complete || img.naturalWidth === 0) continue;
 
@@ -134,13 +131,18 @@ const WTWMap = (() => {
         const px = originX + (tileMinX - view.minX) / metersPerPx;
         const py = originY + (view.maxY - tileMaxY) / metersPerPx;
         const pw = span / metersPerPx;
-
-        // +1px covers seams from sub-pixel rounding.
         ctx.drawImage(img, px, py, pw + 1, pw + 1);
         painted++;
       }
     }
     return painted;
+  }
+
+  function drawBasemap(ctx, view, size, originX, originY, onTileReady) {
+    const cfg = (window.WTW_CONFIG && WTW_CONFIG.map) || {};
+    if (!cfg.enabled) return 0;
+    return drawTiles(ctx, view, size, originX, originY,
+      (z, x, y) => tileUrl(z, x, y), onTileReady);
   }
 
   /* ---------------- Geo <-> screen ---------------- */
@@ -168,7 +170,7 @@ const WTWMap = (() => {
 
   return {
     lonToX, latToY, xToLon, yToLat,
-    viewBox, bbox3857, zoomFor, drawBasemap, project, panCenter, clearCache,
+    viewBox, bbox3857, zoomFor, drawBasemap, drawTiles, project, panCenter, clearCache,
     WORLD,
   };
 })();

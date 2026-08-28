@@ -1,4 +1,4 @@
-# What the Wether V11 ⚡🌩️
+# What the Wether V12 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -80,12 +80,31 @@ anywhere in the app.
   no network needed
 - **Daylight length** and **solar noon**, derived exactly from sunrise/sunset
 
-### ⏳ Rain nowcast
-"Precipitation starting in about 35m, lasting roughly 1h" — from Open-Meteo's
-15-minute series, with a compact two-hour strip underneath. Where that series
-isn't published the hourly one is used and the wording says "within the hour"
-instead of implying minute precision the data doesn't have. The panel always
-states which resolution it used.
+### 🌧️ Rain, from the most authoritative source available
+Precipitation does **not** come from the same service as the rest of the
+forecast. `rain.js` tries three independent sources in order and labels
+whichever one answered:
+
+1. **NWS forecast grid** (US) — the local forecast office's own quantitative
+   precipitation forecast and probability grid: the numbers the public NWS
+   forecast is actually built from. Values arrive as ISO-8601 intervals
+   (`PT6H` and friends); amounts are spread evenly across the hours they
+   cover, probabilities repeated across them.
+2. **MET Norway** (worldwide) — an independent national met service, not
+   another view of the same model.
+3. **Open-Meteo** — a model blend, kept only as a last resort.
+
+The nowcast panel names the source and the resolution, e.g.
+*"NWS forecast grid · hourly data"*, so a figure can always be traced back.
+
+"Precipitation starting in about 35m, lasting roughly 1h" — with a compact
+two-hour strip underneath. With an hourly source the wording says "within the
+hour" rather than implying minute precision the data doesn't have.
+
+### 📈 Temperature trend
+Tap the **High / Low** readout for a 7-day chart: both curves, a filled band
+between them, labelled points, and day names — in your selected units.
+Keyboard accessible, closes with `Escape` or a tap outside.
 
 ### 🗺️ Your Locations
 Every saved favorite side by side — temperature, conditions, high/low and rain
@@ -118,11 +137,24 @@ Fullscreen button to come back.
 The radar has two modes and always tells you which one you're looking at,
 via the badge next to the status light.
 
-**`NWS LIVE` — real radar (US).** Georeferenced base-reflectivity imagery
-from [NOAA's public GeoServer](https://opengeo.ncep.noaa.gov/) (the
-`conus_bref_qcd` mosaic — free, no key), drawn over an actual basemap so
-storms sit against real geography. Six timestamped frames 10 minutes apart
-build a genuine radar loop; the timeline scrubs them by clock time.
+**`LIVE RADAR` — real frames at real times (worldwide).** V12 fixed an
+accuracy problem in how frames were requested. V9–V11 asked NOAA's WMS for
+frames at *guessed* times — every 10 minutes, on the clock — but the mosaic
+publishes on its own cadence, so a guessed timestamp could return the nearest
+frame, a repeat of one already shown, or nothing. The loop could look wrong
+even when the imagery was right.
+
+Now the app reads [RainViewer's](https://www.rainviewer.com/api.html) published
+frame index (free, no key) and draws exactly the frames that exist, at their
+real timestamps. Every frame is a genuine observation and every timeline label
+is the truth. The badge also reports **staleness**: if the newest frame is
+older than `radarTiles.maxAgeMinutes`, it reads `RADAR (STALE)` instead of
+claiming to be live, and its tooltip gives the frame age in minutes.
+
+**`NWS LIVE` — NOAA mosaic (US fallback).** If the frame index is
+unreachable, the app falls back to base-reflectivity imagery from
+[NOAA's public GeoServer](https://opengeo.ncep.noaa.gov/) (`conus_bref_qcd`),
+drawn over the basemap as before.
 
 Every layer — basemap tiles, reflectivity, and alert polygons — is projected
 in **EPSG:3857 (Web Mercator)** so they align exactly. (V8 requested radar in
@@ -218,7 +250,7 @@ bucket, a USB stick...
 ## Project structure
 
 ```
-WhatTheWether-V11/
+WhatTheWether-V12/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
@@ -226,7 +258,10 @@ WhatTheWether-V11/
 ├── local-ai.js     # Local AI 3.0 roast generator (offline)
 ├── units.js        # Imperial/metric + clock formatting (single source)
 ├── air.js          # Air quality, pollen, moon phase, sun figures
-├── precip.js       # Minute-scale rain nowcast
+├── rain.js         # Chooses the most authoritative precipitation source
+├── precip.js       # Nowcast analysis and wording
+├── radarsource.js  # Timestamped radar frame index
+├── tempchart.js    # 7-day temperature trend chart
 ├── compare.js      # Multi-location dashboard
 ├── nws.js          # National Weather Service client (obs, forecast, alerts)
 ├── map.js          # Web Mercator projection + basemap tiles
@@ -250,8 +285,8 @@ WhatTheWether-V11/
 
 Script load order matters and is already correct in `index.html`:
 `config.js → storage.js → themes.js → units.js → nws.js → air.js →
-precip.js → compare.js → map.js → hourly.js → share.js → local-ai.js →
-radar.js → app.js`.
+rain.js → precip.js → tempchart.js → compare.js → map.js → radarsource.js →
+hourly.js → share.js → local-ai.js → radar.js → app.js`.
 
 ## APIs used (all free, all key-less)
 
@@ -264,6 +299,14 @@ radar.js → app.js`.
 | [Zippopotam.us](https://api.zippopotam.us/) | US ZIP code lookup | **No** |
 | [Carto basemaps](https://carto.com/basemaps/) | Map tiles under the radar | **No** |
 | [Open-Meteo Air Quality](https://open-meteo.com/en/docs/air-quality-api) | AQI, pollutants, pollen | **No** |
+| [NWS forecast grid](https://www.weather.gov/documentation/services-web-api) | US precipitation (QPF + PoP) | **No** |
+| [MET Norway](https://api.met.no/weatherapi/locationforecast/2.0/documentation) | Worldwide precipitation | **No** |
+| [RainViewer](https://www.rainviewer.com/api.html) | Timestamped radar frames | **No** |
+
+MET Norway asks API clients to identify themselves with a User-Agent.
+Browsers set their own and don't let scripts override it, so nothing is needed
+here — but if you port this to a server or desktop runtime, set a contact
+User-Agent there and respect their terms.
 
 V9 asks NWS and Open-Meteo **in parallel**. NWS is authoritative for US
 observations, forecasts and alerts; Open-Meteo covers the rest of the world

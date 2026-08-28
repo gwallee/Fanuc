@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V11 — app.js
+   What the Wether V12 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -19,6 +19,7 @@
     alerts: [],
     air: null,
     nowcast: null,
+    rainSeries: null,
     notifiedAlerts: [],
     offline: false,
     lastRoast: null,
@@ -236,6 +237,7 @@
         daily,
         hours,
         raw: om ? om.raw : null,
+        nwsPoint: nws.point,
         detail: {
           // Sun times and UV come from Open-Meteo — NWS publishes neither.
           sunrise: om && om.detail ? om.detail.sunrise : null,
@@ -248,7 +250,7 @@
       };
     }
 
-    if (om) return { source: 'open-meteo', ...om };
+    if (om) return { source: 'open-meteo', nwsPoint: null, ...om };
     throw new Error('No weather source available');
   }
 
@@ -347,6 +349,7 @@
       restateRoast();
     }
     WTWHourly.redraw();
+    WTWTempChart.redraw();
     WTWRadar.onUnitsChange();
     renderCompare();
     renderRoastLog();
@@ -398,6 +401,30 @@
     renderAlerts();
     WTWRadar.setAlerts(state.alerts);
     notifyNewAlerts();
+  }
+
+  /* ------------------------------------------------------------
+     Precipitation comes from the best source available for this
+     point, not necessarily the same service as the rest of the
+     forecast — see rain.js. It is fetched separately so a slow or
+     missing rain source never delays the main render.
+     ------------------------------------------------------------ */
+  async function loadRain(location, result) {
+    try {
+      const series = await WTWRain.getSeries({
+        lat: location.lat,
+        lon: location.lon,
+        nwsPoint: result.nwsPoint || null,
+        openMeteoRaw: result.raw || null,
+      });
+      state.rainSeries = series;
+      state.nowcast = WTWPrecip.nowcast(series);
+    } catch (err) {
+      console.warn('[app] rain source failed', err);
+      state.nowcast = null;
+    }
+    renderNowcast();
+    saveSnapshot();
   }
 
   async function loadAir(location) {
@@ -519,6 +546,25 @@
     card.hidden = false;
   }
 
+  /* ---------------- Temperature trend ---------------- */
+
+  function openTempChart(open) {
+    const modal = $('tempModal');
+    const overlay = $('tempModalOverlay');
+    if (!modal) return;
+    modal.hidden = !open;
+    if (overlay) overlay.hidden = !open;
+    document.body.classList.toggle('modal-open', open);
+    if (open) {
+      WTWTempChart.setDays(state.daily);
+      WTWTempChart.resize();
+      const w = state.weather || {};
+      $('tempModalSummary').textContent =
+        `${w.city || ''} · today ${U().temp(w.highF)} / ${U().temp(w.lowF)}`;
+      $('tempModalClose').focus();
+    }
+  }
+
   /* ---------------- Rain nowcast ---------------- */
 
   function renderNowcast() {
@@ -529,9 +575,10 @@
     wrap.hidden = false;
     $('nowcastText').textContent = n.text;
     $('nowcastIcon').textContent = n.rainingNow ? '🌧️' : (n.startsIn !== null ? '⏳' : '✅');
-    $('nowcastPrecision').textContent = n.precise
-      ? '15-minute data'
-      : 'hourly data — no minute-scale series here';
+    const resolution = n.precise ? '15-minute data' : 'hourly data';
+    $('nowcastPrecision').textContent = n.sourceLabel
+      ? `${n.sourceLabel} · ${resolution}`
+      : resolution;
     drawNowcastStrip(n);
   }
 
@@ -733,6 +780,11 @@
       detail: state.detail,
       alerts: state.alerts,
       air: state.air,
+      nowcast: state.nowcast ? {
+        text: state.nowcast.text,
+        sourceLabel: state.nowcast.sourceLabel,
+        precise: state.nowcast.precise,
+      } : null,
       savedAt: Date.now(),
     });
   }
@@ -794,8 +846,7 @@
       WTWRadar.setLocation(location.name, result.weather, {
         lat: location.lat, lon: location.lon,
       });
-      state.nowcast = WTWPrecip.nowcast(result.raw, state.hours);
-      renderNowcast();
+      loadRain(location, result);
 
       WTWStorage.saveLastLocation(location);
       updateSaveButton();
@@ -1143,6 +1194,23 @@
     $('radarRecenter').addEventListener('click', () => WTWRadar.recenter());
     $('radarFullscreenBtn').addEventListener('click', () => WTWRadar.toggleFullscreen());
 
+    // The High / Low readout opens the temperature trend.
+    const hiLo = $('wxHiLoStat');
+    if (hiLo) {
+      hiLo.addEventListener('click', () => openTempChart(true));
+      hiLo.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+          e.preventDefault();
+          openTempChart(true);
+        }
+      });
+    }
+    $('tempModalClose').addEventListener('click', () => openTempChart(false));
+    $('tempModalOverlay').addEventListener('click', () => openTempChart(false));
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !$('tempModal').hidden) openTempChart(false);
+    });
+
     $('compareRefreshBtn').addEventListener('click', () => {
       renderCompare({ refresh: true });
       toast('Refreshing your locations…');
@@ -1162,6 +1230,7 @@
     renderCompare();
     WTWRadar.init('radarCanvas');
     WTWHourly.init('hourlyCanvas');
+    WTWTempChart.init('tempChartCanvas');
     registerServiceWorker();
     watchConnectivity();
     watchResize();

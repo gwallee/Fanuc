@@ -1,11 +1,12 @@
 /* ============================================================
-   What the Wether V11 — precip.js
-   Minute-scale precipitation nowcast: "rain starts in ~20 min".
+   What the Wether V12 — precip.js
+   Precipitation nowcast: "rain starts in ~20 min".
 
-   Open-Meteo publishes a 15-minute series for much of Europe and
-   North America. Where it is missing the hourly series is used
-   instead, and the wording says "within the hour" rather than
-   implying minute precision the data does not have.
+   The series itself comes from rain.js, which picks the most
+   authoritative available source. This module only analyses it, and
+   the wording adapts to the resolution actually supplied: a
+   15-minute series gets minute-level phrasing, an hourly one says
+   "within the hour" rather than implying precision it lacks.
    ============================================================ */
 
 const WTWPrecip = (() => {
@@ -125,12 +126,16 @@ const WTWPrecip = (() => {
      Public entry: hand it the raw Open-Meteo payload and the
      normalized hourly list; it picks the best series available.
      ------------------------------------------------------------ */
-  function nowcast(openMeteoData, hourly, now = new Date()) {
+  function nowcast(series, now = new Date()) {
     if (cfg().enabled === false) return null;
-    const series = fromMinutely15(openMeteoData) || fromHourly(hourly);
+    if (!series || !series.slots) return null;
     const result = analyse(series, now);
     if (!result) return null;
-    return Object.assign(result, { text: describe(result) });
+    return Object.assign(result, {
+      text: describe(result),
+      source: series.source || null,
+      sourceLabel: series.label || null,
+    });
   }
 
   return { nowcast, analyse, describe, fromMinutely15, fromHourly, isWet };

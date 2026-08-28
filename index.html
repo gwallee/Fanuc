@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0e17" />
-  <meta name="description" content="What the Wether V11 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
-  <title>What the Wether V11 ⚡🌩️</title>
+  <meta name="description" content="What the Wether V12 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
+  <title>What the Wether V12 ⚡🌩️</title>
   <link rel="icon" type="image/svg+xml" href="logo.svg" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="manifest" href="manifest.json" />
@@ -21,7 +21,7 @@
     <div class="brand">
       <img src="logo.svg" alt="What the Wether logo" class="brand-logo" />
       <div class="brand-text">
-        <h1>What the Wether <span class="version-badge" id="appVersion">V11</span></h1>
+        <h1>What the Wether <span class="version-badge" id="appVersion">V12</span></h1>
         <p class="brand-greeting">Yo, <strong data-username>DJTheBest</strong> ⚡</p>
       </div>
     </div>
@@ -85,7 +85,12 @@
         <div class="stat"><span class="stat-label">Feels like</span><span class="stat-value" id="wxFeels">--°</span></div>
         <div class="stat"><span class="stat-label">Humidity</span><span class="stat-value" id="wxHumidity">--%</span></div>
         <div class="stat"><span class="stat-label">Wind</span><span class="stat-value" id="wxWind">-- mph</span></div>
-        <div class="stat"><span class="stat-label">High / Low</span><span class="stat-value" id="wxHiLo">--° / --°</span></div>
+        <div class="stat stat-action" id="wxHiLoStat" role="button" tabindex="0"
+             title="Tap for the temperature trend"
+             aria-label="High and low temperature. Activate for the temperature trend chart.">
+          <span class="stat-label">High / Low <span class="stat-hint">📈</span></span>
+          <span class="stat-value" id="wxHiLo">--° / --°</span>
+        </div>
         <div class="stat"><span class="stat-label">Rain chance</span><span class="stat-value" id="wxRain">--%</span></div>
       </div>
       <div class="nowcast-panel" id="nowcastPanel" hidden>
@@ -311,11 +316,28 @@
     <p class="settings-footnote">Everything is stored locally in your browser. No accounts, no API keys.</p>
   </aside>
 
+  <!-- ================= Temperature trend ================= -->
+  <div class="modal-overlay" id="tempModalOverlay" hidden></div>
+  <div class="temp-modal" id="tempModal" role="dialog" aria-modal="true"
+       aria-labelledby="tempModalTitle" hidden>
+    <div class="temp-modal-head">
+      <div>
+        <h2 id="tempModalTitle">📈 Temperature Trend</h2>
+        <p class="temp-modal-summary" id="tempModalSummary"></p>
+      </div>
+      <button type="button" id="tempModalClose" class="btn btn-small" aria-label="Close chart">✕</button>
+    </div>
+    <div class="temp-chart-wrap">
+      <canvas id="tempChartCanvas" aria-label="Seven day high and low temperature chart"></canvas>
+    </div>
+    <p class="temp-modal-note">Highs and lows for the next 7 days, in your selected units.</p>
+  </div>
+
   <!-- ================= Toast ================= -->
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <footer class="app-footer">
-    <span>What the Wether <span id="appVersionFooter">V11</span> ⚡🌩️ — data from the
+    <span>What the Wether <span id="appVersionFooter">V12</span> ⚡🌩️ — data from the
       <a href="https://www.weather.gov/documentation/services-web-api" target="_blank" rel="noopener">National Weather Service</a>
       and <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, radar from
       <a href="https://opengeo.ncep.noaa.gov/" target="_blank" rel="noopener">NOAA</a> — no API keys needed</span>
@@ -328,9 +350,12 @@
   <script src="units.js"></script>
   <script src="nws.js"></script>
   <script src="air.js"></script>
+  <script src="rain.js"></script>
   <script src="precip.js"></script>
+  <script src="tempchart.js"></script>
   <script src="compare.js"></script>
   <script src="map.js"></script>
+  <script src="radarsource.js"></script>
   <script src="hourly.js"></script>
   <script src="share.js"></script>
   <script src="local-ai.js"></script>

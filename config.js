@@ -1,12 +1,12 @@
 /* ============================================================
-   What the Wether V11 — config.js
+   What the Wether V12 — config.js
    Central configuration. No API keys required, ever.
    ============================================================ */
 
 const WTW_CONFIG = {
   app: {
     name: 'What the Wether',
-    version: 'V11',
+    version: 'V12',
     tagline: 'Weather with an attitude problem.',
   },
 
@@ -34,6 +34,22 @@ const WTW_CONFIG = {
     nws: 'https://api.weather.gov',
     // Open-Meteo air quality + pollen: free, no key.
     airQuality: 'https://air-quality-api.open-meteo.com/v1/air-quality',
+    // MET Norway (yr.no) forecast: free, no key, worldwide.
+    metno: 'https://api.met.no/weatherapi/locationforecast/2.0/complete',
+  },
+
+  // Where precipitation figures come from, best first. Each is free and
+  // key-less; the app labels whichever one actually answered.
+  //   nws-grid  — the local forecast office's own QPF and PoP grid (US)
+  //   met-no    — MET Norway locationforecast (worldwide)
+  //   open-meteo— model blend, used as the last resort
+  rain: {
+    order: ['nws-grid', 'met-no', 'open-meteo'],
+    labels: {
+      'nws-grid': 'NWS forecast grid',
+      'met-no': 'MET Norway',
+      'open-meteo': 'Open-Meteo',
+    },
   },
 
   unitSystems: [
@@ -52,6 +68,21 @@ const WTW_CONFIG = {
 
   compare: {
     maxLocations: 8,   // favorites fetched for the compare grid
+  },
+
+  // Worldwide radar frames with published timestamps (no API key).
+  // Preferred over the WMS mosaic because the frame index says which
+  // observations actually exist, instead of guessing round times.
+  radarTiles: {
+    enabled: true,
+    indexUrl: 'https://api.rainviewer.com/public/weather-maps.json',
+    frameCount: 8,
+    tileSize: 256,
+    colorScheme: 4,   // RainViewer palette id
+    smooth: true,
+    showSnow: true,
+    // Frames older than this are labelled stale rather than "live".
+    maxAgeMinutes: 30,
   },
 
   // Real radar imagery. NOAA's public GeoServer serves the CONUS

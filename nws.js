@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V11 — nws.js
+   What the Wether V12 — nws.js
    National Weather Service (api.weather.gov) client.
 
    Free, no API key, CORS-enabled. US + territories only, so
@@ -65,6 +65,7 @@ const NWS = (() => {
       return {
         forecastUrl: p.forecast,
         hourlyUrl: p.forecastHourly,
+        gridDataUrl: p.forecastGridData,
         stationsUrl: p.observationStations,
         radarStation: p.radarStation || null,
         city: rel.city || null,
@@ -235,6 +236,69 @@ const NWS = (() => {
   }
 
   /* ------------------------------------------------------------
+     Raw forecast grid: the office's own quantitative precipitation
+     forecast and probability of precipitation. This is the source the
+     public NWS forecast is built from, so it is the most authoritative
+     precipitation figure available for a US point.
+
+     Values arrive as ISO-8601 intervals ("<start>/<duration>"), each
+     covering 1 to 12 hours, so they are expanded to hourly slots with
+     the amount divided evenly across the interval.
+     ------------------------------------------------------------ */
+
+  // Parses the subset of ISO-8601 durations NWS emits (PT6H, P1DT2H…).
+  function durationHours(text) {
+    const m = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?$/.exec(String(text || ''));
+    if (!m) return 1;
+    const days = Number(m[1] || 0);
+    const hours = Number(m[2] || 0);
+    const minutes = Number(m[3] || 0);
+    const total = days * 24 + hours + minutes / 60;
+    return total > 0 ? total : 1;
+  }
+
+  // [{ validTime, value }] -> Map of hour-start ms -> value
+  function expandToHours(values, { divide = false } = {}) {
+    const out = new Map();
+    (values || []).forEach((entry) => {
+      if (!entry || entry.value === null || entry.value === undefined) return;
+      const [startText, durText] = String(entry.validTime).split('/');
+      const start = new Date(startText);
+      if (isNaN(start)) return;
+      const hours = Math.max(1, Math.round(durationHours(durText)));
+      // An amount covers the whole interval, so spread it; a probability
+      // applies to every hour in it, so repeat it.
+      const perHour = divide ? entry.value / hours : entry.value;
+      for (let i = 0; i < hours; i++) {
+        out.set(start.getTime() + i * 3600000, perHour);
+      }
+    });
+    return out;
+  }
+
+  async function getPrecipitationGrid(point) {
+    if (!point || !point.gridDataUrl) return null;
+    try {
+      const data = await getJSON(point.gridDataUrl);
+      const p = data.properties || {};
+      const pop = expandToHours(p.probabilityOfPrecipitation && p.probabilityOfPrecipitation.values);
+      const qpf = expandToHours(
+        p.quantitativePrecipitation && p.quantitativePrecipitation.values, { divide: true });
+      if (!pop.size && !qpf.size) return null;
+
+      const stamps = Array.from(new Set([...pop.keys(), ...qpf.keys()])).sort((a, b) => a - b);
+      return stamps.map((ms) => ({
+        time: new Date(ms),
+        mm: qpf.has(ms) ? qpf.get(ms) : null,
+        prob: pop.has(ms) ? pop.get(ms) : null,
+      }));
+    } catch (err) {
+      console.warn('[nws] precipitation grid failed', err.message);
+      return null;
+    }
+  }
+
+  /* ------------------------------------------------------------
      Active watches / warnings / advisories for a point.
      Geometry is kept so the radar can outline the warned area;
      zone-based alerts sometimes carry none, which is fine.
@@ -290,7 +354,8 @@ const NWS = (() => {
     return 0;
   }
 
-  return { getPoint, getCurrentObservation, getForecast, getHourly, getAlerts, textToCode };
+  return { getPoint, getCurrentObservation, getForecast, getHourly, getAlerts,
+           getPrecipitationGrid, textToCode, durationHours };
 })();
 
 window.NWS = NWS;

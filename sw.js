@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V11 — sw.js
+   What the Wether V12 — sw.js
    Service worker: precaches the app shell so the app opens
    instantly and works offline, and keeps a runtime cache of the
    last successful weather responses to fall back on.
@@ -8,7 +8,7 @@
    is deleted on activate.
    ============================================================ */
 
-const CACHE_VERSION = 'wtw-v11-2';
+const CACHE_VERSION = 'wtw-v12-2';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 
@@ -22,9 +22,12 @@ const SHELL = [
   './nws.js',
   './units.js',
   './air.js',
+  './rain.js',
   './precip.js',
+  './tempchart.js',
   './compare.js',
   './map.js',
+  './radarsource.js',
   './hourly.js',
   './share.js',
   './local-ai.js',
@@ -66,7 +69,8 @@ self.addEventListener('fetch', (event) => {
   const isWeatherApi =
     url.hostname === 'api.weather.gov' ||
     url.hostname.endsWith('open-meteo.com') ||
-    url.hostname === 'api.zippopotam.us';
+    url.hostname === 'api.zippopotam.us' ||
+    url.hostname === 'api.met.no';
 
   // Weather data: network first, fall back to the last good response.
   if (isWeatherApi) {
@@ -92,7 +96,8 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Radar imagery and basemap tiles: always live, never cached.
-  if (url.hostname.includes('ncep.noaa.gov') || url.hostname.includes('cartocdn.com')) return;
+  if (url.hostname.includes('ncep.noaa.gov') || url.hostname.includes('cartocdn.com') ||
+      url.hostname.includes('rainviewer.com')) return;
 
   // The page itself is network-first. Cache-first on the document is how
   // a deployed update can go unseen for a whole session: the browser

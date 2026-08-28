@@ -1,4 +1,4 @@
-/* What the Wether V11 — Electron main process.
+/* What the Wether V12 — Electron main process.
    Loads the exact same static web app from the parent folder. */
 
 const { app, BrowserWindow, shell } = require('electron');

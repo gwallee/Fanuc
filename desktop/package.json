@@ -1,8 +1,8 @@
 {
   "name": "what-the-wether-desktop",
   "productName": "What the Wether",
-  "version": "11.0.0",
-  "description": "What the Wether V11 desktop app — neon weather with a fullscreen real-map radar, metric/imperial units, air quality, rain nowcast and a local roast AI. No API keys.",
+  "version": "12.0.0",
+  "description": "What the Wether V12 desktop app — neon weather with a timestamped real-map radar, independent rain sources, temperature trends and a local roast AI. No API keys.",
   "main": "main.js",
   "scripts": {
     "start": "electron ."
