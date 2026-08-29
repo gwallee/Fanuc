@@ -225,9 +225,22 @@ function omBody() {
     return moved;
   });
   await check('recenter returns to the location', async () => {
+    const before = wmsUrls.length;
     await page.click('#radarRecenter');
-    return waitFor(() =>
+    // A new request, centred back on the location — not merely a stale
+    // one that happens to still be last in the list.
+    const ok = await waitFor(() => wmsUrls.length > before &&
       Math.abs(centreLon(wmsUrls[wmsUrls.length - 1]) - AUSTIN.lon) < 0.05);
+    if (!ok) {
+      // This check has failed on CI and passed here three times running.
+      // Guessing at the cause from a bare FAIL is what made that happen,
+      // so say what was actually seen.
+      console.log(`  [diag] requests before=${before} after=${wmsUrls.length} ` +
+        `lastLons=${wmsUrls.slice(-3).map((u) => centreLon(u).toFixed(3)).join(' ')} ` +
+        `wanted=${AUSTIN.lon} fullscreen=${await page.evaluate(() =>
+          document.body.classList.contains('radar-fullscreen') || !!document.fullscreenElement)}`);
+    }
+    return ok;
   });
   await check('attribution is displayed', async () =>
     /OpenStreetMap/.test(await page.textContent('.radar-attribution')));
