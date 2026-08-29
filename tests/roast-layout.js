@@ -38,8 +38,8 @@ const BROWSER = process.env.PLAYWRIGHT_CHROMIUM || undefined;
     page.evaluate(() => !!document.getElementById('currentCard').querySelector('#roastText')));
   await check('separate roast card is gone', async () =>
     (await page.locator('.roast-card').count()) === 0);
-  await check('roast sits below the weather stats', () => page.evaluate(() => {
-    const stats = document.querySelector('.wx-stats').getBoundingClientRect();
+  await check('roast sits below the detail tiles', () => page.evaluate(() => {
+    const stats = document.querySelector('.tile-grid').getBoundingClientRect();
     const roast = document.querySelector('.roast-inline').getBoundingClientRect();
     return roast.top >= stats.bottom - 1;
   }));

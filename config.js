@@ -1,12 +1,12 @@
 /* ============================================================
-   Aither Weather V20 — config.js
+   Aither Weather V21 — config.js
    Central configuration. No API keys required, ever.
    ============================================================ */
 
 const WTW_CONFIG = {
   app: {
     name: 'Aither Weather',
-    version: 'V20',
+    version: 'V21',
     tagline: 'Weather with an attitude problem.',
   },
 
@@ -25,6 +25,10 @@ const WTW_CONFIG = {
     forecastDays: 7,             // days in the forecast list
     hourlyHours: 24,             // hours in the outlook strip
     sceneAnimation: true,        // moving sky under the current weather
+    background: 'animated',      // animated | gradient | off
+    cardStyle: 'glass',          // glass | solid | outline
+    corners: 'round',            // round | soft | square
+    density: 'comfortable',      // compact | comfortable | airy
   },
 
   // Free, key-less public services.
@@ -71,6 +75,30 @@ const WTW_CONFIG = {
   iconStyles: [
     { id: 'rendered', label: 'Rendered' },
     { id: 'emoji',    label: 'Emoji' },
+  ],
+
+  // How the page itself is drawn. Each of these is a data attribute on
+  // the root element and nothing more — styles.css does the rest, so a
+  // new option is a label here and a block there.
+  backgrounds: [
+    { id: 'animated', label: 'Animated sky' },
+    { id: 'gradient', label: 'Sky colours only' },
+    { id: 'off',      label: 'Plain theme' },
+  ],
+  cardStyles: [
+    { id: 'glass',   label: 'Glass' },
+    { id: 'solid',   label: 'Solid' },
+    { id: 'outline', label: 'Outline' },
+  ],
+  cornerStyles: [
+    { id: 'round',  label: 'Rounded' },
+    { id: 'soft',   label: 'Soft' },
+    { id: 'square', label: 'Square' },
+  ],
+  densities: [
+    { id: 'compact',     label: 'Compact' },
+    { id: 'comfortable', label: 'Comfortable' },
+    { id: 'airy',        label: 'Airy' },
   ],
 
   forecastLengths: [5, 7, 10],

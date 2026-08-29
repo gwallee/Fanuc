@@ -115,12 +115,21 @@ const BROWSER = process.env.PLAYWRIGHT_CHROMIUM || undefined;
   await page.waitForTimeout(600);
   await check('light theme applied', async () =>
     (await page.getAttribute('html', 'data-theme')) === 'light');
-  const bgLight = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  // Measure what actually carries the theme. The body's own ground is
+  // the sky now, which is set by the weather rather than the theme, so
+  // reading it here would compare two transparent boxes and pass or
+  // fail for the wrong reason.
+  const themeInk = () => page.evaluate(() => {
+    const card = document.querySelector('.card');
+    const style = getComputedStyle(document.documentElement);
+    return getComputedStyle(card).backgroundColor + '|' + style.getPropertyValue('--accent').trim();
+  });
+  const bgLight = await themeInk();
   await page.selectOption("#themeSelect", "midnight");
   await page.waitForTimeout(600);
   await check('midnight theme applied', async () =>
     (await page.getAttribute('html', 'data-theme')) === 'midnight');
-  const bgMid = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  const bgMid = await themeInk();
   await check('themes actually change colors', async () => bgLight !== bgMid);
   await page.selectOption('#themeSelect', 'neon-dark');
   await page.click('#settingsCloseBtn');

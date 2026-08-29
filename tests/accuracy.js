@@ -179,8 +179,15 @@ function stubRest(page, { omHigh = 88, omLow = 71 } = {}) {
   await check('wind is rounded', async () =>
     (await page.textContent('#wxWind')).trim() === '12 mph');
   await check('no decimal point anywhere in the weather stats', async () => {
-    const text = await page.textContent('.wx-stats');
-    return !/\d\.\d/.test(text);
+    // The values that must be whole, named rather than scooped up by
+    // container: pressure lives among them now and is legitimately
+    // 29.94, so a whole-grid sweep would fail on a correct reading.
+    const ids = ['wxFeels', 'wxHumidity', 'wxWind', 'wxRain', 'wxHiLo'];
+    for (const id of ids) {
+      const text = (await page.textContent('#' + id)) || '';
+      if (/\d\.\d/.test(text)) return false;
+    }
+    return true;
   });
   await check('no decimal point in the temperature or forecast', async () => {
     const temp = await page.textContent('#wxTemp');

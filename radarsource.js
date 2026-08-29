@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V20 — radarsource.js
+   Aither Weather V21 — radarsource.js
    Real radar frames with real timestamps.
 
    V9-V11 asked NOAA's WMS for frames at guessed times (every 10

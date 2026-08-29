@@ -109,6 +109,357 @@ input, select { font: inherit; color: var(--text); }
 
 body.loading { cursor: progress; }
 
+
+/* ============================================================
+   The sky, and the knobs that change how everything looks.
+
+   Two independent things are set on the root element:
+
+     data-sky / data-daynight  — what the weather is doing, which
+       picks the page's own colours. Set by weatheranim.js at the same
+       moment it points the canvas at a new scene, so the colour and
+       the animation can never show different weather.
+
+     data-cards / data-corners / data-density — the user's own
+       choices, which change how every card and tile is drawn without
+       touching a single component's rules.
+
+   Everything reads --sky-1 / --sky-2 / --sky-ink, so a new sky is one
+   block here and nothing else.
+   ============================================================ */
+
+:root {
+  --sky-1: var(--bg-2);
+  --sky-2: var(--bg);
+  --sky-ink: var(--text);
+  --tile-bg: var(--card);
+  --tile-border: var(--card-border);
+  --tile-radius: 18px;
+  --tile-pad: 1rem 1.1rem;
+  --tile-gap: 0.7rem;
+}
+
+/* ---- Clear ---- */
+[data-sky="clear"][data-daynight="day"] {
+  --sky-1: #2f7cc4;
+  --sky-2: #7fbde8;
+}
+[data-sky="clear"][data-daynight="night"] {
+  --sky-1: #0b1a3a;
+  --sky-2: #1d2f5c;
+}
+
+/* ---- Cloud ---- */
+[data-sky="clouds"][data-daynight="day"] {
+  --sky-1: #47708f;
+  --sky-2: #8ea7bd;
+}
+[data-sky="clouds"][data-daynight="night"] {
+  --sky-1: #101a2e;
+  --sky-2: #26344c;
+}
+
+/* ---- Rain ---- */
+[data-sky="rain"][data-daynight="day"] {
+  --sky-1: #2f4b6b;
+  --sky-2: #5e7a96;
+}
+[data-sky="rain"][data-daynight="night"] {
+  --sky-1: #0a1424;
+  --sky-2: #1c2c43;
+}
+
+/* ---- Storm ---- */
+[data-sky="storm"][data-daynight="day"] {
+  --sky-1: #363f5c;
+  --sky-2: #5a6480;
+}
+[data-sky="storm"][data-daynight="night"] {
+  --sky-1: #080b16;
+  --sky-2: #1b2036;
+}
+
+/* ---- Snow and sleet ---- */
+[data-sky="snow"][data-daynight="day"],
+[data-sky="sleet"][data-daynight="day"] {
+  --sky-1: #52748f;
+  --sky-2: #a2b8cc;
+}
+[data-sky="snow"][data-daynight="night"],
+[data-sky="sleet"][data-daynight="night"] {
+  --sky-1: #101c30;
+  --sky-2: #2b3b53;
+}
+
+/* ---- Fog ---- */
+[data-sky="fog"][data-daynight="day"] {
+  --sky-1: #5f6975;
+  --sky-2: #9aa3ad;
+}
+[data-sky="fog"][data-daynight="night"] {
+  --sky-1: #14181f;
+  --sky-2: #2c333d;
+}
+
+/* Ink over a sky.
+
+   This is the part that decides whether the app is readable. The dark
+   themes' dimmed text was tuned against a near-black page; over a
+   mid-blue sky at midday it disappears, and a label nobody can read
+   is worse than no label. So with a sky behind it, the text switches
+   to white with real opacity steps — which is exactly why Apple's
+   Weather is white-on-sky and not grey-on-sky.
+
+   The light theme keeps dark ink and dims the sky instead: pale text
+   on a pale sky fails the same way in the other direction. */
+[data-sky]:not([data-sky="none"]) {
+  --text: #ffffff;
+  --text-dim: rgba(255, 255, 255, 0.9);
+  --card-border: rgba(255, 255, 255, 0.18);
+}
+[data-theme="light"][data-sky]:not([data-sky="none"]) {
+  --text: #10202e;
+  --text-dim: rgba(16, 32, 46, 0.66);
+  --card-border: rgba(16, 32, 46, 0.14);
+}
+[data-theme="light"] .sky-backdrop { opacity: 0.45; }
+
+/* Turning the background off returns the page to the plain theme. */
+[data-sky="none"] .sky-backdrop { display: none; }
+
+.sky-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(180deg, var(--sky-1), var(--sky-2));
+  transition: background 0.8s ease;
+}
+.sky-backdrop canvas { display: block; width: 100%; height: 100%; }
+
+/* The header sits on the sky like everything else, rather than
+   punching an opaque bar through it. It keeps the blur — sticky
+   translucent text over moving rain is unreadable without one. */
+[data-sky]:not([data-sky="none"]) .app-header {
+  background: rgba(9, 20, 38, 0.42);
+  border-bottom-color: rgba(255, 255, 255, 0.14);
+}
+[data-theme="light"][data-sky]:not([data-sky="none"]) .app-header {
+  background: rgba(255, 255, 255, 0.6);
+  border-bottom-color: rgba(16, 32, 46, 0.12);
+}
+
+/* The panels that had their own dark ground — the search box, the
+   nowcast strip, the roast — would otherwise punch opaque holes in
+   the sky. They take the same glass as everything else, and keep
+   their own borders so they still read as separate things. */
+[data-sky]:not([data-sky="none"]) input[type="text"],
+[data-sky]:not([data-sky="none"]) input[type="search"],
+[data-sky]:not([data-sky="none"]) select,
+[data-sky]:not([data-sky="none"]) .nowcast-panel,
+[data-sky]:not([data-sky="none"]) .roast-inline {
+  background: rgba(9, 20, 38, 0.4);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--text);
+}
+[data-theme="light"][data-sky]:not([data-sky="none"]) input[type="text"],
+[data-theme="light"][data-sky]:not([data-sky="none"]) input[type="search"],
+[data-theme="light"][data-sky]:not([data-sky="none"]) select,
+[data-theme="light"][data-sky]:not([data-sky="none"]) .nowcast-panel,
+[data-theme="light"][data-sky]:not([data-sky="none"]) .roast-inline {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(16, 32, 46, 0.12);
+}
+[data-sky]:not([data-sky="none"]) ::placeholder { color: var(--text-dim); }
+
+/* With a sky behind it, the page's own ground would hide it. */
+[data-sky]:not([data-sky="none"]) body { background: transparent; }
+
+/* ---------------- Card style ---------------- */
+
+/* Glass is the default and the one that suits a sky behind it.
+   Solid is for anybody who finds translucency hard to read, and
+   outline is for people who want the sky and nothing in its way. */
+[data-cards="glass"] {
+  /* Darkening, not lightening. A white-tinted tile under white text
+     over a midday sky measures about 1.5:1 — the text is there and
+     nobody can read it. Tinting down puts the same glass at 5:1 and
+     is what Apple's Weather actually does behind its white type. */
+  --tile-bg: rgba(9, 20, 38, 0.52);
+  --tile-border: rgba(255, 255, 255, 0.16);
+}
+[data-cards="glass"] .card,
+[data-cards="glass"] .tile {
+  backdrop-filter: blur(18px) saturate(1.25);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+}
+[data-cards="glass"] .card {
+  background: rgba(9, 20, 38, 0.48);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+[data-theme="light"][data-cards="glass"] {
+  --tile-bg: rgba(255, 255, 255, 0.72);
+  --tile-border: rgba(0, 0, 0, 0.1);
+}
+[data-theme="light"][data-cards="glass"] .card {
+  background: rgba(255, 255, 255, 0.75);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-cards="solid"] {
+  --tile-bg: var(--card);
+  --tile-border: var(--card-border);
+}
+[data-cards="solid"] .card { background: var(--card); }
+
+[data-cards="outline"] {
+  --tile-bg: transparent;
+  --tile-border: currentColor;
+}
+[data-cards="outline"] .card {
+  background: transparent;
+  border-color: var(--card-border);
+  box-shadow: none;
+}
+[data-cards="outline"] .tile { box-shadow: none; }
+
+/* ---------------- Corners ---------------- */
+
+[data-corners="round"] { --tile-radius: 22px; }
+[data-corners="soft"]  { --tile-radius: 12px; }
+[data-corners="square"] { --tile-radius: 3px; }
+[data-corners="round"] .card { border-radius: 22px; }
+[data-corners="soft"] .card { border-radius: 12px; }
+[data-corners="square"] .card { border-radius: 3px; }
+
+/* ---------------- Density ---------------- */
+
+[data-density="compact"] {
+  --tile-pad: 0.7rem 0.8rem;
+  --tile-gap: 0.5rem;
+}
+[data-density="airy"] {
+  --tile-pad: 1.35rem 1.4rem;
+  --tile-gap: 1rem;
+}
+
+/* ============================================================
+   The detail tiles
+   ============================================================ */
+
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--tile-gap);
+  margin: 1rem 0 0.4rem;
+}
+
+.tile {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  background: var(--tile-bg);
+  border: 1px solid var(--tile-border);
+  border-radius: var(--tile-radius);
+  padding: var(--tile-pad);
+  min-height: 128px;
+}
+[data-density="compact"] .tile { min-height: 104px; }
+
+.tile-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin: 0;
+}
+.tile-head .ui-icon { opacity: 0.85; }
+
+.tile-value {
+  font-size: clamp(1.6rem, 5vw, 2.1rem);
+  font-weight: 300;
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+  margin: 0.1rem 0 0;
+}
+.tile-word { font-size: 1rem; font-weight: 600; margin: -0.15rem 0 0; }
+.tile-note {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  margin: auto 0 0;
+  line-height: 1.35;
+}
+
+/* The one tile that does something when tapped says so. */
+.tile-action { cursor: pointer; }
+.tile-action:hover { border-color: var(--accent); }
+.tile-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The UV bar: the published 0–11+ scale, with a dot at the reading. */
+.tile-scale {
+  position: relative;
+  height: 5px;
+  border-radius: 999px;
+  margin: 0.3rem 0 0.1rem;
+}
+.uv-scale {
+  background: linear-gradient(90deg, #4ade80 0%, #facc15 32%, #fb923c 52%,
+                                     #ef4444 72%, #d946ef 100%);
+}
+.tile-scale-dot {
+  position: absolute;
+  top: 50%;
+  width: 10px; height: 10px;
+  margin-left: -5px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  transform: translateY(-50%);
+  transition: left 0.4s ease;
+}
+.tile-scale-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin: 0;
+}
+
+.wind-dial { margin: auto 0 0.1rem; align-self: center; width: 74px; }
+.wind-dial-svg { display: block; width: 100%; height: auto; }
+.wind-dial-ring { fill: none; stroke: currentColor; stroke-opacity: 0.35; stroke-width: 2; }
+.wind-dial-n { fill: currentColor; font-size: 12px; text-anchor: middle; opacity: 0.75; }
+.wind-dial-arrow { fill: currentColor; }
+#windArrow { transition: transform 0.5s ease; }
+
+.sun-arc-wrap, .pressure-dial { margin-top: auto; }
+.sun-arc-wrap canvas, .pressure-dial canvas { display: block; width: 100%; }
+.tile-value-dial { margin-top: -0.2rem; }
+
+.moon-tile-body { display: flex; align-items: center; gap: 0.9rem; }
+.moon-facts { flex: 1; min-width: 0; margin: 0; font-size: 0.9rem; }
+.moon-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.28rem 0;
+  border-bottom: 1px solid var(--tile-border);
+}
+.moon-facts > div:last-child { border-bottom: 0; }
+.moon-facts dt { color: var(--text-dim); white-space: nowrap; }
+.moon-facts dd { margin: 0; font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+.moon-disc-wrap { flex: 0 0 84px; width: 84px; }
+.moon-disc-wrap canvas { display: block; width: 100%; }
+
+/* A tile that always wants the full row. On a phone the moon's three
+   facts and its disc simply do not fit in half of one. */
+.tile-wide { grid-column: 1 / -1; }
+
 /* ---------------- Buttons ---------------- */
 
 .btn {

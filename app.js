@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V20 — app.js
+   Aither Weather V21 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -54,6 +54,24 @@
 
   // Markup for the icon that goes with a code. Day or night matters for
   // anything with a sun or a moon in it.
+  /* ------------------------------------------------------------
+     How the app looks, in one place.
+
+     Each of these is a data attribute on the root element and
+     nothing else — styles.css owns every rule that reads them. That
+     keeps a new option to a label in config.js and a block in the
+     stylesheet, and it means the look survives a re-render because
+     nothing has to remember to re-apply it.
+     ------------------------------------------------------------ */
+  function applyLook(settings) {
+    const s = settings || WTWStorage.getSettings();
+    const root = document.documentElement;
+    root.dataset.cards = s.cardStyle || 'glass';
+    root.dataset.corners = s.corners || 'round';
+    root.dataset.density = s.density || 'comfortable';
+    if (window.WTWScene) WTWScene.setBackground(s.background || 'animated');
+  }
+
   function iconFor(code, size, isDay) {
     const day = isDay === undefined
       ? (state.weather ? state.weather.isDay !== false : true)
@@ -366,6 +384,7 @@
     $('wxUpdated').textContent = line;
 
     renderDetail();
+    renderTiles();
     $('currentCard').classList.remove('empty');
     $('welcomePanel').hidden = true;
     $('weatherPanels').hidden = false;
@@ -381,6 +400,18 @@
     set('wxDew', U().temp(d.dewPointF));
     set('wxPressure', U().pressure(d.pressureInHg));
     set('wxVisibility', U().distance(d.visibilityMi));
+  }
+
+  /* The tiles are derived, never stored: everything they show comes
+     from state that already exists, so they cannot disagree with the
+     rest of the card. */
+  function renderTiles() {
+    if (!window.WTWTiles) return;
+    WTWTiles.render({
+      weather: state.weather,
+      detail: state.detail,
+      nowcastText: state.nowcastText || '',
+    });
   }
 
   /* ------------------------------------------------------------
@@ -668,10 +699,8 @@
     $('skySolarNoon').textContent = sun ? U().time(sun.solarNoon) : '--';
 
     // Moon
-    const moon = WTWAir.moonPhase(new Date());
-    $('moonIcon').textContent = moon.icon;
-    $('moonName').textContent = moon.name;
-    $('moonIllum').textContent = `${Math.round(moon.illumination * 100)}% lit`;
+    // The moon lives in its own tile now, drawn rather than typed.
+    renderTiles();
 
     card.hidden = false;
   }
@@ -1276,6 +1305,30 @@
       });
       el.value = String(value);
     };
+
+    /* ---- Look: background, cards, corners, spacing ---- */
+
+    // Every one of these does the same thing — save, re-apply, say so
+    // — so they are wired the same way rather than four times over.
+    const look = [
+      ['backgroundSelect', 'background', WTW_CONFIG.backgrounds, 'Background'],
+      ['cardStyleSelect', 'cardStyle', WTW_CONFIG.cardStyles, 'Cards'],
+      ['cornersSelect', 'corners', WTW_CONFIG.cornerStyles, 'Corners'],
+      ['densitySelect', 'density', WTW_CONFIG.densities, 'Spacing'],
+    ];
+    look.forEach(([id, key, items, noun]) => {
+      const el = $(id);
+      if (!el) return;
+      fillSelect(el, items || [], s[key]);
+      el.addEventListener('change', () => {
+        WTWStorage.saveSettings({ [key]: el.value });
+        applyLook();
+        // The tiles carry canvas drawings, which have to be redrawn at
+        // the new size when the spacing changes under them.
+        renderTiles();
+        toast(`${noun}: ${el.options[el.selectedIndex].text}`);
+      });
+    });
 
     const sceneT = $('sceneToggle');
     if (sceneT) {
@@ -2033,6 +2086,7 @@
 
   function init() {
     WTWThemes.init();
+    applyLook();
     if (window.WTWIcons && WTWIcons.paintUI) WTWIcons.paintUI(document);
     renderUsernameEverywhere();
     initSettingsUI();
@@ -2052,6 +2106,7 @@
       WTWScene.init();
       WTWScene.setEnabled(WTWStorage.getSettings().sceneAnimation !== false);
     }
+    applyLook();
     registerServiceWorker();
     watchConnectivity();
     watchResize();

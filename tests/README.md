@@ -42,6 +42,7 @@ project and no global state is touched.
 | `v18.js` | The day view: the day tapped, its own hours, its own roast |
 | `v19.js` | Drawn weather icons, the centred hero, yesterday's comparison, the customisation settings |
 | `v20.js` | Drawn interface icons on every button, and the animated sky under the weather |
+| `v21.js` | The weather-driven sky, the detail tiles and their sentences, contrast over the sky, and the four look settings |
 
 ## Environment
 

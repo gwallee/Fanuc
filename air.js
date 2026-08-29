@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V20 — air.js
+   Aither Weather V21 — air.js
    Air quality and pollen from Open-Meteo's air-quality API (free,
    no key), plus sun and moon figures computed locally.
 
@@ -117,10 +117,17 @@ const WTWAir = (() => {
     ];
     // Each named phase is centred on its eighth of the cycle.
     const index = Math.floor((phase * 8) + 0.5) % 8;
+    // Both of these fall straight out of the phase already computed —
+    // nothing here is a second, independent estimate that could
+    // disagree with the illumination shown beside it.
+    const waxing = phase < 0.5;
+    const toFull = ((0.5 - phase) + 1) % 1;         // fraction of a cycle away
     return {
       phase,
       ageDays: age / 86400000,
       illumination,
+      waxing,
+      nextFullDays: Math.round(toFull * (SYNODIC_MS / 86400000)),
       name: names[index][0],
       icon: names[index][1],
     };

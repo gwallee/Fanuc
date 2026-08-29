@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V20 — nws.js
+   Aither Weather V21 — nws.js
    National Weather Service (api.weather.gov) client.
 
    Free, no API key, CORS-enabled. US + territories only, so

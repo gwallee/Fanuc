@@ -79,6 +79,16 @@ function omBody() {
   let { ctx, page, tiles, wms } = await mk();
   await check('radar tiles were requested', () => tiles.length > 0);
   await check('the WMS mosaic was not needed', () => wms.length === 0);
+  /* These two describe the badge on the newest observation, so the
+     loop has to be stopped first. It advances frames on its own and
+     the fixture's index runs on into nowcast frames, so a suite that
+     simply waited three seconds was asserting against whichever frame
+     it happened to arrive at — passing about two runs in three and
+     failing the rest for no reason the code had changed. Badging a
+     nowcast frame FORECAST is the app being right, not wrong. */
+  await page.click('#radarStopBtn');
+  await page.click('#radarRefreshBtn');
+  await page.waitForTimeout(1500);
   await check('badge reports LIVE RADAR', async () =>
     (await page.textContent('#radarSource')).trim() === 'LIVE RADAR');
   await check('badge tooltip states the frame age', async () =>
@@ -162,6 +172,11 @@ function omBody() {
 
   console.log('\n=== Stale imagery is labelled, not called live ===');
   ({ ctx, page, tiles } = await mk({ newestAgeMin: 95 }));
+  // Same reason as above: the badge describes a frame, so pin the
+  // frame before reading the badge.
+  await page.click('#radarStopBtn');
+  await page.click('#radarRefreshBtn');
+  await page.waitForTimeout(1500);
   await check('badge says STALE when the newest frame is old', async () =>
     (await page.textContent('#radarSource')).trim() === 'RADAR (STALE)');
   await check('stale badge is not styled as live', async () =>

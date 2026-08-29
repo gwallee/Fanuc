@@ -1,4 +1,4 @@
-# Aither Weather V20 ⚡🌩️
+# Aither Weather V21 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -158,6 +158,63 @@ Fullscreen button to come back.
 - Keyboard accessible: the scope is a focusable control, `Enter`/`Space`
   toggles it
 - Set `radar.fullscreenOnTap = false` in `config.js` to require the button
+
+### 🌤️ The sky is the page (V21)
+
+**The background is the weather.** The whole page takes the colour of the sky
+outside — deep blue on a clear afternoon, slate under a thunderstorm, near-black
+at night, washed grey in fog — with rain, snow, cloud and lightning moving
+across it behind the cards.
+
+The colour is *not* painted by the animation. `weatheranim.js` sets `data-sky`
+and `data-daynight` on the root element, and the stylesheet does the rest. That
+matters for three reasons: the page is the right colour before a single frame is
+drawn, it stays right with the animation switched off, and the colour and the
+animation are set in one call so they can never show different weather. The V21
+suite asserts exactly that — the page, the backdrop, the hero strip and the
+engine must all name the same scene.
+
+**Detail tiles, one fact each.** The flat stat rows are now tiles in the shape
+Apple's Weather made the expectation: a quiet uppercase header, the number large
+enough to read at arm's length, and a sentence saying what the number means.
+Feels like, UV index (with the published 0–11+ scale), wind on a compass dial,
+precipitation, visibility, humidity, sunset on the day's arc, the moon, high/low,
+and a barometer.
+
+The sentences are the point — "UV index 6" tells you nothing you can act on,
+"use sun protection until 6PM" does — so they are derived, never canned. The UV
+hour comes from the day's actual sunset. The wind sentence names the direction
+the wind comes *from*, which is the convention and the classic place to get it
+backwards. Feels-like says "similar to the actual temperature" unless there is a
+real gap to explain.
+
+**Four ways to change the look**, in Settings:
+
+| Setting | Options |
+| --- | --- |
+| Background | Animated sky · Sky colours only · Plain theme |
+| Card style | Glass · Solid · Outline |
+| Corners | Rounded · Soft · Square |
+| Spacing | Compact · Comfortable · Airy |
+
+Each is a data attribute on the root element and nothing more, so a new option
+is a label in `config.js` and a block in `styles.css`. They compose with the
+existing theme and accent settings rather than replacing them.
+
+**Two things this version got wrong first, and how they were caught.** Glass
+tiles were tinted *white*, which put white text over a midday sky at about
+1.5:1 — present, and unreadable. The suite composites the real stack (ink over
+translucent tile over the sky at its lightest) and demands WCAG AA, so it failed
+until the glass was tinted down instead. And the moon's terminator was drawn as
+two arcs with sweep flags, one of which was backwards: a 96%-lit moon rendered
+as a thin crescent, which looks entirely plausible. It is drawn a scanline at a
+time now, and the suite counts lit pixels against the stated illumination.
+
+**What is deliberately not here:** Apple's *Averages* tile compares today with a
+30-year climate normal. This app has no climate normals — only yesterday — so
+rather than show a plausible-looking number derived from nothing, the comparison
+against yesterday stays on the hero where it has always been, and there is no
+Averages tile.
 
 ### 🖼️ Drawn buttons and a moving sky (V20)
 
@@ -562,7 +619,7 @@ dependencies** — `package.json` exists only for the tests.
 ## Project structure
 
 ```
-AitherWeather-V20/
+AitherWeather-V21/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
@@ -585,7 +642,8 @@ AitherWeather-V20/
 ├── manifest.json   # PWA manifest
 ├── sw.js           # Service worker (offline shell + data cache)
 ├── icons.js        # Weather + interface icons (drawn, not emoji)
-├── weatheranim.js  # The animated sky under the current weather
+├── weatheranim.js  # The sky: full-page backdrop + the strip under the hero
+├── tiles.js        # The detail tiles and their small drawings
 ├── icons/          # PWA icons (192, 512, maskable)
 ├── config.js       # Central configuration + defaults
 ├── storage.js      # Safe localStorage wrapper
@@ -687,7 +745,7 @@ on the **Build desktop apps** action) and GitHub builds all three platforms
 natively and attaches them to a release:
 
 ```bash
-git tag v20.0.0 && git push origin v20.0.0
+git tag v21.0.0 && git push origin v21.0.0
 ```
 
 | Platform | Files |

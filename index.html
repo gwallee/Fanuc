@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0e17" />
-  <meta name="description" content="Aither Weather V20 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
-  <title>Aither Weather V20 ⚡🌩️</title>
+  <meta name="description" content="Aither Weather V21 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
+  <title>Aither Weather V21 ⚡🌩️</title>
   <link rel="icon" type="image/svg+xml" href="logo.svg" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="manifest" href="manifest.json" />
@@ -15,6 +15,17 @@
   <meta name="apple-mobile-web-app-title" content="Aither Weather" />
 </head>
 <body>
+
+  <!-- The sky behind everything.
+
+       The colour comes from CSS keyed off data-sky / data-daynight on
+       the root element, so the page is the right colour before a
+       single frame is drawn and stays right with the animation
+       switched off. The canvas on top adds only the moving part. -->
+  <div class="sky-backdrop" id="skyBackdrop" data-scene="clear" aria-hidden="true">
+    <canvas id="skyCanvas"></canvas>
+  </div>
+
 
   <!-- Gradients and shared shapes for the weather icons. Defined once:
        a document with forty copies of the same gradient id has forty
@@ -161,17 +172,108 @@
         </div>
       </div>
 
-      <div class="wx-stats">
-        <div class="stat"><span class="stat-label">Feels like</span><span class="stat-value" id="wxFeels">--°</span></div>
-        <div class="stat"><span class="stat-label">Humidity</span><span class="stat-value" id="wxHumidity">--%</span></div>
-        <div class="stat"><span class="stat-label">Wind</span><span class="stat-value" id="wxWind">-- mph</span></div>
-        <div class="stat stat-action" id="wxHiLoStat" role="button" tabindex="0"
-             title="Tap for the temperature trend"
-             aria-label="High and low temperature. Activate for the temperature trend chart.">
-          <span class="stat-label">High / Low <span class="stat-hint">📈</span></span>
-          <span class="stat-value" id="wxHiLo">--° / --°</span>
-        </div>
-        <div class="stat"><span class="stat-label">Rain chance</span><span class="stat-value" id="wxRain">--%</span></div>
+      <!-- The detail tiles.
+
+           One fact per tile, in the shape Apple's Weather made the
+           expectation: a quiet labelled header, the number large
+           enough to read at arm's length, and a sentence underneath
+           saying what the number means. The ids are the same ones the
+           flat stat rows used, so every reading of the app — and every
+           test — still points at the same element.
+
+           Order is roughly by how often somebody looks: what it feels
+           like and whether they will burn, then wind and rain, then
+           the rest. -->
+      <div class="tile-grid" id="tileGrid">
+
+        <article class="tile" data-tile="feels">
+          <h3 class="tile-head"><span class="btn-ico" data-ui-icon="thermometer" data-ui-size="15"></span>Feels like</h3>
+          <p class="tile-value" id="wxFeels">--°</p>
+          <p class="tile-note" id="feelsNote"></p>
+        </article>
+
+        <article class="tile" data-tile="uv">
+          <h3 class="tile-head"><span class="btn-ico" data-ui-icon="sun" data-ui-size="15"></span>UV index</h3>
+          <p class="tile-value"><span id="wxUv">--</span></p>
+          <p class="tile-word" id="uvWord"></p>
+          <div class="tile-scale uv-scale" aria-hidden="true">
+            <span class="tile-scale-dot" id="uvDot"></span>
+          </div>
+          <p class="tile-note" id="uvNote"></p>
+        </article>
+
+        <article class="tile" data-tile="wind">
+          <h3 class="tile-head"><span class="btn-ico" data-ui-icon="wind" data-ui-size="15"></span>Wind</h3>
+          <p class="tile-value" id="wxWind">-- mph</p>
+          <div class="wind-dial" aria-hidden="true">
+            <svg viewBox="0 0 100 100" class="wind-dial-svg">
+              <circle cx="50" cy="50" r="40" class="wind-dial-ring" />
+              <text x="50" y="14" class="wind-dial-n">N</text>
+              <g id="windArrow" transform="rotate(0 50 50)">
+                <path d="M50 22 L56 40 L50 36 L44 40 Z" class="wind-dial-arrow" />
+              </g>
+            </svg>
+          </div>
+          <p class="tile-note" id="windNote"></p>
+        </article>
+
+        <article class="tile" data-tile="precip">
+          <h3 class="tile-head"><span class="btn-ico" data-ui-icon="droplet" data-ui-size="15"></span>Precipitation</h3>
+          <p class="tile-value" id="wxRain">--%</p>
+          <p class="tile-note" id="precipNote"></p>
+        </article>
+
+        <article class="tile" data-tile="visibility">
+          <h3 class="tile-head"><span class="btn-ico" data-ui-icon="eye" data-ui-size="15"></span>Visibility</h3>
+          <p class="tile-value" id="wxVisibility">--</p>
+          <p class="tile-note" id="visibilityNote"></p>
+        </article>
+
+        <article class="tile" data-tile="humidity">
+          <h3 class="tile-head"><span class="btn-ico" data-ui-icon="humidity" data-ui-size="15"></span>Humidity</h3>
+          <p class="tile-value" id="wxHumidity">--%</p>
+          <p class="tile-note">The dew point is <span id="wxDew">--</span> right now.</p>
+        </article>
+
+        <article class="tile" data-tile="sun">
+          <h3 class="tile-head"><span class="btn-ico" data-ui-icon="sunset" data-ui-size="15"></span>Sunset</h3>
+          <p class="tile-value" id="wxSunset">--</p>
+          <div class="sun-arc-wrap" aria-hidden="true">
+            <canvas id="sunArc"></canvas>
+          </div>
+          <p class="tile-note">Sunrise: <span id="wxSunrise">--</span></p>
+        </article>
+
+        <article class="tile tile-wide" data-tile="moon" id="moonTile" hidden>
+          <h3 class="tile-head"><span class="btn-ico" data-ui-icon="moon" data-ui-size="15"></span><span id="moonName">Moon</span></h3>
+          <div class="moon-tile-body">
+            <dl class="moon-facts">
+              <div><dt>Illumination</dt><dd id="moonIllum">--</dd></div>
+              <div><dt>Moon age</dt><dd id="moonPhaseAge">--</dd></div>
+              <div><dt>Next full moon</dt><dd id="moonNextFull">--</dd></div>
+            </dl>
+            <div class="moon-disc-wrap" aria-hidden="true"><canvas id="moonDisc"></canvas></div>
+          </div>
+        </article>
+
+        <article class="tile tile-action" data-tile="hilo" id="wxHiLoStat"
+                 role="button" tabindex="0"
+                 title="Tap for the temperature trend"
+                 aria-label="High and low temperature. Activate for the temperature trend chart.">
+          <h3 class="tile-head"><span class="btn-ico" data-ui-icon="chart" data-ui-size="15"></span>High / Low</h3>
+          <p class="tile-value" id="wxHiLo">--° / --°</p>
+          <p class="tile-note" id="hiLoNote"></p>
+        </article>
+
+        <article class="tile" data-tile="pressure">
+          <h3 class="tile-head"><span class="btn-ico" data-ui-icon="gauge" data-ui-size="15"></span>Pressure</h3>
+          <div class="pressure-dial" aria-hidden="true">
+            <canvas id="pressureDial"></canvas>
+          </div>
+          <p class="tile-value tile-value-dial" id="wxPressure">--</p>
+          <p class="tile-scale-ends" aria-hidden="true"><span>Low</span><span>High</span></p>
+        </article>
+
       </div>
       <div class="nowcast-panel" id="nowcastPanel" hidden>
         <div class="nowcast-head">
@@ -180,15 +282,6 @@
         </div>
         <div class="nowcast-strip-wrap"><canvas id="nowcastStrip" aria-label="Precipitation over the next two hours"></canvas></div>
         <div class="nowcast-precision" id="nowcastPrecision"></div>
-      </div>
-
-      <div class="wx-detail">
-        <div class="detail"><span class="detail-label">Sunrise</span><span class="detail-value" id="wxSunrise">--</span></div>
-        <div class="detail"><span class="detail-label">Sunset</span><span class="detail-value" id="wxSunset">--</span></div>
-        <div class="detail"><span class="detail-label">UV index</span><span class="detail-value" id="wxUv">--</span></div>
-        <div class="detail"><span class="detail-label">Dew point</span><span class="detail-value" id="wxDew">--</span></div>
-        <div class="detail"><span class="detail-label">Pressure</span><span class="detail-value" id="wxPressure">--</span></div>
-        <div class="detail"><span class="detail-label">Visibility</span><span class="detail-value" id="wxVisibility">--</span></div>
       </div>
 
       <div class="wx-updated" id="wxUpdated"></div>
@@ -295,10 +388,6 @@
       </div>
 
       <div class="sky-row">
-        <div class="moon-block">
-          <span class="moon-icon" id="moonIcon">🌕</span>
-          <span class="moon-meta"><span id="moonName">--</span><small id="moonIllum">--</small></span>
-        </div>
         <div class="detail"><span class="detail-label">Daylight</span><span class="detail-value" id="skyDaylight">--</span></div>
         <div class="detail"><span class="detail-label">Solar noon</span><span class="detail-value" id="skySolarNoon">--</span></div>
       </div>
@@ -442,6 +531,28 @@
         <span>Automatic weather roasts</span>
         <input type="checkbox" id="autoRoastToggle" />
       </label>
+    </div>
+
+    <div class="setting-group">
+      <label for="backgroundSelect">Background</label>
+      <select id="backgroundSelect"></select>
+      <p class="setting-hint">The page takes the colour of the sky outside. Turn it
+        down to colours only, or off for the plain theme.</p>
+    </div>
+
+    <div class="setting-group">
+      <label for="cardStyleSelect">Card style</label>
+      <select id="cardStyleSelect"></select>
+    </div>
+
+    <div class="setting-group">
+      <label for="cornersSelect">Corners</label>
+      <select id="cornersSelect"></select>
+    </div>
+
+    <div class="setting-group">
+      <label for="densitySelect">Spacing</label>
+      <select id="densitySelect"></select>
     </div>
 
     <div class="setting-group">
@@ -651,6 +762,7 @@
   <script src="config.js"></script>
   <script src="icons.js"></script>
   <script src="weatheranim.js"></script>
+  <script src="tiles.js"></script>
   <script src="storage.js"></script>
   <script src="themes.js"></script>
   <script src="units.js"></script>

@@ -151,8 +151,11 @@ const AIR_BODY = JSON.stringify({ current: {
   await page.click('#settingsCloseBtn');
   await check('sunset uses 24-hour time', async () =>
     (await page.textContent('#wxSunset')).trim() === '19:00');
-  await check('no AM/PM left in the detail row', async () =>
-    !/AM|PM/.test(await page.textContent('.wx-detail')));
+  await check('no AM/PM left in the detail tiles', async () =>
+    // Every tile, not just the old detail row: the UV tile now writes
+    // a time into its sentence too, and that has to follow the clock
+    // setting like everything else.
+    !/AM|PM/.test(await page.textContent('.tile-grid')));
 
   // Back to imperial/12h for the remaining checks.
   await page.click('#settingsBtn');
