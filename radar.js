@@ -40,6 +40,7 @@ const WTWRadar = (() => {
     alerts: [],             // GeoJSON features with geometry
     dragging: false, dragLast: null, dragStart: null, moved: false,
     refetchTimer: null,
+    lastRefreshAt: 0,       // when imagery was last (re)loaded
     fullscreen: false,
     visible: true,          // scope is on screen
     pageVisible: true,      // tab is in the foreground
@@ -847,6 +848,7 @@ const WTWRadar = (() => {
   }
 
   async function refresh(weather) {
+    state.lastRefreshAt = Date.now();
     generateCells(weather || state.weatherSeed || {});
     state.timelineMinute = cfg().frameMinutes || 60;
 
@@ -941,6 +943,7 @@ const WTWRadar = (() => {
       rangeKm: state.rangeKm,
       source: state.source,
       frameCount: state.frames.length,
+      lastRefreshAt: state.lastRefreshAt,
     }),
   };
 })();

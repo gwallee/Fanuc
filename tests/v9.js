@@ -207,6 +207,7 @@ function omBody() {
     return waitFor(() => wmsUrls.length > before);
   });
 
+  let refreshedBefore = 0;
   const bboxOf = (url) => new URL(url).searchParams.get('bbox').split(',').map(Number);
   const centreLon = (url) => {
     const bb = bboxOf(url);
@@ -226,6 +227,7 @@ function omBody() {
   });
   await check('recenter returns to the location', async () => {
     const before = wmsUrls.length;
+    refreshedBefore = await page.evaluate(() => WTWRadar.getView().lastRefreshAt);
     await page.click('#radarRecenter');
     // Assert what recentring means — the scope is looking at the
     // location again — rather than which requests happened to go out.
@@ -242,12 +244,18 @@ function omBody() {
     }
     return ok;
   });
-  await check('and refetches imagery for the recentred view', async () => {
-    const ok = await waitFor(() => wmsUrls.length > 0 &&
-      Math.abs(centreLon(wmsUrls[wmsUrls.length - 1]) - AUSTIN.lon) < 0.05);
+  // Deliberately not "a new network request went out". Recentring asks
+  // for frames it may have asked for moments earlier - the zoom-out step
+  // used this very view - and a browser is entitled to answer those from
+  // its own memory without troubling the network. That would be correct
+  // behaviour and a failing test. What must be true is that the radar
+  // reloaded its imagery for the new view.
+  await check('and reloads imagery for the recentred view', async () => {
+    const ok = await waitFor(async () =>
+      (await page.evaluate(() => WTWRadar.getView().lastRefreshAt)) > refreshedBefore);
     if (!ok) {
       console.log(`  [diag] view=${JSON.stringify(await page.evaluate(() => WTWRadar.getView()))} ` +
-        `lastLons=${wmsUrls.slice(-3).map((u) => centreLon(u).toFixed(3)).join(' ')}`);
+        `refreshedBefore=${refreshedBefore}`);
     }
     return ok;
   });
