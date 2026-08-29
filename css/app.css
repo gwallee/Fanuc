@@ -614,15 +614,14 @@ tr:last-child td { border-bottom: none; }
 .fc-spacer { flex: 1; }
 .fc-goto {
   font: inherit;
-  font-size: 11px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1;
   color: var(--muted);
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 3px;
-  padding: 0 7px;
+  padding: 3px 5px;
   cursor: pointer;
-  white-space: nowrap;
 }
 .fc-goto:hover { color: var(--ink); border-color: var(--accent); }
 .fc-goto:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

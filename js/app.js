@@ -1394,7 +1394,7 @@
       h('p', {
         class: 'muted',
         text: focus === null
-          ? 'Blocks run top to bottom. Curved arrows are jumps: amber going up = loop, blue going down = skip ahead; dashed = conditional (IF / timeout / skip). Click a block to isolate its jumps.'
+          ? 'Blocks run top to bottom. Curved arrows are jumps: amber going up = loop, blue going down = skip ahead; dashed = conditional (IF / timeout / skip). Click a block to isolate its jumps, ↗ to open it in the Code tab.'
           : 'Isolated ' + flow.blocks[focus].title + ' — only the arrows into and out of it are drawn, and the blocks they connect stay lit. Click the block again to bring the rest back.'
       }),
       focus === null ? null : h('button', {
@@ -1423,8 +1423,9 @@
         h('span', { class: 'fc-range', text: b.kind === 'normal' ? '' : 'lines ' + b.startNum + '–' + b.endNum }),
         h('span', { class: 'fc-spacer' }),
         h('button', {
-          class: 'fc-goto', text: 'Go to code',
-          title: 'Open ' + p.parsed.name + ' at line ' + b.startNum + ' in the Code tab',
+          class: 'fc-goto', text: '↗',
+          'aria-label': 'Go to code',
+          title: 'Go to code — opens ' + p.parsed.name + ' at line ' + b.startNum,
           onclick: function (ev) { ev.stopPropagation(); gotoLine(p.parsed.name, b.startNum); }
         })
       ]));
