@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V15 — units.js
+   What the Wether V16 — units.js
    One place that turns canonical values into display strings.
 
    Everything inside the app stays in a single canonical set —
@@ -38,6 +38,18 @@ const WTWUnits = (() => {
 
   function tempUnit() {
     return isMetric() ? '°C' : '°F';
+  }
+
+  /* ------------------------------------------------------------
+     A temperature DIFFERENCE, which does not convert like a
+     temperature: 10°F warmer is 5.6°C warmer, not -12°C. Running a
+     delta through temp() would produce a confidently wrong number,
+     so it gets its own function.
+     ------------------------------------------------------------ */
+  function tempDelta(deltaF, { withUnit = true } = {}) {
+    if (blank(deltaF)) return '--';
+    const v = isMetric() ? deltaF * 5 / 9 : deltaF;
+    return `${Math.round(Math.abs(v))}°${withUnit ? (isMetric() ? 'C' : 'F') : ''}`;
   }
 
   function speed(valueMph, { withUnit = true } = {}) {
@@ -137,7 +149,7 @@ const WTWUnits = (() => {
   return {
     isMetric, is24Hour,
     fToC, mphToKmh, miToKm, kmToMi, inHgToMb,
-    temp, tempUnit, tempValue,
+    temp, tempUnit, tempValue, tempDelta,
     speed, speedUnit,
     distance, distanceFromKm,
     pressure, percent, range, rangeValue, rangeUnit,

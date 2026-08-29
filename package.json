@@ -1,6 +1,6 @@
 {
   "name": "what-the-wether",
-  "version": "15.0.0",
+  "version": "16.0.0",
   "private": true,
   "description": "What the Wether — a neon weather app with a real-map radar and a local roast AI. No API keys.",
   "scripts": {

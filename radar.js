@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V15 — radar.js
+   What the Wether V16 — radar.js
    Canvas radar scope with a real basemap underneath.
 
    Layers, bottom to top, all projected in EPSG:3857 so they align:
@@ -702,11 +702,15 @@ const WTWRadar = (() => {
     if (hasTimestampedFrames() && last && last.forecast) {
       const mins = Math.max(1, Math.round((last.time.getTime() - Date.now()) / 60000));
       el.textContent = `+${mins} min`;
+      el.hidden = false;
       el.classList.add('is-forecast');
       el.title = 'Forecast frames from the RainViewer nowcast';
       return;
     }
-    el.textContent = 'now';
+    // Without forecast frames the right-hand end is simply the present,
+    // which the label beside it already says. Two NOWs in a row is
+    // noise, so this only appears when it has something to add.
+    el.hidden = true;
     el.classList.remove('is-forecast');
     el.removeAttribute('title');
   }

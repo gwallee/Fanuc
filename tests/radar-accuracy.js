@@ -141,6 +141,7 @@ function omBody() {
   await check('the badge says a prediction is a prediction', async () =>
     /not an observation/i.test(await page.getAttribute('#radarSource', 'title')));
   await check('the end of the timeline says how far ahead it runs', async () =>
+    await page.isVisible('#radarTimelineEnd') &&
     /^\+\d+ min$/.test((await page.textContent('#radarTimelineEnd')).trim()));
   await check('scrubbing back to the present restores the live badge', async () => {
     await page.locator('#radarTimeline').fill('7');

@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V15 — auth.js
+   What the Wether V16 — auth.js
    Sign in with Google, Microsoft or Apple, through each provider's
    own browser SDK. Both are optional and both are key-free: a public
    client ID is not a secret, and no server is involved.

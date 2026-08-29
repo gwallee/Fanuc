@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V15 — downloads.js
+   What the Wether V16 — downloads.js
    Lists the desktop builds from the project's latest GitHub
    release, so the website can hand out the real files.
 

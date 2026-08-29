@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V15 — app.js
+   What the Wether V16 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -15,6 +15,7 @@
     daily: [],
     hours: [],
     detail: {},
+    yesterday: null,
     source: null,
     alerts: [],
     air: null,
@@ -98,12 +99,25 @@
       wind_speed_unit: WTW_CONFIG.weather.windSpeedUnit,
       timezone: 'auto',
       forecast_days: String(WTW_CONFIG.weather.forecastDays),
+      // Yesterday, so today can be put in context. Everything below
+      // indexes off todayIdx rather than 0 because of it.
+      past_days: '1',
     });
     const data = await getJSON(`${WTW_CONFIG.api.forecast}?${p}`);
 
     const c = data.current || {};
     const d = data.daily || {};
     const h = data.hourly || {};
+
+    // Where today sits once yesterday is prepended. Derived from the
+    // array length rather than by matching a date string: the API
+    // reports in the location's timezone, which is not necessarily the
+    // one this browser is in, and a date comparison across that gap is
+    // wrong for a few hours every day.
+    const times = d.time || [];
+    const forecastDays = WTW_CONFIG.weather.forecastDays;
+    const todayIdx = Math.max(0, times.length - forecastDays);
+    const at = (arr, i) => (Array.isArray(arr) ? arr[i] : null);
 
     const weather = {
       city: location.name,
@@ -114,37 +128,59 @@
       windDirDeg: c.wind_direction_10m,
       weatherCode: c.weather_code,
       isDay: c.is_day === 1,
-      precipProb: Array.isArray(d.precipitation_probability_max) ? d.precipitation_probability_max[0] : null,
-      highF: Array.isArray(d.temperature_2m_max) ? d.temperature_2m_max[0] : null,
-      lowF: Array.isArray(d.temperature_2m_min) ? d.temperature_2m_min[0] : null,
+      precipProb: at(d.precipitation_probability_max, todayIdx),
+      highF: at(d.temperature_2m_max, todayIdx),
+      lowF: at(d.temperature_2m_min, todayIdx),
     };
 
-    const daily = (d.time || []).map((iso, i) => ({
-      dateISO: iso,
-      code: d.weather_code ? d.weather_code[i] : 0,
-      highF: d.temperature_2m_max ? d.temperature_2m_max[i] : null,
-      lowF: d.temperature_2m_min ? d.temperature_2m_min[i] : null,
-      precipProb: d.precipitation_probability_max ? d.precipitation_probability_max[i] : null,
-    }));
+    // Yesterday, for the comparison line. Absent if the API ignored
+    // past_days, which is treated as "no comparison" rather than
+    // silently comparing today with itself.
+    const yesterday = todayIdx > 0 ? {
+      dateISO: at(times, todayIdx - 1),
+      highF: at(d.temperature_2m_max, todayIdx - 1),
+      lowF: at(d.temperature_2m_min, todayIdx - 1),
+      code: at(d.weather_code, todayIdx - 1),
+    } : null;
 
-    // Visibility is hourly-only in Open-Meteo; take the nearest hour.
+    // The forecast row starts today; yesterday is held separately.
+    const daily = times.slice(todayIdx).map((iso, n) => {
+      const i = n + todayIdx;
+      return {
+        dateISO: iso,
+        code: at(d.weather_code, i) ?? 0,
+        highF: at(d.temperature_2m_max, i),
+        lowF: at(d.temperature_2m_min, i),
+        precipProb: at(d.precipitation_probability_max, i),
+      };
+    });
+
+    // Visibility is hourly-only in Open-Meteo. Take the hour nearest to
+    // now: with yesterday in the series, index 0 is a day old.
     let visibilityMi = null;
-    if (Array.isArray(h.visibility) && h.visibility.length) {
-      const metres = h.visibility[0];
+    if (Array.isArray(h.visibility) && Array.isArray(h.time) && h.time.length) {
+      const now = Date.now();
+      let best = 0;
+      let bestGap = Infinity;
+      for (let i = 0; i < h.time.length; i++) {
+        const gap = Math.abs(new Date(h.time[i]).getTime() - now);
+        if (gap < bestGap) { bestGap = gap; best = i; }
+      }
+      const metres = h.visibility[best];
       if (metres != null) visibilityMi = metres * 0.000621371;
     }
 
     const detail = {
-      sunrise: Array.isArray(d.sunrise) ? d.sunrise[0] : null,
-      sunset: Array.isArray(d.sunset) ? d.sunset[0] : null,
-      uvIndex: Array.isArray(d.uv_index_max) ? d.uv_index_max[0] : null,
+      sunrise: at(d.sunrise, todayIdx),
+      sunset: at(d.sunset, todayIdx),
+      uvIndex: at(d.uv_index_max, todayIdx),
       dewPointF: c.dew_point_2m ?? null,
       pressureInHg: c.pressure_msl != null ? c.pressure_msl * 0.0295300 : null,
       visibilityMi,
     };
 
     const hours = WTWHourly.fromOpenMeteo(data, WTW_CONFIG.weather.forecastHours);
-    return { weather, daily, hours, detail, raw: data };
+    return { weather, daily, hours, detail, yesterday, raw: data };
   }
 
   /* ------------------------------------------------------------
@@ -216,6 +252,9 @@
         },
         daily,
         hours,
+        // NWS publishes forecasts, not history, so this is Open-Meteo's
+        // either way.
+        yesterday: om ? om.yesterday : null,
         raw: om ? om.raw : null,
         nwsPoint: nws.point,
         detail: {
@@ -284,6 +323,33 @@
     set('wxVisibility', U().distance(d.visibilityMi));
   }
 
+  /* ------------------------------------------------------------
+     Today against yesterday. Compares like with like — the day's high
+     against the day's high — and says nothing at all when yesterday is
+     missing, rather than inventing a comparison.
+     ------------------------------------------------------------ */
+  function renderYesterday() {
+    const el = $('wxYesterday');
+    if (!el) return;
+    const y = state.yesterday;
+    const todayHigh = state.weather && state.weather.highF;
+    if (!y || y.highF == null || todayHigh == null) {
+      el.hidden = true;
+      el.textContent = '';
+      return;
+    }
+    const diffF = todayHigh - y.highF;
+    // Under a degree either way is noise, not news.
+    if (Math.abs(diffF) < 1) {
+      el.textContent = 'About the same as yesterday';
+    } else {
+      const word = diffF > 0 ? 'warmer' : 'colder';
+      el.textContent = `${U().tempDelta(diffF)} ${word} than yesterday`;
+    }
+    el.title = `Yesterday's high was ${U().temp(y.highF, { withUnit: true })}`;
+    el.hidden = false;
+  }
+
   function renderForecast() {
     const wrap = $('forecastRow');
     if (!wrap) return;
@@ -323,6 +389,7 @@
   function rerenderAll() {
     if (state.weather) {
       renderCurrent();
+      renderYesterday();
       renderForecast();
       renderAir();
       renderNowcast();
@@ -758,6 +825,7 @@
       daily: state.daily,
       hours: state.hours.map((h) => Object.assign({}, h, { time: h.time.toISOString() })),
       detail: state.detail,
+      yesterday: state.yesterday,
       alerts: state.alerts,
       air: state.air,
       nowcast: state.nowcast ? {
@@ -780,11 +848,13 @@
     state.daily = snap.daily || [];
     state.hours = (snap.hours || []).map((h) => Object.assign({}, h, { time: new Date(h.time) }));
     state.detail = snap.detail || {};
+    state.yesterday = snap.yesterday || null;
     state.alerts = snap.alerts || [];
     state.air = snap.air || null;
     state.offline = true;
 
     renderCurrent();
+    renderYesterday();
     renderForecast();
     renderAlerts();
     renderAir();
@@ -818,9 +888,11 @@
       state.daily = result.daily;
       state.hours = result.hours || [];
       state.detail = result.detail || {};
+      state.yesterday = result.yesterday || null;
       state.offline = false;
 
       renderCurrent();
+      renderYesterday();
       renderForecast();
       WTWHourly.setHours(state.hours);
       WTWRadar.setLocation(location.name, result.weather, {

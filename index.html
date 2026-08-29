@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0e17" />
-  <meta name="description" content="What the Wether V15 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
-  <title>What the Wether V15 ⚡🌩️</title>
+  <meta name="description" content="What the Wether V16 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
+  <title>What the Wether V16 ⚡🌩️</title>
   <link rel="icon" type="image/svg+xml" href="logo.svg" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="manifest" href="manifest.json" />
@@ -100,6 +100,7 @@
         <div class="wx-temp-block">
           <div class="wx-temp" id="wxTemp">--°</div>
           <div class="wx-condition" id="wxCondition">Loading…</div>
+          <div class="wx-yesterday" id="wxYesterday" hidden></div>
         </div>
       </div>
 
@@ -175,6 +176,12 @@
                 aria-label="Animated weather radar display. Activate for fullscreen."
                 role="button" tabindex="0"></canvas>
         <div class="radar-location" id="radarLocationLabel">No location</div>
+      </div>
+
+      <div class="radar-legend" id="radarLegend" title="Radar colours run from light precipitation to heavy">
+        <span class="legend-label">Light</span>
+        <span class="legend-bar" aria-hidden="true"></span>
+        <span class="legend-label">Heavy</span>
       </div>
 
       <div class="radar-timeline">

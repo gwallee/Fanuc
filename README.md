@@ -1,4 +1,4 @@
-# What the Wether V15 ⚡🌩️
+# What the Wether V16 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -159,6 +159,31 @@ Fullscreen button to come back.
   toggles it
 - Set `radar.fullscreenOnTap = false` in `config.js` to require the button
 
+### 🌡️ Today, in context (V16)
+
+Under the conditions the card says how today compares with yesterday —
+**"18°F warmer than yesterday"** — with yesterday's actual high in the tooltip.
+The forecast request now asks Open-Meteo for one past day to make that
+possible.
+
+- It compares like with like: the day's high against the day's high, never a
+  current reading against a daily figure
+- Under a degree either way reads *About the same as yesterday*, because a
+  fraction of a degree is noise, not news
+- If the past day is missing it says nothing at all rather than inventing a
+  comparison
+- The difference converts as a **difference**: 18°F warmer is 10°C warmer, not
+  the −8°C that running a delta through a temperature conversion would give.
+  That has its own function in `units.js` and its own tests
+
+Asking for a past day moved every index into the daily arrays by one, so the
+V16 suite exists mostly to prove today is still today: the fixture makes
+yesterday 62° against today's 80°, so an off-by-one would be unmistakable
+rather than plausible. Sunrise, sunset, UV and the forecast row are all checked
+against it. Visibility now comes from the hour nearest to now rather than the
+first hour in the series, which with yesterday in the data would have been a
+day old.
+
 ### 📡 Radar over a real map
 
 The radar has two modes and always tells you which one you're looking at,
@@ -178,7 +203,7 @@ is the truth. The badge also reports **staleness**: if the newest frame is
 older than `radarTiles.maxAgeMinutes`, it reads `RADAR (STALE)` instead of
 claiming to be live, and its tooltip gives the frame age in minutes.
 
-**`FORECAST` — where the rain is going (V15).** The same index publishes
+**`FORECAST` — where the rain is going (V16).** The same index publishes
 *nowcast* frames, and the loop now carries on past the present into the next
 half hour, so you can watch a band approach rather than only where it has
 been. Predictions are never dressed up as observations:
@@ -202,6 +227,12 @@ at it, so a loop that has run once does not stall mid-playback.
 unreachable, the app falls back to base-reflectivity imagery from
 [NOAA's public GeoServer](https://opengeo.ncep.noaa.gov/) (`conus_bref_qcd`),
 drawn over the basemap as before.
+
+**A legend (V16).** A bar under the scope runs light → heavy, so the colours
+mean something without having to be looked up. It is deliberately labelled by
+order rather than by exact figures: RainViewer's palette and NOAA's mosaic do
+not share a scale, and a legend that claimed precise values would be wrong for
+one of them.
 
 Every layer — basemap tiles, reflectivity, and alert polygons — is projected
 in **EPSG:3857 (Web Mercator)** so they align exactly. (V8 requested radar in
@@ -420,7 +451,7 @@ dependencies** — `package.json` exists only for the tests.
 ## Project structure
 
 ```
-WhatTheWether-V15/
+WhatTheWether-V16/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
@@ -543,7 +574,7 @@ on the **Build desktop apps** action) and GitHub builds all three platforms
 natively and attaches them to a release:
 
 ```bash
-git tag v15.0.0 && git push origin v15.0.0
+git tag v16.0.0 && git push origin v16.0.0
 ```
 
 | Platform | Files |
