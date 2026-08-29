@@ -246,15 +246,20 @@ alongside the headline stats.
 
 ### 👤 Account — sign in with Google or Microsoft (optional)
 
-**Settings → Account** offers two ways in: **Sign in with Google** and **Sign in
-with Microsoft**. Signing in sets your name and picture, and the roast bot
-starts using your first name. That is the whole of what it does.
+The **👤 button in the header** opens a sign-in screen with the two ways in:
+**Sign in with Google** and **Sign in with Microsoft**. Signing in sets your
+name and picture, and the roast bot starts using your first name. That is the
+whole of what it does. **Settings → Account** opens the same screen, and shows
+the signed-in account with a **Log out** button once there is one.
 
-Nothing in the app is behind it. Every feature works before anybody signs in,
-so the panel does not explain the state you are in meanwhile — there is nothing
-to explain. Each provider's SDK is fetched only when this panel is opened by
-somebody who is not signed in, so simply using the app contacts neither
-company.
+The screen is a door, not a gate. Nothing in the app is behind it — every
+feature works before anybody signs in — so it opens on request and closes on
+Escape, the overlay, the ✕ or **Not now**, and it never appears uninvited. Once
+signed in, the header button carries your picture (or your initial) and opens
+your account instead.
+
+Each provider's SDK is fetched only when that screen is opened by somebody who
+is not signed in, so simply using the app contacts neither company.
 
 Both providers are **off until you supply a client ID**, and each is
 independent: configure one, the other, or both, and only what is configured

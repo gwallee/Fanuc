@@ -670,6 +670,70 @@ body.modal-open { overflow: hidden; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* ---------------- Sign-in screen ---------------- */
+
+.signin-modal {
+  position: fixed;
+  z-index: 140;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(420px, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  text-align: center;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 18px;
+  box-shadow: var(--shadow), var(--glow);
+  padding: 1.6rem 1.4rem 1.2rem;
+}
+.signin-close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  min-height: 32px;
+  padding: 0.2rem 0.55rem;
+}
+.signin-logo { display: block; margin: 0 auto 0.6rem; }
+.signin-modal h2 {
+  font-size: 1.15rem;
+  letter-spacing: 0.3px;
+  margin-bottom: 0.35rem;
+}
+.signin-sub {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin: 0 auto 1.1rem;
+  max-width: 30ch;
+}
+.signin-modal .signin-buttons { align-items: center; }
+.signin-modal .auth-note { margin-top: 0.4rem; }
+.signin-fine {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin-top: 0.5rem;
+}
+.btn-plain {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-dim);
+  margin-top: 0.9rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.btn-plain:hover { color: var(--accent); }
+
+/* The header button doubles as the avatar once somebody is signed in. */
+.account-btn-avatar {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--accent);
+}
+
 /* Sign-in. Google renders its own branded button; the Microsoft one is
    ours, following their mark: four squares, never recoloured. */
 .account-lead {

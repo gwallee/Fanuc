@@ -38,6 +38,10 @@
         <button type="button" id="searchBtn" class="btn btn-primary btn-compact">🔍 Search</button>
         <button type="button" id="geoBtn" class="btn btn-compact" title="Use my location" aria-label="Use my location">📍</button>
         <button type="button" id="downloadBtn" class="btn btn-compact" title="Get the desktop app" aria-label="Get the desktop app">⬇️</button>
+        <button type="button" id="accountBtn" class="btn btn-compact" title="Sign in" aria-label="Sign in">
+          <img class="account-btn-avatar" id="accountBtnAvatar" alt="" width="20" height="20" hidden />
+          <span id="accountBtnIcon">👤</span>
+        </button>
         <button type="button" id="settingsBtn" class="btn btn-compact" title="Settings" aria-label="Open settings">⚙️</button>
       </div>
       <div class="search-field">
@@ -277,21 +281,7 @@
            only when this panel is actually opened. -->
       <div class="account-signed-out" id="accountSignedOut">
         <p class="account-lead" id="accountLead">Sign in to put your name and picture on the app.</p>
-        <div class="signin-buttons" id="signInButtons">
-          <div id="googleButtonHost" hidden></div>
-          <button type="button" id="microsoftBtn" class="btn signin-btn ms-btn" hidden>
-            <span class="ms-logo" aria-hidden="true">
-              <svg viewBox="0 0 20 20" width="18" height="18" focusable="false">
-                <rect x="1"  y="1"  width="8" height="8" fill="#f25022" />
-                <rect x="11" y="1"  width="8" height="8" fill="#7fba00" />
-                <rect x="1"  y="11" width="8" height="8" fill="#00a4ef" />
-                <rect x="11" y="11" width="8" height="8" fill="#ffb900" />
-              </svg>
-            </span>
-            <span>Sign in with Microsoft</span>
-          </button>
-        </div>
-        <p class="auth-note" id="signInNote" hidden></p>
+        <button type="button" id="settingsSignInBtn" class="btn btn-primary btn-small">Sign in</button>
       </div>
 
       <div class="account-signed-in" id="accountSignedIn" hidden>
@@ -391,6 +381,39 @@
       <button type="button" id="downloadClose" class="btn btn-small" aria-label="Close downloads">✕</button>
     </div>
     <div class="dl-body" id="downloadBody"></div>
+  </div>
+
+  <!-- ================= Sign in ================= -->
+  <div class="modal-overlay" id="signInOverlay" hidden></div>
+  <div class="signin-modal" id="signInModal" role="dialog" aria-modal="true"
+       aria-labelledby="signInTitle" tabindex="-1" hidden>
+    <button type="button" id="signInClose" class="signin-close btn btn-small"
+            aria-label="Close sign in">✕</button>
+    <img class="signin-logo" src="logo.svg" alt="" width="56" height="56" />
+    <h2 id="signInTitle">Sign in to What the Wether</h2>
+    <p class="signin-sub">Use an account you already have. It sets your name and
+      picture across the app — nothing else changes.</p>
+
+    <div class="signin-buttons" id="signInButtons">
+      <div id="googleButtonHost" hidden></div>
+      <button type="button" id="microsoftBtn" class="btn signin-btn ms-btn" hidden>
+        <span class="ms-logo" aria-hidden="true">
+          <svg viewBox="0 0 20 20" width="18" height="18" focusable="false">
+            <rect x="1"  y="1"  width="8" height="8" fill="#f25022" />
+            <rect x="11" y="1"  width="8" height="8" fill="#7fba00" />
+            <rect x="1"  y="11" width="8" height="8" fill="#00a4ef" />
+            <rect x="11" y="11" width="8" height="8" fill="#ffb900" />
+          </svg>
+        </span>
+        <span>Sign in with Microsoft</span>
+      </button>
+    </div>
+
+    <p class="auth-note" id="signInNote" hidden></p>
+
+    <button type="button" id="signInDismiss" class="btn btn-small btn-plain">Not now</button>
+    <p class="signin-fine">Nothing is synced: your favourites and settings stay on
+      this device.</p>
   </div>
 
   <!-- ================= Temperature trend ================= -->

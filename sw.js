@@ -8,7 +8,7 @@
    is deleted on activate.
    ============================================================ */
 
-const CACHE_VERSION = 'wtw-v14-1';
+const CACHE_VERSION = 'wtw-v14-2';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 

@@ -975,13 +975,6 @@
     panel.classList.toggle('open', open);
     if (overlay) overlay.hidden = !open;
     document.body.classList.toggle('settings-open', open);
-
-    // Neither provider's script is fetched until the panel is actually
-    // opened by somebody who is not already signed in.
-    if (open && !signInRendered && !WTWAuth.isSignedIn()) {
-      signInRendered = true;
-      renderSignIn();
-    }
   }
 
   function initSettingsUI() {
@@ -1142,7 +1135,34 @@
       brand.hidden = true;
       brand.removeAttribute('src');
     }
+    renderAccountButton(profile);
     renderAccountHint(profile);
+  }
+
+  // The header button is the way in, and the way back to the account
+  // once somebody is signed in.
+  function renderAccountButton(profile) {
+    const btn = $('accountBtn');
+    const img = $('accountBtnAvatar');
+    const icon = $('accountBtnIcon');
+    if (!btn || !img || !icon) return;
+
+    const label = profile ? `Account: ${profile.name}` : 'Sign in';
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+
+    if (profile && profile.picture) {
+      img.src = profile.picture;
+      img.hidden = false;
+      icon.hidden = true;
+      return;
+    }
+    img.hidden = true;
+    img.removeAttribute('src');
+    icon.hidden = false;
+    icon.textContent = profile
+      ? (profile.name || '?').trim().charAt(0).toUpperCase()
+      : '\u{1F464}';
   }
 
   // Google supplies a picture; Microsoft's ID token does not, and
@@ -1203,6 +1223,40 @@
     }
   }
 
+  /* ------------------------------------------------------------
+     The sign-in screen. Nothing in the app is behind it, so it opens
+     on request and closes on Escape, the overlay, the ✕ or "Not now" —
+     it is a door, not a gate.
+     ------------------------------------------------------------ */
+  function openSignIn(open) {
+    const modal = $('signInModal');
+    const overlay = $('signInOverlay');
+    if (!modal || !overlay) return;
+
+    if (open && WTWAuth.isSignedIn()) {
+      // Already in. Show the account rather than an empty sign-in screen.
+      openSettings(true);
+      return;
+    }
+
+    modal.hidden = !open;
+    overlay.hidden = !open;
+    document.body.classList.toggle('signin-open', open);
+
+    if (!open) {
+      const btn = $('accountBtn');
+      if (btn) btn.focus();
+      return;
+    }
+    // Neither provider's script is fetched until somebody actually asks
+    // to sign in, so using the app contacts neither company.
+    if (!signInRendered) {
+      signInRendered = true;
+      renderSignIn();
+    }
+    modal.focus();
+  }
+
   async function signInWithMicrosoft() {
     const btn = $('microsoftBtn');
     if (btn) btn.disabled = true;
@@ -1261,17 +1315,14 @@
   function onAuthChange(profile) {
     renderAccount(profile);
     if (profile) {
+      openSignIn(false);
       applyProfileToUsername(profile);
       toast(`Signed in as ${profile.name}`);
       return;
     }
-    // Logging out must leave a way back in: the buttons are skipped
-    // while signed in, so re-draw them if the panel is open.
+    // Logging out must leave a way back in: the screen is skipped while
+    // signed in, so it is re-drawn the next time it opens.
     signInRendered = false;
-    if (document.body.classList.contains('settings-open')) {
-      signInRendered = true;
-      renderSignIn();
-    }
   }
 
   /* ---------------- Desktop downloads ---------------- */
@@ -1406,6 +1457,15 @@
     $('signOutBtn').addEventListener('click', logOut);
     $('microsoftBtn').addEventListener('click', signInWithMicrosoft);
 
+    $('accountBtn').addEventListener('click', () => openSignIn(true));
+    $('settingsSignInBtn').addEventListener('click', () => {
+      openSettings(false);
+      openSignIn(true);
+    });
+    $('signInClose').addEventListener('click', () => openSignIn(false));
+    $('signInDismiss').addEventListener('click', () => openSignIn(false));
+    $('signInOverlay').addEventListener('click', () => openSignIn(false));
+
     $('downloadBtn').addEventListener('click', () => openDownloads(true));
     $('settingsDownloadBtn').addEventListener('click', () => {
       openSettings(false);
@@ -1424,6 +1484,7 @@
       if (e.key !== 'Escape') return;
       if (!$('tempModal').hidden) openTempChart(false);
       if (!$('downloadModal').hidden) openDownloads(false);
+      if (!$('signInModal').hidden) openSignIn(false);
     });
 
     $('compareRefreshBtn').addEventListener('click', () => {

@@ -1,5 +1,5 @@
-/* Sign in with Google or Microsoft, and what the panel says when
-   nobody has. */
+/* The sign-in screen: how it opens, what it offers, and what it says
+   when neither provider is configured. */
 const { chromium } = require('playwright');
 const BASE_URL = process.env.WTW_BASE_URL || 'http://localhost:8901';
 const APP_DIR = process.env.WTW_APP_DIR || require('path').join(__dirname, '..');
@@ -131,12 +131,21 @@ function omBody() {
     await page.waitForSelector('#weatherPanels:not([hidden])', { timeout: 15000 });
     return /Austin/.test(await page.textContent('#wxCity'));
   });
-  await check('settings says so plainly, with no dead buttons', async () => {
-    await page.click('#settingsBtn');
+  await check('the header button opens the sign-in screen', async () => {
+    await page.click('#accountBtn');
     await page.waitForTimeout(700);
-    return /isn.t set up/i.test(await page.textContent('#signInNote')) &&
-           !(await page.isVisible('#microsoftBtn')) &&
-           (await page.locator('#fakeGoogleButton').count()) === 0;
+    return await page.isVisible('#signInModal') &&
+           /Sign in to What the Wether/i.test(await page.textContent('#signInTitle'));
+  });
+  await check('it says so plainly, with no dead buttons', async () =>
+    /isn.t set up/i.test(await page.textContent('#signInNote')) &&
+    !(await page.isVisible('#microsoftBtn')) &&
+    (await page.locator('#fakeGoogleButton').count()) === 0);
+  await check('the screen closes and is not a gate', async () => {
+    await page.click('#signInDismiss');
+    await page.waitForTimeout(400);
+    return !(await page.isVisible('#signInModal')) &&
+           await page.isVisible('#weatherPanels');
   });
   await check('the word "guest" appears nowhere in the app', async () =>
     page.evaluate(() => !/guest/i.test(document.body.innerText)));
@@ -152,10 +161,23 @@ function omBody() {
   await page.fill('#searchInput', 'Austin');
   await page.click('#searchBtn');
   await page.waitForSelector('#weatherPanels:not([hidden])', { timeout: 15000 });
-  await check('both buttons are offered', async () => {
-    await page.click('#settingsBtn');
+  await check('both buttons are offered on the screen', async () => {
+    await page.click('#accountBtn');
     await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
     return await page.isVisible('#fakeGoogleButton') && await page.isVisible('#microsoftBtn');
+  });
+  await check('Escape closes it', async () => {
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+    return !(await page.isVisible('#signInModal'));
+  });
+  await check('Settings offers a way in too', async () => {
+    await page.click('#settingsBtn');
+    await page.waitForTimeout(400);
+    await page.click('#settingsSignInBtn');
+    await page.waitForTimeout(600);
+    return await page.isVisible('#signInModal') &&
+           !(await page.evaluate(() => document.body.classList.contains('settings-open')));
   });
   await check('still no talk of guests', async () =>
     page.evaluate(() => !/guest/i.test(document.body.innerText)));
@@ -170,7 +192,7 @@ function omBody() {
   await page.fill('#searchInput', 'Austin');
   await page.click('#searchBtn');
   await page.waitForSelector('#weatherPanels:not([hidden])', { timeout: 15000 });
-  await page.click('#settingsBtn');
+  await page.click('#accountBtn');
   await page.waitForTimeout(800);
   await check('the Microsoft app is configured with the client ID and authority', async () => {
     await page.click('#microsoftBtn');
@@ -191,8 +213,16 @@ function omBody() {
     /Microsoft/.test(await page.textContent('#accountHint')));
   await check('the username adopts the first name', async () =>
     (await page.textContent('.brand-greeting strong')) === 'Grace');
-  await check('the sign-in buttons are replaced, not stacked', async () =>
-    !(await page.isVisible('#accountSignedOut')) && await page.isVisible('#accountSignedIn'));
+  await check('signing in closes the screen by itself', async () =>
+    !(await page.isVisible('#signInModal')));
+  await check('the header button becomes the account', async () =>
+    /Grace/.test(await page.getAttribute('#accountBtn', 'aria-label')) &&
+    (await page.textContent('#accountBtnIcon')) === 'G');
+  await check('the settings panel shows the account, not a sign-in prompt', async () => {
+    await page.click('#settingsBtn');
+    await page.waitForTimeout(500);
+    return !(await page.isVisible('#accountSignedOut')) && await page.isVisible('#accountSignedIn');
+  });
   await check('logging out clears the account and the adopted name', async () => {
     await page.click('#signOutBtn');
     await page.waitForTimeout(700);
@@ -201,8 +231,12 @@ function omBody() {
   });
   await check("logging out drops Microsoft's cached account", async () =>
     page.evaluate(() => window.__msalRemoved === true));
-  await check('both buttons are offered again straight away', async () =>
-    await page.isVisible('#microsoftBtn') && await page.isVisible('#fakeGoogleButton'));
+  await check('both buttons are offered again straight away', async () => {
+    await page.click('#settingsCloseBtn');
+    await page.click('#accountBtn');
+    await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
+    return await page.isVisible('#microsoftBtn') && await page.isVisible('#fakeGoogleButton');
+  });
   await check('a cancelled popup is not treated as a failure', async () => {
     // Clear the log-out toast first, or its 3s lifetime answers for us.
     await page.evaluate(() => {
@@ -230,11 +264,13 @@ function omBody() {
   await page.fill('#searchInput', 'Austin');
   await page.click('#searchBtn');
   await page.waitForSelector('#weatherPanels:not([hidden])', { timeout: 15000 });
-  await page.click('#settingsBtn');
+  await page.click('#accountBtn');
   await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
   await check('signing in shows the name and email', async () => {
     await page.click('#fakeGoogleButton');
     await page.waitForTimeout(700);
+    await page.click('#settingsBtn');
+    await page.waitForTimeout(400);
     return (await page.textContent('#accountName')) === 'Ada Lovelace' &&
            (await page.textContent('#accountEmail')) === 'ada@example.com';
   });
@@ -252,17 +288,30 @@ function omBody() {
   });
   await check('the profile survives a reload', async () => {
     await page.reload({ waitUntil: 'networkidle' });
+    // The reload takes the page's globals with it, including the token
+    // the stubbed Google button hands back. Put it back, or a later
+    // sign-in silently does nothing and the failure lands somewhere else.
+    await page.evaluate((tok) => { window.__fakeToken = tok; }, fakeIdToken(GOOGLE_PROFILE));
     await page.waitForTimeout(1800);
     await page.click('#settingsBtn');
     await page.waitForTimeout(600);
     return (await page.textContent('#accountName')) === 'Ada Lovelace';
+  });
+  await check('the header button opens the account, not the sign-in screen', async () => {
+    await page.click('#settingsCloseBtn');
+    await page.waitForTimeout(300);
+    await page.click('#accountBtn');
+    await page.waitForTimeout(600);
+    return !(await page.isVisible('#signInModal')) &&
+           await page.evaluate(() => document.body.classList.contains('settings-open'));
   });
   await check('logging out clears the profile and the avatar', async () => {
     await page.click('#signOutBtn');
     await page.waitForTimeout(700);
     return await page.isVisible('#accountSignedOut') &&
            !(await page.isVisible('#accountSignedIn')) &&
-           !(await page.isVisible('#brandAvatar'));
+           !(await page.isVisible('#brandAvatar')) &&
+           !(await page.isVisible('#accountBtnAvatar'));
   });
   await check("logging out also clears Google's auto-select", async () =>
     page.evaluate(() => window.__autoSelectDisabled === true));
@@ -270,9 +319,13 @@ function omBody() {
     page.evaluate(() => localStorage.getItem('wtw:profile') === null &&
                         localStorage.getItem('wtw:googleProfile') === null));
   await check('signing back in works without a reload', async () => {
+    await page.click('#settingsCloseBtn');
+    await page.click('#accountBtn');
     await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
     await page.click('#fakeGoogleButton');
     await page.waitForTimeout(700);
+    await page.click('#settingsBtn');
+    await page.waitForTimeout(400);
     return (await page.textContent('#accountName')) === 'Ada Lovelace';
   });
   await ctx.close();
@@ -280,7 +333,7 @@ function omBody() {
   console.log('\n=== One provider configured, not the other ===');
   ({ ctx, page } = await mk({ microsoft: MS_ID }));
   await check('only the configured provider is offered', async () => {
-    await page.click('#settingsBtn');
+    await page.click('#accountBtn');
     await page.waitForTimeout(800);
     return await page.isVisible('#microsoftBtn') &&
            (await page.locator('#fakeGoogleButton').count()) === 0 &&
@@ -301,13 +354,15 @@ function omBody() {
   await page.evaluate((tok) => { window.__fakeToken = tok; }, fakeIdToken(GOOGLE_PROFILE));
   await page.waitForTimeout(800);
   await check('a custom username survives signing in', async () => {
-    await page.click('#settingsBtn');
+    await page.click('#accountBtn');
     await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
     await page.click('#fakeGoogleButton');
     await page.waitForTimeout(700);
     return (await page.textContent('.brand-greeting strong')) === 'StormLord';
   });
   await check('and survives logging out again', async () => {
+    await page.click('#settingsBtn');
+    await page.waitForTimeout(400);
     await page.click('#signOutBtn');
     await page.waitForTimeout(700);
     return (await page.textContent('.brand-greeting strong')) === 'StormLord';
@@ -318,7 +373,7 @@ function omBody() {
   ({ ctx, page } = await mk({ google: GOOGLE_ID }));
   await check('garbage tokens do not sign anyone in', async () => {
     await page.evaluate(() => { window.__fakeToken = 'not.a.jwt'; });
-    await page.click('#settingsBtn');
+    await page.click('#accountBtn');
     await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
     await page.click('#fakeGoogleButton');
     await page.waitForTimeout(600);
@@ -332,7 +387,7 @@ function omBody() {
     return !(await page.isVisible('#accountSignedIn'));
   });
   await check('the page is still alive after both', async () =>
-    page.isVisible('#settingsPanel'));
+    page.isVisible('#signInModal'));
   await ctx.close();
 
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nAll sign-in checks passed.');
