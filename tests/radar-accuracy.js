@@ -8,16 +8,22 @@ const fs = require('fs');
 const PNG = fs.readFileSync(__dirname + '/fixture-radar-frame.png');
 const AUSTIN = { lat: 30.2672, lon: -97.7431 };
 
-// A RainViewer-shaped index: 8 frames, 10 minutes apart, newest 4 min old.
-function rvIndex({ newestAgeMin = 4, count = 8 } = {}) {
+// A RainViewer-shaped index: 8 observed frames 10 minutes apart, newest
+// 4 min old, plus nowcast frames running on into the future.
+function rvIndex({ newestAgeMin = 4, count = 8, ahead = 3 } = {}) {
   const newest = Math.floor((Date.now() - newestAgeMin * 60000) / 1000);
   const past = [];
   for (let i = count - 1; i >= 0; i--) {
     const t = newest - i * 600;
     past.push({ time: t, path: `/v2/radar/${t}` });
   }
+  const nowcast = [];
+  for (let i = 1; i <= ahead; i++) {
+    const t = newest + i * 600;
+    nowcast.push({ time: t, path: `/v2/radar/nowcast_${t}` });
+  }
   return { version: '2.0', generated: newest, host: 'https://tilecache.rainviewer.com',
-    radar: { past, nowcast: [] } };
+    radar: { past, nowcast } };
 }
 
 function omBody() {
@@ -77,8 +83,8 @@ function omBody() {
     (await page.textContent('#radarSource')).trim() === 'LIVE RADAR');
   await check('badge tooltip states the frame age', async () =>
     /min old/.test(await page.getAttribute('#radarSource', 'title')));
-  await check('timeline offers all 8 published frames', async () =>
-    (await page.getAttribute('#radarTimeline', 'max')) === '7');
+  await check('timeline offers every published frame', async () =>
+    (await page.getAttribute('#radarTimeline', 'max')) === '10');
   await check('tile URLs carry the frame timestamp and z/x/y', () => {
     const m = tiles[0].match(/\/v2\/radar\/(\d+)\/(\d+)\/(\d+)\/(\d+)\/(\d+)\/(\d+)\/(\d)_(\d)\.png/);
     if (!m) return false;
@@ -92,10 +98,27 @@ function omBody() {
     const indexTimes = await page.evaluate(async () => {
       const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
       const d = await r.json();
-      return d.radar.past.map((f) => f.time);
+      return d.radar.past.concat(d.radar.nowcast).map((f) => f.time);
     });
-    const used = new Set(tiles.map((u) => Number(u.match(/\/v2\/radar\/(\d+)\//)[1])));
-    return [...used].every((t) => indexTimes.includes(t));
+    // Nowcast frames are published under a different path shape, so
+    // accept both and check against observations and predictions alike.
+    const used = new Set(tiles
+      .map((u) => u.match(/\/v2\/radar\/(?:nowcast_)?(\d+)\//))
+      .filter(Boolean).map((m) => Number(m[1])));
+    return used.size > 0 && [...used].every((t) => indexTimes.includes(t));
+  });
+  await check('it opens on the newest observation, not on a prediction', async () => {
+    // The loop advances frames on its own, so stop it and reload rather
+    // than asserting against whatever second the suite arrived at.
+    await page.click('#radarStopBtn');
+    await page.click('#radarRefreshBtn');
+    await page.waitForTimeout(1500);
+    const label = (await page.textContent('#radarTimeLabel')).trim();
+    const value = await page.inputValue('#radarTimeline');
+    const ok = label === 'NOW' && value === '7';
+    if (!ok) console.log(`  [diag] label=${label} slider=${value} ` +
+      `playing=${await page.evaluate(() => WTWRadar.isAnimating())}`);
+    return ok;
   });
   await check('scrubbing shows the frame\'s real clock time', async () => {
     await page.click('#radarStopBtn');
@@ -103,6 +126,29 @@ function omBody() {
     const label = (await page.textContent('#radarTimeLabel')).trim();
     return /\d/.test(label) && label !== 'NOW';
   });
+  await check('the forecast frames are on the timeline too', async () => {
+    const max = Number(await page.getAttribute('#radarTimeline', 'max'));
+    return max === 10;      // 8 observed + 3 nowcast, zero-indexed
+  });
+  await check('scrubbing ahead is labelled as minutes into the future', async () => {
+    await page.locator('#radarTimeline').fill('10');
+    await page.waitForTimeout(300);
+    return /^\+\d+ min$/.test((await page.textContent('#radarTimeLabel')).trim());
+  });
+  await check('a prediction is never badged as live radar', async () =>
+    (await page.textContent('#radarSource')).trim() === 'FORECAST' &&
+    !(await page.getAttribute('#radarSource', 'class')).includes('live-source'));
+  await check('the badge says a prediction is a prediction', async () =>
+    /not an observation/i.test(await page.getAttribute('#radarSource', 'title')));
+  await check('the end of the timeline says how far ahead it runs', async () =>
+    /^\+\d+ min$/.test((await page.textContent('#radarTimelineEnd')).trim()));
+  await check('scrubbing back to the present restores the live badge', async () => {
+    await page.locator('#radarTimeline').fill('7');
+    await page.waitForTimeout(300);
+    return (await page.textContent('#radarSource')).trim() === 'LIVE RADAR';
+  });
+  await check('frame age is measured from the observation, not the forecast', async () =>
+    /4 min old|3 min old|5 min old/.test(await page.getAttribute('#radarSource', 'title')));
   await check('frames are 10 minutes apart as published', async () =>
     page.evaluate(async () => {
       const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');

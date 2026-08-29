@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V14 — radar.js
+   What the Wether V15 — radar.js
    Canvas radar scope with a real basemap underneath.
 
    Layers, bottom to top, all projected in EPSG:3857 so they align:
@@ -40,7 +40,8 @@ const WTWRadar = (() => {
     alerts: [],             // GeoJSON features with geometry
     dragging: false, dragLast: null, dragStart: null, moved: false,
     refetchTimer: null,
-    lastRefreshAt: 0,       // when imagery was last (re)loaded
+    lastRefreshAt: 0,
+    preloadedPath: null,       // when imagery was last (re)loaded
     fullscreen: false,
     visible: true,          // scope is on screen
     pageVisible: true,      // tab is in the foreground
@@ -85,8 +86,13 @@ const WTWRadar = (() => {
     if (!index || token !== state.loadToken) return false;
     state.source = 'tiles';
     state.tileHost = index.host;
-    state.frames = index.frames.map((f) => ({ time: f.time, path: f.path }));
-    state.frameIndex = state.frames.length - 1;
+    state.frames = index.frames.map((f) => ({
+      time: f.time, path: f.path, forecast: !!f.forecast,
+    }));
+    // Open on the latest real observation. The forecast frames are
+    // ahead of it on the timeline, to be played into, not landed on.
+    const observed = WTWRadarSource.latestObservedIndex(state.frames);
+    state.frameIndex = observed >= 0 ? observed : state.frames.length - 1;
     state.frameAccum = 0;
     state.frameAge = WTWRadarSource.ageMinutes(state.frames);
     return true;
@@ -259,13 +265,17 @@ const WTWRadar = (() => {
 
     // 2. Precipitation
     if (state.source === 'tiles' && state.frames.length) {
-      const frame = state.frames[Math.min(state.frameIndex, state.frames.length - 1)];
+      const i = Math.min(state.frameIndex, state.frames.length - 1);
+      const frame = state.frames[i];
       if (frame) {
-        ctx.globalAlpha = 0.85;
+        // A prediction is drawn a shade lighter than an observation, so
+        // the difference is visible on the map and not only in the label.
+        ctx.globalAlpha = frame.forecast ? 0.62 : 0.85;
         WTWMap.drawTiles(ctx, view, size, originX, originY,
           (z, x, y) => WTWRadarSource.tileUrl(state.tileHost, frame.path, z, x, y),
           () => draw(), { maxZoom: 10 });
         ctx.globalAlpha = 1;
+        preloadNextFrame(view, size, i);
       }
     } else if (state.source === 'nws' && state.frames.length) {
       const frame = state.frames[Math.min(state.frameIndex, state.frames.length - 1)];
@@ -289,6 +299,18 @@ const WTWRadar = (() => {
     drawRangeLabels(ctx, cx, cy, radius, accent);
     drawMarker(ctx, view, size, originX, originY, accent, t);
     drawBezel(ctx, cx, cy, radius, accent);
+  }
+
+  // Fetch the frame after this one while this one is on screen, so a
+  // loop that has run once never stalls mid-playback waiting on tiles.
+  function preloadNextFrame(view, size, currentIndex) {
+    if (!WTWMap.preloadTiles || state.frames.length < 2) return;
+    const next = state.frames[(currentIndex + 1) % state.frames.length];
+    if (!next || next.path === state.preloadedPath) return;
+    state.preloadedPath = next.path;
+    WTWMap.preloadTiles(view, size,
+      (z, x, y) => WTWRadarSource.tileUrl(state.tileHost, next.path, z, x, y),
+      { maxZoom: 10 });
   }
 
   function drawSimulatedCells(ctx, cx, cy, radius, t) {
@@ -488,6 +510,7 @@ const WTWRadar = (() => {
           if (state.frameAccum >= stepMs) {
             state.frameAccum = 0;
             state.frameIndex = (state.frameIndex + 1) % state.frames.length;
+            updateSourceBadge();
             syncTimelineUI();
           }
         }
@@ -595,7 +618,14 @@ const WTWRadar = (() => {
     let title = 'No live radar for this location — showing a simulation based on current conditions';
     let live = false;
 
-    if (hasFrames && state.source === 'tiles') {
+    if (hasFrames && state.source === 'tiles' && showingForecast()) {
+      // Never call a prediction live, whatever the imagery's age.
+      live = false;
+      text = 'FORECAST';
+      const mins = Math.max(0, Math.round(
+        (state.frames[state.frameIndex].time.getTime() - Date.now()) / 60000));
+      title = `RainViewer nowcast, ${mins} min ahead — a prediction, not an observation`;
+    } else if (hasFrames && state.source === 'tiles') {
       live = !stale;
       text = stale ? 'RADAR (STALE)' : 'LIVE RADAR';
       title = `RainViewer composite, newest frame ${Math.round(state.frameAge)} min old`;
@@ -610,16 +640,32 @@ const WTWRadar = (() => {
     badge.title = title;
   }
 
+  function showingForecast() {
+    const f = state.frames[Math.min(state.frameIndex, state.frames.length - 1)];
+    return !!(f && f.forecast);
+  }
+
   function hasTimestampedFrames() {
     return (state.source === 'tiles' || state.source === 'nws') && state.frames.length > 0;
+  }
+
+  function clockText(date) {
+    return window.WTWUnits ? WTWUnits.time(date)
+      : date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   }
 
   function timelineLabelText() {
     if (hasTimestampedFrames()) {
       const i = Math.min(state.frameIndex, state.frames.length - 1);
-      if (i === state.frames.length - 1) return 'NOW';
-      return window.WTWUnits ? WTWUnits.time(state.frames[i].time)
-        : state.frames[i].time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      const frame = state.frames[i];
+      if (frame.forecast) {
+        const mins = Math.max(1, Math.round((frame.time.getTime() - Date.now()) / 60000));
+        return `+${mins} min`;
+      }
+      const observed = WTWRadarSource.latestObservedIndex
+        ? WTWRadarSource.latestObservedIndex(state.frames) : state.frames.length - 1;
+      if (i === observed) return 'NOW';
+      return clockText(frame.time);
     }
     const back = (cfg().frameMinutes || 60) - Math.round(state.timelineMinute);
     return back <= 0 ? 'NOW' : `-${back} min`;
@@ -634,24 +680,47 @@ const WTWRadar = (() => {
       slider.max = String(state.frames.length - 1);
       slider.step = '1';
       slider.value = String(state.frameIndex);
-      if (caption) caption.textContent = window.WTWUnits
-        ? WTWUnits.time(state.frames[0].time)
-        : state.frames[0].time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      if (caption) caption.textContent = clockText(state.frames[0].time);
+      setEndCaption();
     } else {
       slider.min = '0';
       slider.max = String(cfg().frameMinutes || 60);
       slider.step = '1';
       slider.value = String(Math.round(state.timelineMinute));
       if (caption) caption.textContent = `-${cfg().frameMinutes || 60} min`;
+      setEndCaption();
     }
     syncTimelineUI();
+  }
+
+  // What the right-hand end of the timeline is: the present, or the far
+  // edge of the forecast when there is one.
+  function setEndCaption() {
+    const el = document.getElementById('radarTimelineEnd');
+    if (!el) return;
+    const last = state.frames[state.frames.length - 1];
+    if (hasTimestampedFrames() && last && last.forecast) {
+      const mins = Math.max(1, Math.round((last.time.getTime() - Date.now()) / 60000));
+      el.textContent = `+${mins} min`;
+      el.classList.add('is-forecast');
+      el.title = 'Forecast frames from the RainViewer nowcast';
+      return;
+    }
+    el.textContent = 'now';
+    el.classList.remove('is-forecast');
+    el.removeAttribute('title');
   }
 
   function syncTimelineUI() {
     const slider = document.getElementById('radarTimeline');
     const label = document.getElementById('radarTimeLabel');
     if (slider && !state.scrubbing) {
-      slider.value = state.source === 'nws' && state.frames.length
+      // Any timestamped source drives the thumb from the frame index.
+      // Tiles used to fall through to the simulated minute counter,
+      // which pinned the thumb to the right-hand end no matter which
+      // frame was on screen — invisible while the newest frame was also
+      // the last one, and plainly wrong once forecasts sit after it.
+      slider.value = hasTimestampedFrames()
         ? String(state.frameIndex) : String(Math.round(state.timelineMinute));
     }
     if (label) label.textContent = timelineLabelText();
@@ -904,6 +973,10 @@ const WTWRadar = (() => {
         }
         const label = document.getElementById('radarTimeLabel');
         if (label) label.textContent = timelineLabelText();
+        // The badge describes the frame on screen, so it has to follow
+        // the scrub: dragging into the nowcast must stop it claiming
+        // live radar, and dragging back must restore it.
+        updateSourceBadge();
         draw();
       });
       const endScrub = () => { state.scrubbing = false; };

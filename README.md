@@ -1,4 +1,4 @@
-# What the Wether V14 ⚡🌩️
+# What the Wether V15 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -178,6 +178,26 @@ is the truth. The badge also reports **staleness**: if the newest frame is
 older than `radarTiles.maxAgeMinutes`, it reads `RADAR (STALE)` instead of
 claiming to be live, and its tooltip gives the frame age in minutes.
 
+**`FORECAST` — where the rain is going (V15).** The same index publishes
+*nowcast* frames, and the loop now carries on past the present into the next
+half hour, so you can watch a band approach rather than only where it has
+been. Predictions are never dressed up as observations:
+
+- The badge reads `FORECAST`, never `LIVE RADAR`, and is not styled as live —
+  whichever frame you scrub to, whether you dragged there or the loop played
+  there
+- The timeline label reads `+20 min` rather than a clock time, and the far end
+  of the timeline says how far ahead it runs
+- Forecast frames are drawn a shade lighter than observations, so the
+  difference shows on the map and not only in the text
+- The "how old is this imagery" figure ignores them entirely — a future
+  timestamp would otherwise make stale radar look fresher than it is
+- The radar opens on the newest real observation, not on a prediction
+
+Set `radarTiles.forecastFrames` to `0` to turn them off; the loop then stops at
+the present. The frame after the one on screen is fetched while you are looking
+at it, so a loop that has run once does not stall mid-playback.
+
 **`NWS LIVE` — NOAA mosaic (US fallback).** If the frame index is
 unreachable, the app falls back to base-reflectivity imagery from
 [NOAA's public GeoServer](https://opengeo.ncep.noaa.gov/) (`conus_bref_qcd`),
@@ -244,10 +264,13 @@ alongside the headline stats.
 - Save locations, remove them, click to load
 - Stored in `localStorage`
 
-### 👤 Account — sign in with Google or Microsoft (optional)
+### 👤 Account — a name, or Google / Microsoft / Apple (optional)
 
-The **👤 button in the header** opens a sign-in screen with the two ways in:
-**Sign in with Google** and **Sign in with Microsoft**. Signing in sets your
+The **👤 button in the header** opens a sign-in screen. It always offers at
+least one way in: **use a name on this device**, which needs no provider, no
+client ID and no network, and works in the packaged desktop app too. Above it,
+when configured, sit **Sign in with Google**, **Sign in with Microsoft** and
+**Sign in with Apple**. Signing in sets your
 name and picture, and the roast bot starts using your first name. That is the
 whole of what it does. **Settings → Account** opens the same screen, and shows
 the signed-in account with a **Log out** button once there is one.
@@ -261,10 +284,16 @@ your account instead.
 Each provider's SDK is fetched only when that screen is opened by somebody who
 is not signed in, so simply using the app contacts neither company.
 
-Both providers are **off until you supply a client ID**, and each is
-independent: configure one, the other, or both, and only what is configured
-appears. With neither set the panel says so in a line rather than showing a
-button that cannot work.
+All three providers are **off until you supply a client ID**, and each is
+independent: configure any of them and only what is configured appears. With
+none set the screen simply offers the name — it never tells whoever is using
+the app that sign-in is unavailable, because it isn't. A line pointing here
+appears only when the site is served from `localhost`, where the person
+looking at it is the one who can fix it.
+
+A name on this device is a profile, not an identity: it is stored in this
+browser, it proves nothing, and the screen says as much. Signing out and back
+in with the same device keeps the same account id.
 
 **Turning on Google:**
 
@@ -289,7 +318,27 @@ button that cannot work.
    expects a client secret, which a static site cannot keep
 4. Paste the **Application (client) ID** into `auth.microsoft.clientId`
 
-No client secret is needed for either, and neither client ID is a secret: both
+**Turning on Apple:**
+
+Apple is the one that costs money — a Services ID needs a paid **Apple
+Developer Program** membership (currently $99/year), which Google and Microsoft
+do not. Worth knowing before you start.
+
+1. In [Certificates, Identifiers & Profiles → Identifiers](https://developer.apple.com/account/resources/identifiers/list/serviceId),
+   register an **App ID**, then a **Services ID** (that is the client ID)
+2. Enable **Sign in with Apple** on the Services ID and configure it: add your
+   domain (`gwallee.github.io`) and a **Return URL** matching the page exactly
+   — `https://gwallee.github.io/What-The-Weather/`
+3. Paste the Services ID into `auth.apple.clientId`. If your Return URL differs
+   from the page's own URL, set `auth.apple.redirectUri` to match it
+
+Two things about Apple that the code handles so they don't surprise you: it
+sends the person's name **only on their very first authorization** and never
+again (the app stores it then, and falls back to the email's local part
+later), and it never sends a picture, so an Apple account shows an initial.
+Private-relay addresses are not turned into names.
+
+No client secret is needed for any of them, and no client ID is a secret: all
 are public by design and only work from the origins you registered, which is
 why they can live in a committed file.
 
@@ -311,7 +360,8 @@ account, and sign-in always asks which account to use, so nothing is sticky. A
 username you chose yourself is never touched, whichever way you came in.
 
 Microsoft's ID token carries no picture (fetching one needs Microsoft Graph),
-so a signed-in Microsoft account shows an initial rather than a broken image.
+and Apple never sends one at all, so those accounts show an initial rather than
+a broken image.
 
 ### ⚙️ Settings
 - **Username** (default: `DJTheBest`) — shown throughout the app and used
@@ -363,7 +413,7 @@ dependencies** — `package.json` exists only for the tests.
 ## Project structure
 
 ```
-WhatTheWether-V14/
+WhatTheWether-V15/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
@@ -486,7 +536,7 @@ on the **Build desktop apps** action) and GitHub builds all three platforms
 natively and attaches them to a release:
 
 ```bash
-git tag v14.0.0 && git push origin v14.0.0
+git tag v15.0.0 && git push origin v15.0.0
 ```
 
 | Platform | Files |

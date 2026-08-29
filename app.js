@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V14 — app.js
+   What the Wether V15 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -1191,23 +1191,44 @@
   async function renderSignIn() {
     const note = $('signInNote');
     const msBtn = $('microsoftBtn');
+    const appleBtn = $('appleBtn');
     const googleHost = $('googleButtonHost');
-    if (!note || !msBtn || !googleHost) return;
+    const or = $('signInOr');
+    if (!note || !msBtn || !appleBtn || !googleHost) return;
 
     const available = WTWAuth.providers();
 
+    msBtn.hidden = !available.includes('microsoft');
+    appleBtn.hidden = !available.includes('apple');
+
+    // With no provider on offer the screen is about the name below it,
+    // so the subtitle should not open by talking about accounts
+    // elsewhere.
+    const sub = $('signInSub');
+    if (sub) {
+      sub.textContent = available.length
+        ? 'Use an account you already have. It sets your name and picture across ' +
+          'the app \u2014 nothing else changes.'
+        : 'Choose a name and the app will remember you on this device.';
+    }
+    // The "or" only earns its place when there is something on each
+    // side of it.
+    if (or) or.hidden = !available.length;
+
+    // Whether or not a provider is configured, the name below always
+    // works — so this screen never tells anyone it is out of order.
+    // The note is for whoever is building the site, not using it.
+    note.hidden = true;
     if (!available.length) {
-      msBtn.hidden = true;
       googleHost.hidden = true;
-      note.textContent = WTWAuth.isSupportedHere()
-        ? "Sign-in isn't set up on this build yet."
-        : 'Signing in needs a web address, so it is unavailable in the desktop app.';
-      note.hidden = false;
+      if (isLocalDev()) {
+        note.textContent = WTWAuth.isSupportedHere()
+          ? 'No Google, Microsoft or Apple client ID is set — see the README to switch them on.'
+          : 'Google, Microsoft and Apple sign-in need a web address, so they are unavailable here.';
+        note.hidden = false;
+      }
       return;
     }
-
-    note.hidden = true;
-    msBtn.hidden = !available.includes('microsoft');
 
     if (!available.includes('google')) {
       googleHost.hidden = true;
@@ -1221,6 +1242,22 @@
       note.textContent = "Couldn't reach Google to load its sign-in button.";
       note.hidden = false;
     }
+  }
+
+  function isLocalDev() {
+    return location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  }
+
+  function signInLocally() {
+    const input = $('localNameInput');
+    if (!input) return;
+    const res = WTWAuth.signInLocally(input.value);
+    if (!res.ok) {
+      toast('Type a name first.', true);
+      input.focus();
+      return;
+    }
+    input.value = '';
   }
 
   /* ------------------------------------------------------------
@@ -1257,13 +1294,19 @@
     modal.focus();
   }
 
-  async function signInWithMicrosoft() {
-    const btn = $('microsoftBtn');
+  // Google renders and handles its own button; these two are ours, and
+  // both behave the same way: closing the popup is a decision, not an
+  // error, and anything else says so out loud.
+  async function signInWithProvider(which) {
+    const btn = $(which === 'apple' ? 'appleBtn' : 'microsoftBtn');
+    const label = which === 'apple' ? 'Apple' : 'Microsoft';
     if (btn) btn.disabled = true;
     try {
-      const res = await WTWAuth.signInWithMicrosoft();
+      const res = which === 'apple'
+        ? await WTWAuth.signInWithApple()
+        : await WTWAuth.signInWithMicrosoft();
       if (!res.ok && res.reason !== 'cancelled') {
-        toast("Couldn't sign in with Microsoft. Try again?", true);
+        toast(`Couldn't sign in with ${label}. Try again?`, true);
       }
     } finally {
       if (btn) btn.disabled = false;
@@ -1273,8 +1316,13 @@
   function renderAccountHint(profile) {
     const hint = $('accountHint');
     if (!hint) return;
+    if (profile && profile.provider === 'local') {
+      hint.textContent = 'This name is kept on this device. It is not an account ' +
+        'anywhere else, and nothing is synced.';
+      return;
+    }
     if (profile) {
-      const where = profile.provider === 'microsoft' ? 'Microsoft' : 'Google';
+      const where = { microsoft: 'Microsoft', apple: 'Apple' }[profile.provider] || 'Google';
       hint.textContent = `Signed in with ${where}. Your name and picture are kept ` +
         'on this device only \u2014 nothing is synced anywhere.';
       return;
@@ -1455,7 +1503,12 @@
       });
     }
     $('signOutBtn').addEventListener('click', logOut);
-    $('microsoftBtn').addEventListener('click', signInWithMicrosoft);
+    $('microsoftBtn').addEventListener('click', () => signInWithProvider('microsoft'));
+    $('appleBtn').addEventListener('click', () => signInWithProvider('apple'));
+    $('localSignInForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      signInLocally();
+    });
 
     $('accountBtn').addEventListener('click', () => openSignIn(true));
     $('settingsSignInBtn').addEventListener('click', () => {

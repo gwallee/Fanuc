@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V14 — radarsource.js
+   What the Wether V15 — radarsource.js
    Real radar frames with real timestamps.
 
    V9-V11 asked NOAA's WMS for frames at guessed times (every 10
@@ -12,6 +12,14 @@
    when, worldwide, with no API key. Using that index means every
    frame drawn is a real observation at a known time, and the
    timeline labels are the truth rather than an assumption.
+
+   From V15 the index's nowcast frames are included too, so the loop
+   carries on past the present into the next half hour. Those are
+   forecasts, not observations, and are flagged as such all the way
+   through: the timeline marks them, the badge says FORECAST while one
+   is showing, and the "how old is this imagery" figure ignores them
+   entirely — a future timestamp would otherwise make stale radar look
+   fresher than it is.
    ============================================================ */
 
 const WTWRadarSource = (() => {
@@ -39,15 +47,33 @@ const WTWRadarSource = (() => {
       if (!past.length) return null;
 
       const wanted = c.frameCount || 6;
-      const frames = past.slice(-wanted).map((f) => ({
+      const wantedAhead = c.forecastFrames === undefined ? 3 : c.forecastFrames;
+      const ahead = wantedAhead > 0 && Array.isArray(radar.nowcast) ? radar.nowcast : [];
+
+      const shape = (f, forecast) => ({
         time: new Date(f.time * 1000),
         path: f.path,
-      }));
+        forecast,
+      });
+      const frames = past.slice(-wanted).map((f) => shape(f, false))
+        .concat(ahead.slice(0, wantedAhead).map((f) => shape(f, true)));
+
       return { source: 'rainviewer', host, frames, generated: data.generated };
     } catch (err) {
       console.warn('[radar] RainViewer index unavailable', err.message);
       return null;
     }
+  }
+
+  // The newest frame that is an actual observation. Everything after it
+  // is a forecast, and the app opens on this one rather than on a
+  // prediction nobody asked to see first.
+  function latestObservedIndex(frames) {
+    if (!frames || !frames.length) return -1;
+    for (let i = frames.length - 1; i >= 0; i--) {
+      if (!frames[i].forecast) return i;
+    }
+    return -1;
   }
 
   /* ------------------------------------------------------------
@@ -67,12 +93,12 @@ const WTWRadarSource = (() => {
   // How stale the newest frame is, in minutes — surfaced in the UI so
   // "live" is never claimed for imagery that is actually old.
   function ageMinutes(frames) {
-    if (!frames || !frames.length) return null;
-    const newest = frames[frames.length - 1].time;
-    return (Date.now() - newest.getTime()) / 60000;
+    const i = latestObservedIndex(frames);
+    if (i < 0) return null;
+    return (Date.now() - frames[i].time.getTime()) / 60000;
   }
 
-  return { getFrames, tileUrl, ageMinutes };
+  return { getFrames, tileUrl, ageMinutes, latestObservedIndex };
 })();
 
 window.WTWRadarSource = WTWRadarSource;

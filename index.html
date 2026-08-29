@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0e17" />
-  <meta name="description" content="What the Wether V14 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
-  <title>What the Wether V14 ⚡🌩️</title>
+  <meta name="description" content="What the Wether V15 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
+  <title>What the Wether V15 ⚡🌩️</title>
   <link rel="icon" type="image/svg+xml" href="logo.svg" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="manifest" href="manifest.json" />
@@ -180,6 +180,7 @@
       <div class="radar-timeline">
         <span class="timeline-caption">-60 min</span>
         <input type="range" id="radarTimeline" min="0" max="60" value="60" step="1" aria-label="Radar timeline" />
+        <span class="timeline-caption timeline-end" id="radarTimelineEnd">now</span>
         <span class="timeline-label" id="radarTimeLabel">NOW</span>
       </div>
 
@@ -391,8 +392,8 @@
             aria-label="Close sign in">✕</button>
     <img class="signin-logo" src="logo.svg" alt="" width="56" height="56" />
     <h2 id="signInTitle">Sign in to What the Wether</h2>
-    <p class="signin-sub">Use an account you already have. It sets your name and
-      picture across the app — nothing else changes.</p>
+    <p class="signin-sub" id="signInSub">Use an account you already have. It sets
+      your name and picture across the app — nothing else changes.</p>
 
     <div class="signin-buttons" id="signInButtons">
       <div id="googleButtonHost" hidden></div>
@@ -407,7 +408,28 @@
         </span>
         <span>Sign in with Microsoft</span>
       </button>
+      <button type="button" id="appleBtn" class="btn signin-btn apple-btn" hidden>
+        <span class="apple-logo" aria-hidden="true">
+          <svg viewBox="0 0 16 20" width="16" height="19" focusable="false" fill="currentColor">
+            <path d="M13.2 10.6c0-2.1 1.7-3.1 1.8-3.2-1-1.4-2.5-1.6-3-1.7-1.3-.1-2.5.8-3.1.8-.6 0-1.6-.7-2.7-.7-1.4 0-2.7.8-3.4 2.1-1.4 2.5-.4 6.2 1 8.3.7 1 1.5 2.1 2.6 2.1 1 0 1.4-.7 2.7-.7 1.2 0 1.6.7 2.7.6 1.1 0 1.8-1 2.5-2 .8-1.2 1.1-2.3 1.1-2.3s-2.1-.8-2.2-3.3zM11.1 4.2c.6-.7 1-1.7.9-2.7-.8 0-1.9.6-2.5 1.3-.5.6-1 1.6-.9 2.6.9.1 1.9-.5 2.5-1.2z"/>
+          </svg>
+        </span>
+        <span>Sign in with Apple</span>
+      </button>
     </div>
+
+    <div class="signin-or" id="signInOr" hidden><span>or</span></div>
+
+    <form class="signin-local" id="localSignInForm">
+      <label for="localNameInput">Use a name on this device</label>
+      <div class="setting-row">
+        <input type="text" id="localNameInput" maxlength="24" autocomplete="nickname"
+               placeholder="Your name" />
+        <button type="submit" id="localSignInBtn" class="btn btn-primary btn-small">Continue</button>
+      </div>
+      <p class="signin-local-note">Kept on this device. It sets your name across the
+        app — it is not an account anywhere else.</p>
+    </form>
 
     <p class="auth-note" id="signInNote" hidden></p>
 

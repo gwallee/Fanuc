@@ -1,12 +1,12 @@
 /* ============================================================
-   What the Wether V14 — config.js
+   What the Wether V15 — config.js
    Central configuration. No API keys required, ever.
    ============================================================ */
 
 const WTW_CONFIG = {
   app: {
     name: 'What the Wether',
-    version: 'V14',
+    version: 'V15',
     tagline: 'Weather with an attitude problem.',
   },
 
@@ -90,6 +90,16 @@ const WTW_CONFIG = {
       tenant: 'common',
       setupUrl: 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade',
     },
+    apple: {
+      // Apple's "Services ID", e.g. com.example.whatthewether.web.
+      // Creating one needs a paid Apple Developer account, which the
+      // other two do not — see the README before spending anything.
+      clientId: '',
+      // Must match a Return URL registered against that Services ID.
+      // Empty means this page's own URL.
+      redirectUri: '',
+      setupUrl: 'https://developer.apple.com/account/resources/identifiers/list/serviceId',
+    },
   },
 
   // Where the desktop builds come from. The GitHub API is key-less and
@@ -118,6 +128,10 @@ const WTW_CONFIG = {
     enabled: true,
     indexUrl: 'https://api.rainviewer.com/public/weather-maps.json',
     frameCount: 8,
+    // Frames from RainViewer's nowcast, played after the observations.
+    // Predictions, labelled as such everywhere they appear. 0 turns
+    // them off and the loop stops at the present.
+    forecastFrames: 3,
     tileSize: 256,
     colorScheme: 4,   // RainViewer palette id
     smooth: true,

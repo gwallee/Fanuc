@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V14 — styles.css
+   What the Wether V15 — styles.css
    All colors come from CSS variables so themes are one block
    each. Default theme: Neon Dark. Others: Midnight, Light.
    ============================================================ */
@@ -725,6 +725,56 @@ body.modal-open { overflow: hidden; }
   text-underline-offset: 3px;
 }
 .btn-plain:hover { color: var(--accent); }
+
+/* Apple's mark is monochrome and takes the button's own colour. */
+.apple-btn {
+  background: #000;
+  border: 1px solid #3a3a3a;
+  color: #fff;
+}
+.apple-btn:hover { background: #141414; }
+.apple-btn:disabled { opacity: 0.6; cursor: default; }
+.apple-logo { display: inline-flex; flex: 0 0 auto; margin-top: -2px; }
+
+/* A name on this device: always available, so it always has a place. */
+.signin-or {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 1rem 0 0.9rem;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+.signin-or::before,
+.signin-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--card-border);
+}
+.signin-local { text-align: left; }
+.signin-local label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+.signin-local .setting-row { display: flex; gap: 0.5rem; }
+.signin-local input { flex: 1; min-width: 0; }
+.signin-local-note {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin-top: 0.4rem;
+}
+
+/* The far end of the radar timeline: the present, or the forecast edge. */
+.timeline-end.is-forecast {
+  color: var(--accent);
+  font-weight: 700;
+}
 
 /* The header button doubles as the avatar once somebody is signed in. */
 .account-btn-avatar {

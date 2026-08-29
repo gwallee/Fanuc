@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V14 — map.js
+   What the Wether V15 — map.js
    Web Mercator projection helpers plus a basemap tile layer for
    the radar scope.
 
@@ -138,6 +138,31 @@ const WTWMap = (() => {
     return painted;
   }
 
+  /* ------------------------------------------------------------
+     Warm the cache for a layer without drawing it. The radar uses this
+     on the frame after the one on screen, so a loop that has run once
+     never stalls waiting for an image mid-playback.
+     ------------------------------------------------------------ */
+  function preloadTiles(view, size, buildUrl, opts = {}) {
+    const z = Math.max(2, Math.min(opts.maxZoom || 12, zoomFor(view, size)));
+    const span = tileSpan(z);
+    const n = Math.pow(2, z);
+    const minTx = Math.floor((view.minX + WORLD) / span);
+    const maxTx = Math.floor((view.maxX + WORLD) / span);
+    const minTy = Math.floor((WORLD - view.maxY) / span);
+    const maxTy = Math.floor((WORLD - view.minY) / span);
+
+    let requested = 0;
+    for (let tx = minTx; tx <= maxTx; tx++) {
+      for (let ty = minTy; ty <= maxTy; ty++) {
+        if (ty < 0 || ty >= n) continue;
+        const url = buildUrl(z, ((tx % n) + n) % n, ty);
+        if (url) { loadTile(url); requested++; }
+      }
+    }
+    return requested;
+  }
+
   function drawBasemap(ctx, view, size, originX, originY, onTileReady) {
     const cfg = (window.WTW_CONFIG && WTW_CONFIG.map) || {};
     if (!cfg.enabled) return 0;
@@ -170,7 +195,7 @@ const WTWMap = (() => {
 
   return {
     lonToX, latToY, xToLon, yToLat,
-    viewBox, bbox3857, zoomFor, drawBasemap, drawTiles, project, panCenter, clearCache,
+    viewBox, bbox3857, zoomFor, drawBasemap, drawTiles, preloadTiles, project, panCenter, clearCache,
     WORLD,
   };
 })();

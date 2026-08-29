@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V14 — sw.js
+   What the Wether V15 — sw.js
    Service worker: precaches the app shell so the app opens
    instantly and works offline, and keeps a runtime cache of the
    last successful weather responses to fall back on.
@@ -8,7 +8,7 @@
    is deleted on activate.
    ============================================================ */
 
-const CACHE_VERSION = 'wtw-v14-2';
+const CACHE_VERSION = 'wtw-v15-1';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 
@@ -108,7 +108,8 @@ self.addEventListener('fetch', (event) => {
       url.hostname.endsWith('googleusercontent.com') || url.hostname.endsWith('gstatic.com') ||
       url.hostname.endsWith('microsoftonline.com') || url.hostname.endsWith('msauth.net') ||
       url.hostname.endsWith('msftauth.net') || url.hostname.endsWith('live.com') ||
-      url.hostname.endsWith('microsoft.com')) return;
+      url.hostname.endsWith('microsoft.com') ||
+      url.hostname.endsWith('apple.com')) return;
 
   // The page itself is network-first. Cache-first on the document is how
   // a deployed update can go unseen for a whole session: the browser

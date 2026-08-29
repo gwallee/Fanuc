@@ -1,7 +1,7 @@
 /* ============================================================
-   What the Wether V14 — auth.js
-   Sign in with Google or Microsoft, through each provider's own
-   browser SDK. Both are optional and both are key-free: a public
+   What the Wether V15 — auth.js
+   Sign in with Google, Microsoft or Apple, through each provider's
+   own browser SDK. Both are optional and both are key-free: a public
    client ID is not a secret, and no server is involved.
 
    TWO THINGS THIS IS NOT, stated up front because the design
@@ -19,6 +19,12 @@
       in this browser's localStorage. Syncing them across devices
       needs somewhere to store them, which again means a server.
 
+   There is also a name you can just type, which needs no provider
+   and no setup and therefore always works. It is a profile on this
+   device, it says so, and it claims nothing more — but it means the
+   sign-in screen is never a dead end on a build where no client ID
+   has been set.
+
    Nothing in the app is locked behind signing in; the whole thing
    works before anybody does. Signing in adds a name and a face,
    and that is all it claims to do.
@@ -29,6 +35,7 @@ const WTWAuth = (() => {
   // Microsoft's own CDN. Pinned: an SDK that changes under the app
   // is an outage waiting for a quiet weekend.
   const MSAL_SRC = 'https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js';
+  const APPLE_SRC = 'https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js';
 
   const state = {
     profile: null,
@@ -47,6 +54,16 @@ const WTWAuth = (() => {
 
   const googleClientId    = () => idOf('google');
   const microsoftClientId = () => idOf('microsoft');
+  // Apple calls it a Services ID; it plays the same part.
+  const appleClientId     = () => idOf('apple');
+
+  // Apple insists the redirect URI be registered in advance and match
+  // exactly, so it is configurable; the page's own URL is the sane
+  // default and the one the README tells you to register.
+  function appleRedirectUri() {
+    const configured = ((cfg().apple && cfg().apple.redirectUri) || '').trim();
+    return configured || (location.origin + location.pathname);
+  }
 
   function msAuthority() {
     const tenant = (cfg().microsoft && cfg().microsoft.tenant) || 'common';
@@ -68,10 +85,41 @@ const WTWAuth = (() => {
     const out = [];
     if (googleClientId()) out.push('google');
     if (microsoftClientId()) out.push('microsoft');
+    if (appleClientId()) out.push('apple');
     return out;
   }
 
   const isConfigured = () => providers().length > 0;
+
+  /* ---------------- A name on this device ----------------
+     No provider, no client ID, no network: this one is always
+     available, including in the packaged desktop app where the others
+     cannot work at all. It is a profile, not an identity, and the UI
+     says so rather than implying otherwise. */
+
+  function signInLocally(rawName) {
+    const name = String(rawName || '').trim().replace(/\s+/g, ' ').slice(0, 24);
+    if (!name) return { ok: false, reason: 'empty' };
+    // Reuse this device's id if it already has one, so signing out and
+    // back in is the same account rather than a new one each time.
+    const existing = WTWStorage.get('localAccountId', null);
+    const sub = existing ||
+      `local-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    WTWStorage.set('localAccountId', sub);
+    saveProfile({
+      provider: 'local',
+      sub,
+      name,
+      // Whatever they typed is what they want to be called, in full —
+      // unlike a provider's name, where the first name is the friendly
+      // part and the surname is just paperwork.
+      givenName: name,
+      email: '',
+      picture: '',
+      signedInAt: Date.now(),
+    });
+    return { ok: true };
+  }
 
   /* ---------------- Stored profile ---------------- */
 
@@ -288,6 +336,69 @@ const WTWAuth = (() => {
     }
   }
 
+  /* ---------------- Apple ----------------
+     Two things about Apple differ from the others and both are handled
+     here rather than surprising the rest of the app:
+
+     1. The name comes back exactly once — on the very first
+        authorization — and never again. If it is there, it is used;
+        if not, the email's local part stands in.
+     2. There is no picture, ever, so the UI falls back to an initial.
+     ------------------------------------------------------------ */
+  async function appleAuth() {
+    const ok = await loadScript(APPLE_SRC);
+    if (!ok || !window.AppleID || !AppleID.auth) return null;
+    try {
+      AppleID.auth.init({
+        clientId: appleClientId(),
+        scope: 'name email',
+        redirectURI: appleRedirectUri(),
+        usePopup: true,
+      });
+      return AppleID.auth;
+    } catch (err) {
+      console.warn('[auth] Apple init failed', err);
+      return null;
+    }
+  }
+
+  function nameFromApple(res, claims) {
+    const person = (res && res.user && res.user.name) || {};
+    const full = [person.firstName, person.lastName].filter(Boolean).join(' ').trim();
+    if (full) return full;
+    const email = (res && res.user && res.user.email) || claims.email || '';
+    const local = email.split('@')[0];
+    // Apple's private relay addresses are random strings; a name made
+    // out of one is worse than no name at all.
+    if (local && !/^[0-9a-z]{16,}$/i.test(local)) return local;
+    return 'Signed in';
+  }
+
+  async function signInWithApple() {
+    const auth = await appleAuth();
+    if (!auth) return { ok: false, reason: 'unavailable' };
+    try {
+      const res = await auth.signIn();
+      const claims = decodeJwt(res && res.authorization && res.authorization.id_token);
+      if (!claims) return { ok: false, reason: 'no-claims' };
+      const name = nameFromApple(res, claims);
+      const profile = toProfile('apple', claims, {
+        name,
+        email: (res.user && res.user.email) || claims.email || '',
+      });
+      if (!profile) return { ok: false, reason: 'no-claims' };
+      saveProfile(profile);
+      return { ok: true };
+    } catch (err) {
+      const code = String((err && err.error) || (err && err.message) || '');
+      if (/popup_closed_by_user|user_cancelled|user_trigger_new_signin_flow/i.test(code)) {
+        return { ok: false, reason: 'cancelled' };
+      }
+      console.warn('[auth] Apple sign-in failed', err);
+      return { ok: false, reason: 'error' };
+    }
+  }
+
   function init({ onChange } = {}) {
     state.onChange = onChange;
     WTWStorage.remove('guestMode');   // a flag from an older version
@@ -297,8 +408,8 @@ const WTWAuth = (() => {
 
   return {
     init, signOut, getProfile, isSignedIn, isConfigured, isSupportedHere,
-    providers, renderGoogleButton, signInWithMicrosoft, decodeCredential,
-    decodeJwt, toProfile,
+    providers, renderGoogleButton, signInWithMicrosoft, signInWithApple,
+    signInLocally, decodeCredential, decodeJwt, toProfile,
   };
 })();
 

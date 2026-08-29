@@ -1,5 +1,5 @@
-/* The sign-in screen: how it opens, what it offers, and what it says
-   when neither provider is configured. */
+/* The sign-in screen: how it opens, what it offers, and that it always
+   offers something — including on a build with no client ID at all. */
 const { chromium } = require('playwright');
 const BASE_URL = process.env.WTW_BASE_URL || 'http://localhost:8901';
 const APP_DIR = process.env.WTW_APP_DIR || require('path').join(__dirname, '..');
@@ -54,13 +54,14 @@ function omBody() {
     // Deny every external host by default; the stubs below are
     // registered afterwards and so take precedence.
     await page.route((u) => u.protocol === 'https:', (r) => r.abort());
-    if (ids.google || ids.microsoft) {
+    if (ids.google || ids.microsoft || ids.apple) {
       // Patch config before any app script reads it.
       await page.addInitScript((cfg) => {
         const apply = () => {
           if (!window.WTW_CONFIG || !window.WTW_CONFIG.auth) return false;
           if (cfg.google) window.WTW_CONFIG.auth.google.clientId = cfg.google;
           if (cfg.microsoft) window.WTW_CONFIG.auth.microsoft.clientId = cfg.microsoft;
+          if (cfg.apple) window.WTW_CONFIG.auth.apple.clientId = cfg.apple;
           return true;
         };
         const timer = setInterval(() => { if (apply()) clearInterval(timer); }, 5);
@@ -103,6 +104,21 @@ function omBody() {
         };
       `,
     }));
+    // Stand in for Apple's JS SDK. signIn resolves with an id_token,
+    // and (only on a first authorization) a user object carrying a name.
+    await page.route('https://appleid.cdn-apple.com/**', (r) => r.fulfill({
+      contentType: 'text/javascript',
+      body: `
+        window.AppleID = { auth: {
+          init: (opts) => { window.__appleOpts = opts; },
+          signIn: async () => {
+            if (window.__appleReject) throw window.__appleReject;
+            return { authorization: { id_token: window.__appleToken },
+                     user: window.__appleUser };
+          },
+        } };
+      `,
+    }));
     await page.route('https://lh3.googleusercontent.com/**', (r) => r.fulfill({ contentType:'image/png', body: PNG }));
     await page.route('https://api.github.com/**', r => r.fulfill({status:404, body:'{}'}));
     await page.route('https://geocoding-api.open-meteo.com/**', r => r.fulfill({contentType:'application/json',
@@ -122,6 +138,7 @@ function omBody() {
 
   const GOOGLE_ID = 'test-client-id.apps.googleusercontent.com';
   const MS_ID = '11111111-2222-3333-4444-555555555555';
+  const APPLE_ID = 'com.example.whatthewether.web';
 
   console.log('=== Nothing configured: the app is unaffected ===');
   let { ctx, page } = await mk();
@@ -137,11 +154,87 @@ function omBody() {
     return await page.isVisible('#signInModal') &&
            /Sign in to What the Wether/i.test(await page.textContent('#signInTitle'));
   });
-  await check('it says so plainly, with no dead buttons', async () =>
-    /isn.t set up/i.test(await page.textContent('#signInNote')) &&
+  await check('no dead provider buttons are drawn', async () =>
     !(await page.isVisible('#microsoftBtn')) &&
+    !(await page.isVisible('#appleBtn')) &&
     (await page.locator('#fakeGoogleButton').count()) === 0);
+  await check('the subtitle is about the name, not about accounts elsewhere', async () =>
+    /remember you on this device/i.test(await page.textContent('#signInSub')));
+  await check('it still offers a way in, and does not cry off', async () => {
+    const noteShown = await page.isVisible('#signInNote');
+    // The suite serves from 127.0.0.1, which counts as building the
+    // site rather than using it, so the pointer to the README is
+    // expected here. What must never appear is a screen that only
+    // says sign-in is unavailable.
+    const note = noteShown ? await page.textContent('#signInNote') : '';
+    return await page.isVisible('#localSignInForm') &&
+           await page.isVisible('#localNameInput') &&
+           (!noteShown || /README/i.test(note));
+  });
+  await check('an empty name is refused rather than accepted', async () => {
+    await page.click('#localSignInBtn');
+    await page.waitForTimeout(400);
+    return !(await page.isVisible('#accountSignedIn')) &&
+           /type a name/i.test(await page.textContent('#toast'));
+  });
+  await check('a name signs you in on a build with no client IDs', async () => {
+    await page.fill('#localNameInput', 'Rain Boy');
+    await page.click('#localSignInBtn');
+    await page.waitForTimeout(700);
+    return !(await page.isVisible('#signInModal')) &&
+           (await page.textContent('.brand-greeting strong')) === 'Rain Boy';
+  });
+  await check('the header button becomes the account', async () =>
+    (await page.textContent('#accountBtnIcon')) === 'R' &&
+    /Rain Boy/.test(await page.getAttribute('#accountBtn', 'aria-label')));
+  await check('the hint says where that name lives', async () => {
+    await page.click('#settingsBtn');
+    await page.waitForTimeout(500);
+    return /this device/i.test(await page.textContent('#accountHint')) &&
+           (await page.textContent('#accountName')) === 'Rain Boy';
+  });
+  await check('it survives a reload', async () => {
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForTimeout(1500);
+    return (await page.textContent('.brand-greeting strong')) === 'Rain Boy';
+  });
+  await check('logging out hands the default name back', async () => {
+    await page.click('#settingsBtn');
+    await page.waitForTimeout(500);
+    await page.click('#signOutBtn');
+    await page.waitForTimeout(600);
+    return (await page.textContent('.brand-greeting strong')) === 'DJTheBest' &&
+           await page.isVisible('#accountSignedOut');
+  });
+  await check('signing back in keeps the same device account', async () => {
+    // storage.js JSON-encodes everything, so the raw value carries its
+    // own quotes; parse before comparing or nothing ever matches.
+    const first = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('wtw:localAccountId')));
+    await page.click('#settingsCloseBtn');
+    await page.click('#accountBtn');
+    await page.waitForTimeout(500);
+    await page.fill('#localNameInput', 'Rain Boy');
+    await page.click('#localSignInBtn');
+    await page.waitForTimeout(600);
+    const after = await page.evaluate(() => {
+      const raw = localStorage.getItem('wtw:profile');
+      return { profile: raw && JSON.parse(raw).sub,
+               deviceId: JSON.parse(localStorage.getItem('wtw:localAccountId')),
+               signedIn: !document.getElementById('accountSignedIn').hidden };
+    });
+    const ok = !!first && after.profile === first;
+    if (!ok) console.log(`  [diag] before=${first} after=${JSON.stringify(after)}`);
+    return ok;
+  });
   await check('the screen closes and is not a gate', async () => {
+    await page.click('#settingsBtn');
+    await page.waitForTimeout(400);
+    await page.click('#signOutBtn');
+    await page.waitForTimeout(400);
+    await page.click('#settingsCloseBtn');
+    await page.click('#accountBtn');
+    await page.waitForTimeout(400);
     await page.click('#signInDismiss');
     await page.waitForTimeout(400);
     return !(await page.isVisible('#signInModal')) &&
@@ -366,6 +459,83 @@ function omBody() {
     await page.click('#signOutBtn');
     await page.waitForTimeout(700);
     return (await page.textContent('.brand-greeting strong')) === 'StormLord';
+  });
+  await ctx.close();
+
+  console.log('\n=== Signing in with Apple ===');
+  ({ ctx, page } = await mk({ apple: APPLE_ID }));
+  await page.evaluate((tok) => {
+    window.__appleToken = tok;
+    window.__appleUser = { name: { firstName: 'Steve', lastName: 'Wozniak' },
+                           email: 'woz@example.com' };
+  }, fakeIdToken({ sub: 'apple-999', email: 'woz@example.com' }));
+  await page.fill('#searchInput', 'Austin');
+  await page.click('#searchBtn');
+  await page.waitForSelector('#weatherPanels:not([hidden])', { timeout: 15000 });
+  await check('the Apple button is offered when configured', async () => {
+    await page.click('#accountBtn');
+    await page.waitForTimeout(600);
+    return await page.isVisible('#appleBtn') && !(await page.isVisible('#microsoftBtn'));
+  });
+  await check('Apple is initialised with the Services ID and a popup', async () => {
+    await page.click('#appleBtn');
+    await page.waitForTimeout(900);
+    const opts = await page.evaluate(() => window.__appleOpts);
+    return opts.clientId === APPLE_ID && opts.usePopup === true &&
+           /name/.test(opts.scope) && /^https?:/.test(opts.redirectURI);
+  });
+  await check('the name Apple sends once is used', async () => {
+    await page.click('#settingsBtn');
+    await page.waitForTimeout(500);
+    return (await page.textContent('#accountName')) === 'Steve Wozniak' &&
+           (await page.textContent('#accountEmail')) === 'woz@example.com';
+  });
+  await check('an initial stands in, since Apple sends no picture', async () =>
+    await page.isVisible('#accountInitial') &&
+    (await page.textContent('#accountInitial')) === 'S');
+  await check('the hint names Apple', async () =>
+    /Apple/.test(await page.textContent('#accountHint')));
+  await check('a closed popup is not treated as a failure', async () => {
+    await page.click('#signOutBtn');
+    await page.waitForTimeout(600);
+    await page.click('#settingsCloseBtn');
+    await page.click('#accountBtn');
+    await page.waitForTimeout(500);
+    await page.evaluate(() => {
+      window.__appleReject = { error: 'popup_closed_by_user' };
+      document.getElementById('toast').classList.remove('show');
+    });
+    await page.click('#appleBtn');
+    await page.waitForTimeout(700);
+    return !(await page.isVisible('#accountSignedIn')) &&
+           !(await page.evaluate(() =>
+             document.getElementById('toast').classList.contains('show')));
+  });
+  await check('a returning Apple user with no name still gets one', async () => {
+    await page.evaluate((tok) => {
+      window.__appleReject = null;
+      window.__appleToken = tok;
+      window.__appleUser = undefined;      // Apple only sends it once
+    }, fakeIdToken({ sub: 'apple-999', email: 'woz@example.com' }));
+    await page.click('#appleBtn');
+    await page.waitForTimeout(800);
+    await page.click('#settingsBtn');
+    await page.waitForTimeout(400);
+    return (await page.textContent('#accountName')) === 'woz';
+  });
+  await check('a private-relay address is not turned into a name', async () => {
+    await page.click('#signOutBtn');
+    await page.waitForTimeout(500);
+    await page.click('#settingsCloseBtn');
+    await page.click('#accountBtn');
+    await page.waitForTimeout(400);
+    await page.evaluate((tok) => { window.__appleToken = tok; },
+      fakeIdToken({ sub: 'apple-777', email: 'a1b2c3d4e5f6g7h8@privaterelay.appleid.com' }));
+    await page.click('#appleBtn');
+    await page.waitForTimeout(800);
+    await page.click('#settingsBtn');
+    await page.waitForTimeout(400);
+    return (await page.textContent('#accountName')) === 'Signed in';
   });
   await ctx.close();
 

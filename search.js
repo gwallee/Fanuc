@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V14 — search.js
+   What the Wether V15 — search.js
    Place search with real choices.
 
    Through V12 the search box took the single first geocoding hit,
