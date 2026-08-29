@@ -931,6 +931,17 @@ const WTWRadar = (() => {
     onThemeChange, onUnitsChange, enterFullscreen, exitFullscreen, toggleFullscreen,
     isFullscreen: () => state.fullscreen,
     isAnimating: () => state.rafId !== null,
+    // What the scope is currently looking at. Read-only, and a copy, so
+    // callers cannot steer the radar through it. Tests assert on this
+    // rather than on which network requests happened to go out, which
+    // is an implementation detail and a poor proxy for the behaviour.
+    getView: () => ({
+      center: state.center ? { ...state.center } : null,
+      coords: state.coords ? { ...state.coords } : null,
+      rangeKm: state.rangeKm,
+      source: state.source,
+      frameCount: state.frames.length,
+    }),
   };
 })();
 

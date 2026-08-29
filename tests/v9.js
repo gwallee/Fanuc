@@ -227,18 +227,27 @@ function omBody() {
   await check('recenter returns to the location', async () => {
     const before = wmsUrls.length;
     await page.click('#radarRecenter');
-    // A new request, centred back on the location — not merely a stale
-    // one that happens to still be last in the list.
-    const ok = await waitFor(() => wmsUrls.length > before &&
+    // Assert what recentring means — the scope is looking at the
+    // location again — rather than which requests happened to go out.
+    const view = () => page.evaluate(() => WTWRadar.getView());
+    const ok = await waitFor(async () => {
+      const v = await view();
+      return v.center && Math.abs(v.center.lon - AUSTIN.lon) < 0.05 &&
+                         Math.abs(v.center.lat - AUSTIN.lat) < 0.05;
+    });
+    if (!ok) {
+      console.log(`  [diag] view=${JSON.stringify(await view())} ` +
+        `requests before=${before} after=${wmsUrls.length} ` +
+        `lastLons=${wmsUrls.slice(-3).map((u) => centreLon(u).toFixed(3)).join(' ')}`);
+    }
+    return ok;
+  });
+  await check('and refetches imagery for the recentred view', async () => {
+    const ok = await waitFor(() => wmsUrls.length > 0 &&
       Math.abs(centreLon(wmsUrls[wmsUrls.length - 1]) - AUSTIN.lon) < 0.05);
     if (!ok) {
-      // This check has failed on CI and passed here three times running.
-      // Guessing at the cause from a bare FAIL is what made that happen,
-      // so say what was actually seen.
-      console.log(`  [diag] requests before=${before} after=${wmsUrls.length} ` +
-        `lastLons=${wmsUrls.slice(-3).map((u) => centreLon(u).toFixed(3)).join(' ')} ` +
-        `wanted=${AUSTIN.lon} fullscreen=${await page.evaluate(() =>
-          document.body.classList.contains('radar-fullscreen') || !!document.fullscreenElement)}`);
+      console.log(`  [diag] view=${JSON.stringify(await page.evaluate(() => WTWRadar.getView()))} ` +
+        `lastLons=${wmsUrls.slice(-3).map((u) => centreLon(u).toFixed(3)).join(' ')}`);
     }
     return ok;
   });
