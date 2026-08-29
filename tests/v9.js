@@ -272,7 +272,13 @@ function omBody() {
     await page.waitForTimeout(500);
     const ctxLabel = (await page.textContent('#roastContext')).trim();
     const text = await page.textContent('#roastText');
-    return ctxLabel !== 'Right now' && ctxLabel.length >= 3 && text.length > 20;
+    // From V18 the same tap also opens that day; the roast still lands
+    // on the card behind it, which is what this check is about.
+    const inDay = await page.textContent('#dayRoast');
+    await page.click('#dayModalClose');
+    await page.waitForTimeout(300);
+    return ctxLabel !== 'Right now' && ctxLabel.length >= 3 && text.length > 20 &&
+           inDay.trim() === text.trim();
   });
   await check('roast history records entries', async () => {
     await page.click('#roastLogToggle');

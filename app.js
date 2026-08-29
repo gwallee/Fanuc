@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V17 — app.js
+   What the Wether V18 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -16,6 +16,7 @@
     hours: [],
     detail: {},
     yesterday: null,
+    hourlyRaw: null,
     source: null,
     alerts: [],
     air: null,
@@ -152,6 +153,11 @@
         highF: at(d.temperature_2m_max, i),
         lowF: at(d.temperature_2m_min, i),
         precipProb: at(d.precipitation_probability_max, i),
+        // Per day rather than today-only: the day view needs them for
+        // whichever day was tapped.
+        sunrise: at(d.sunrise, i),
+        sunset: at(d.sunset, i),
+        uvIndex: at(d.uv_index_max, i),
       };
     });
 
@@ -180,7 +186,9 @@
     };
 
     const hours = WTWHourly.fromOpenMeteo(data, WTW_CONFIG.weather.forecastHours);
-    return { weather, daily, hours, detail, yesterday, raw: data };
+    // The strip shows 48 hours; the day view needs the whole week, so
+    // the raw series is kept rather than re-fetched.
+    return { weather, daily, hours, detail, yesterday, hourlyRaw: h, raw: data };
   }
 
   /* ------------------------------------------------------------
@@ -219,6 +227,19 @@
 
     if (nws) {
       const daily = nws.daily;
+      // NWS publishes neither sun times nor UV. Where Open-Meteo has
+      // them for the same date, carry them over so a day tapped in the
+      // forecast row can show them whichever source drew the row.
+      if (om && Array.isArray(om.daily)) {
+        const byDate = new Map(om.daily.map((day) => [day.dateISO, day]));
+        daily.forEach((day) => {
+          const match = byDate.get(day.dateISO);
+          if (!match) return;
+          if (day.sunrise == null) day.sunrise = match.sunrise;
+          if (day.sunset == null) day.sunset = match.sunset;
+          if (day.uvIndex == null) day.uvIndex = match.uvIndex;
+        });
+      }
       // Late in the day NWS has no daytime period left, so today's
       // high is missing; Open-Meteo reports the full calendar day.
       if (om && om.daily && om.daily[0]) {
@@ -255,6 +276,7 @@
         // NWS publishes forecasts, not history, so this is Open-Meteo's
         // either way.
         yesterday: om ? om.yesterday : null,
+        hourlyRaw: om ? om.hourlyRaw : null,
         raw: om ? om.raw : null,
         nwsPoint: nws.point,
         detail: {
@@ -369,7 +391,14 @@
         <div class="fc-temps"><span class="fc-hi">${fmtTemp(day.highF)}</span><span class="fc-lo">${fmtTemp(day.lowF)}</span></div>
         <div class="fc-rain">💧 ${U().percent(day.precipProb)}</div>
       `;
-      card.addEventListener('click', () => roastDay(day, dayName));
+      card.title = `${label} — tap for the day and a roast`;
+      card.addEventListener('click', () => {
+        // The roast still lands on the card behind, so the log and the
+        // main line behave exactly as they did; the day view shows the
+        // same line where you are actually looking.
+        const line = roastDay(day, dayName, { scroll: false });
+        openDayDetail(day, dayName, true, line);
+      });
       wrap.appendChild(card);
     });
   }
@@ -759,13 +788,116 @@
     showRoast(LocalAI.generate(state.weather), 'Right now');
   }
 
-  function roastDay(day, dayName) {
+  /* ------------------------------------------------------------
+     A day in detail. Tapping a forecast card still roasts that day —
+     that behaviour predates this and people rely on it — and now also
+     opens the day itself: its hours, its sun, its UV.
+     ------------------------------------------------------------ */
+  function hoursForDate(dateISO) {
+    const raw = state.hourlyRaw;
+    if (!raw || !Array.isArray(raw.time)) return [];
+    const out = [];
+    raw.time.forEach((iso, i) => {
+      if (String(iso).slice(0, 10) !== dateISO) return;
+      out.push({
+        time: new Date(iso),
+        tempF: raw.temperature_2m ? raw.temperature_2m[i] : null,
+        precipProb: raw.precipitation_probability ? raw.precipitation_probability[i] : null,
+        code: raw.weather_code ? raw.weather_code[i] : 0,
+        windMph: raw.wind_speed_10m ? raw.wind_speed_10m[i] : null,
+      });
+    });
+    return out;
+  }
+
+  function openDayDetail(day, dayName, open = true, roastLine = '') {
+    const modal = $('dayModal');
+    const overlay = $('dayModalOverlay');
+    if (!modal || !overlay) return;
+
+    if (!open) {
+      modal.hidden = true;
+      overlay.hidden = true;
+      document.body.classList.remove('day-open');
+      return;
+    }
+
+    const [label, icon] = describeCode(day.code);
+    const date = new Date(day.dateISO + 'T12:00:00');
+    $('dayModalTitle').textContent = `${icon} ${dayName}`;
+    $('dayModalSummary').textContent =
+      `${date.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })} · ${label}`;
+
+    const roast = $('dayRoast');
+    if (roast) {
+      roast.textContent = roastLine || '';
+      roast.hidden = !roastLine;
+    }
+
+    const facts = [
+      ['High', U().temp(day.highF, { withUnit: true })],
+      ['Low', U().temp(day.lowF, { withUnit: true })],
+      ['Rain', U().percent(day.precipProb)],
+      ['UV', day.uvIndex == null ? '--' : String(Math.round(day.uvIndex))],
+      ['Sunrise', day.sunrise ? U().time(new Date(day.sunrise)) : '--'],
+      ['Sunset', day.sunset ? U().time(new Date(day.sunset)) : '--'],
+    ];
+    $('dayFacts').innerHTML = facts.map(([k, v]) =>
+      `<div class="day-fact"><span class="day-fact-label">${k}</span>` +
+      `<span class="day-fact-value">${v}</span></div>`).join('');
+
+    renderDayHours(day);
+
+    modal.hidden = false;
+    overlay.hidden = false;
+    document.body.classList.add('day-open');
+    modal.focus();
+  }
+
+  function renderDayHours(day) {
+    const host = $('dayHours');
+    const note = $('dayHoursNote');
+    if (!host || !note) return;
+
+    const hours = hoursForDate(day.dateISO);
+    if (!hours.length) {
+      host.innerHTML = '';
+      // Hour-by-hour comes from Open-Meteo, and only for as far ahead as
+      // it publishes. Saying so beats an empty box.
+      note.textContent = 'Hour-by-hour is not available for this day.';
+      return;
+    }
+
+    const temps = hours.map((h) => h.tempF).filter((t) => t != null);
+    const min = Math.min(...temps);
+    const max = Math.max(...temps);
+    const span = Math.max(1, max - min);
+
+    host.innerHTML = hours.map((h) => {
+      // Height carries the temperature, so the shape of the day reads
+      // at a glance; the number is there for anyone who wants it.
+      const pct = h.tempF == null ? 0 : Math.round(((h.tempF - min) / span) * 100);
+      const rain = h.precipProb == null ? 0 : Math.round(h.precipProb);
+      return `<div class="day-hour">
+        <span class="day-hour-temp">${U().temp(h.tempF)}</span>
+        <span class="day-hour-bar" style="height:${8 + pct * 0.5}px"></span>
+        <span class="day-hour-rain${rain >= 30 ? ' wet' : ''}">${rain}%</span>
+        <span class="day-hour-time">${U().time(h.time)}</span>
+      </div>`;
+    }).join('');
+    note.textContent = `${hours.length} hours · temperature and chance of rain`;
+  }
+
+  function roastDay(day, dayName, { scroll = true } = {}) {
     const line = LocalAI.generateForDay(day, {
       city: state.location ? state.location.name : '',
       windMph: state.weather ? state.weather.windMph : 5,
     });
     showRoast(line, dayName === 'Today' ? 'Today' : dayName);
-    $('roastText').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Scrolling the card into view is pointless behind a modal, and
+    // faintly maddening: the page moves under something you cannot see.
+    if (scroll) $('roastText').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return line;
   }
 
   function renderRoastLog() {
@@ -889,6 +1021,7 @@
       state.hours = result.hours || [];
       state.detail = result.detail || {};
       state.yesterday = result.yesterday || null;
+      state.hourlyRaw = result.hourlyRaw || null;
       state.offline = false;
 
       renderCurrent();
@@ -1735,6 +1868,8 @@
     $('downloadClose').addEventListener('click', () => openDownloads(false));
     $('downloadOverlay').addEventListener('click', () => openDownloads(false));
 
+    $('dayModalClose').addEventListener('click', () => openDayDetail(null, '', false));
+    $('dayModalOverlay').addEventListener('click', () => openDayDetail(null, '', false));
     $('tempModalClose').addEventListener('click', () => openTempChart(false));
     $('tempModalOverlay').addEventListener('click', () => openTempChart(false));
     document.addEventListener('keydown', (e) => {
@@ -1742,6 +1877,7 @@
       if (!$('tempModal').hidden) openTempChart(false);
       if (!$('downloadModal').hidden) openDownloads(false);
       if (!$('signInModal').hidden) openSignIn(false);
+      if (!$('dayModal').hidden) openDayDetail(null, '', false);
     });
 
     $('compareRefreshBtn').addEventListener('click', () => {

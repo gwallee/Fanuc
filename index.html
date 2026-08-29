@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0e17" />
-  <meta name="description" content="What the Wether V17 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
-  <title>What the Wether V17 ⚡🌩️</title>
+  <meta name="description" content="What the Wether V18 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
+  <title>What the Wether V18 ⚡🌩️</title>
   <link rel="icon" type="image/svg+xml" href="logo.svg" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="manifest" href="manifest.json" />
@@ -522,6 +522,27 @@
       <canvas id="tempChartCanvas" aria-label="Seven day high and low temperature chart"></canvas>
     </div>
     <p class="temp-modal-note">Highs and lows for the next 7 days, in your selected units.</p>
+  </div>
+
+  <!-- ================= A day in detail ================= -->
+  <div class="modal-overlay" id="dayModalOverlay" hidden></div>
+  <div class="temp-modal day-modal" id="dayModal" role="dialog" aria-modal="true"
+       aria-labelledby="dayModalTitle" tabindex="-1" hidden>
+    <div class="temp-modal-head">
+      <div>
+        <h2 id="dayModalTitle">Day</h2>
+        <p class="temp-modal-summary" id="dayModalSummary"></p>
+      </div>
+      <button type="button" id="dayModalClose" class="btn btn-small" aria-label="Close day">✕</button>
+    </div>
+
+    <p class="day-roast" id="dayRoast"></p>
+
+    <div class="day-facts" id="dayFacts"></div>
+    <div class="day-hours-wrap">
+      <div class="day-hours" id="dayHours"></div>
+    </div>
+    <p class="temp-modal-note" id="dayHoursNote"></p>
   </div>
 
   <!-- ================= Toast ================= -->

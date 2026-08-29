@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V17 — themes.js
+   What the Wether V18 — themes.js
    Theme switching via a data-theme attribute on <html>.
    All actual colors live in styles.css as CSS variables, so
    adding a theme = one CSS block + one entry in config.js.

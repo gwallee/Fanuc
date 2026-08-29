@@ -1,4 +1,4 @@
-# What the Wether V17 ⚡🌩️
+# What the Wether V18 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -159,7 +159,25 @@ Fullscreen button to come back.
   toggles it
 - Set `radar.fullscreenOnTap = false` in `config.js` to require the button
 
-### 🌡️ Today, in context (V17)
+### 📅 A day in detail (V18)
+
+Tapping a day in the forecast row opens that day: its roast, its high, low,
+rain chance, UV, sunrise and sunset, and an hour-by-hour strip you can scroll —
+temperature as a bar, chance of rain underneath, wet hours picked out.
+
+Tapping a day already roasted it, and still does — the roast lands on the
+weather card exactly as before, so the roast log and the main line are
+unchanged. What changed is that the same line is now also shown *where you are
+looking*, and the page no longer scrolls the card into view behind a dialog you
+cannot see through.
+
+The hours come from Open-Meteo's hourly series, which is kept whole rather than
+trimmed to the 48 the strip shows. Days it does not reach say so rather than
+showing an empty box, and the day's own facts are still there. Where NWS drew
+the forecast row, Open-Meteo's sun times and UV are merged in by date — NWS
+publishes neither.
+
+### 🌡️ Today, in context (V18)
 
 Under the conditions the card says how today compares with yesterday —
 **"18°F warmer than yesterday"** — with yesterday's actual high in the tooltip.
@@ -177,7 +195,7 @@ possible.
   That has its own function in `units.js` and its own tests
 
 Asking for a past day moved every index into the daily arrays by one, so the
-V17 suite exists mostly to prove today is still today: the fixture makes
+V18 suite exists mostly to prove today is still today: the fixture makes
 yesterday 62° against today's 80°, so an off-by-one would be unmistakable
 rather than plausible. Sunrise, sunset, UV and the forecast row are all checked
 against it. Visibility now comes from the hour nearest to now rather than the
@@ -203,7 +221,7 @@ is the truth. The badge also reports **staleness**: if the newest frame is
 older than `radarTiles.maxAgeMinutes`, it reads `RADAR (STALE)` instead of
 claiming to be live, and its tooltip gives the frame age in minutes.
 
-**`FORECAST` — where the rain is going (V17).** The same index publishes
+**`FORECAST` — where the rain is going (V18).** The same index publishes
 *nowcast* frames, and the loop now carries on past the present into the next
 half hour, so you can watch a band approach rather than only where it has
 been. Predictions are never dressed up as observations:
@@ -228,7 +246,7 @@ unreachable, the app falls back to base-reflectivity imagery from
 [NOAA's public GeoServer](https://opengeo.ncep.noaa.gov/) (`conus_bref_qcd`),
 drawn over the basemap as before.
 
-**A legend (V17).** A bar under the scope runs light → heavy, so the colours
+**A legend (V18).** A bar under the scope runs light → heavy, so the colours
 mean something without having to be looked up. It is deliberately labelled by
 order rather than by exact figures: RainViewer's palette and NOAA's mosaic do
 not share a scale, and a legend that claimed precise values would be wrong for
@@ -308,7 +326,7 @@ Those three each need a client ID registered with the provider; that is their
 requirement, not a choice made here, and there is no way around it for any of
 them. The built-in account exists so that requirement never blocks anybody.
 
-**Moving an account to another device (V17).** Settings → *Move to another
+**Moving an account to another device (V18).** Settings → *Move to another
 device* produces a code carrying your account, saved places and settings. Paste
 it into the same box on another device and everything arrives. No server is
 involved, which is also the limit: it is a deliberate transfer, not sync — the
@@ -469,7 +487,7 @@ dependencies** — `package.json` exists only for the tests.
 ## Project structure
 
 ```
-WhatTheWether-V17/
+WhatTheWether-V18/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
@@ -592,7 +610,7 @@ on the **Build desktop apps** action) and GitHub builds all three platforms
 natively and attaches them to a release:
 
 ```bash
-git tag v17.0.0 && git push origin v17.0.0
+git tag v18.0.0 && git push origin v18.0.0
 ```
 
 | Platform | Files |

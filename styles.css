@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V17 — styles.css
+   What the Wether V18 — styles.css
    All colors come from CSS variables so themes are one block
    each. Default theme: Neon Dark. Others: Midnight, Light.
    ============================================================ */
@@ -754,6 +754,79 @@ body.modal-open { overflow: hidden; }
     #3b82f6 0%, #22c55e 32%, #eab308 58%, #f97316 78%, #ef4444 100%);
 }
 .legend-label { flex: 0 0 auto; }
+
+/* A day in detail. */
+.day-roast {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--input-bg);
+  border: 1px solid var(--card-border);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  padding: 0.6rem 0.7rem;
+  margin-bottom: 0.9rem;
+}
+
+.day-modal { width: min(680px, calc(100vw - 2rem)); }
+.day-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+}
+.day-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  background: var(--input-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 0.45rem 0.55rem;
+}
+.day-fact-label {
+  font-size: 0.66rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.day-fact-value { font-size: 0.95rem; font-weight: 700; }
+
+.day-hours-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 0.3rem;
+}
+.day-hours {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.35rem;
+  min-width: min-content;
+}
+.day-hour {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  flex: 0 0 auto;
+  width: 46px;
+}
+.day-hour-temp { font-size: 0.72rem; font-weight: 700; }
+.day-hour-bar {
+  width: 10px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-2, var(--accent)));
+  opacity: 0.85;
+}
+.day-hour-rain { font-size: 0.64rem; color: var(--text-dim); }
+.day-hour-rain.wet { color: var(--accent); font-weight: 700; }
+.day-hour-time {
+  font-size: 0.62rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
 
 /* Pick a picture: emoji, so there is nothing to host or fetch. */
 .avatar-picker {
