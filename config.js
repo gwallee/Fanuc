@@ -1,12 +1,12 @@
 /* ============================================================
-   What the Wether V16 — config.js
+   What the Wether V17 — config.js
    Central configuration. No API keys required, ever.
    ============================================================ */
 
 const WTW_CONFIG = {
   app: {
     name: 'What the Wether',
-    version: 'V16',
+    version: 'V17',
     tagline: 'Weather with an attitude problem.',
   },
 

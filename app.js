@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V16 — app.js
+   What the Wether V17 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -1233,7 +1233,7 @@
     img.removeAttribute('src');
     icon.hidden = false;
     icon.textContent = profile
-      ? (profile.name || '?').trim().charAt(0).toUpperCase()
+      ? (profile.avatar || (profile.name || '?').trim().charAt(0).toUpperCase())
       : '\u{1F464}';
   }
 
@@ -1251,7 +1251,8 @@
     }
     pic.hidden = true;
     pic.removeAttribute('src');
-    initial.textContent = (profile.name || '?').trim().charAt(0).toUpperCase();
+    initial.textContent = profile.avatar ||
+      (profile.name || '?').trim().charAt(0).toUpperCase();
     initial.hidden = false;
   }
 
@@ -1268,6 +1269,7 @@
     const or = $('signInOr');
     if (!note || !msBtn || !appleBtn || !googleHost) return;
 
+    renderAvatarPicker();
     const available = WTWAuth.providers();
 
     msBtn.hidden = !available.includes('microsoft');
@@ -1362,14 +1364,98 @@
       : 'None switched on yet — the name on the sign-in screen works regardless.';
   }
 
+  /* ------------------------------------------------------------
+     Moving an account to another device. Showing the code is a
+     deliberate act rather than something on display, and restoring
+     says what it actually did rather than just "done".
+     ------------------------------------------------------------ */
+  function initTransfer() {
+    const show = $('transferShowBtn');
+    const copy = $('transferCopyBtn');
+    const box = $('transferCode');
+    const input = $('transferInput');
+    const restore = $('transferRestoreBtn');
+    const status = $('transferStatus');
+    if (!show || !copy || !box || !input || !restore || !status) return;
+
+    show.addEventListener('click', () => {
+      const code = WTWAuth.exportAccount();
+      if (!code) {
+        status.textContent = "Couldn't build a code on this device.";
+        return;
+      }
+      box.value = code;
+      box.hidden = false;
+      copy.hidden = false;
+      box.select();
+      status.textContent = 'Paste this into the same box on the other device.';
+    });
+
+    copy.addEventListener('click', async () => {
+      box.select();
+      try {
+        await navigator.clipboard.writeText(box.value);
+        toast('Code copied.');
+      } catch (err) {
+        // Clipboard access is refused often enough that this needs an
+        // answer other than silence; the text is already selected.
+        toast('Copy it by hand — it is selected for you.', true);
+      }
+    });
+
+    restore.addEventListener('click', () => {
+      const res = WTWAuth.importAccount(input.value);
+      if (!res.ok) {
+        status.textContent = "That code couldn't be read. Copy the whole thing and try again.";
+        toast("That code couldn't be read.", true);
+        return;
+      }
+      input.value = '';
+      status.textContent = `Restored${res.name ? ` ${res.name}` : ''}` +
+        `${res.favorites ? ` and ${res.favorites} saved place${res.favorites === 1 ? '' : 's'}` : ''}.`;
+      // Everything on screen was drawn from the old values.
+      initSettingsUI();
+      renderUsernameEverywhere();
+      renderFavorites();
+      renderCompare();
+      rerenderAll();
+      toast('Account restored.');
+    });
+  }
+
   function isLocalDev() {
     return location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  }
+
+  let pickedAvatar = '';
+
+  function renderAvatarPicker() {
+    const host = $('avatarPicker');
+    if (!host || host.childElementCount) return;      // built once
+    WTWAuth.avatars().forEach((emoji, i) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'avatar-choice';
+      btn.textContent = emoji;
+      btn.setAttribute('role', 'radio');
+      btn.setAttribute('aria-label', `Picture ${i + 1}`);
+      btn.setAttribute('aria-checked', 'false');
+      btn.addEventListener('click', () => {
+        pickedAvatar = pickedAvatar === emoji ? '' : emoji;
+        host.querySelectorAll('.avatar-choice').forEach((el) => {
+          const on = el.textContent === pickedAvatar;
+          el.classList.toggle('picked', on);
+          el.setAttribute('aria-checked', on ? 'true' : 'false');
+        });
+      });
+      host.appendChild(btn);
+    });
   }
 
   function signInLocally() {
     const input = $('localNameInput');
     if (!input) return;
-    const res = WTWAuth.signInLocally(input.value);
+    const res = WTWAuth.signInLocally(input.value, pickedAvatar);
     if (!res.ok) {
       toast('Type a name first.', true);
       input.focus();
@@ -1672,6 +1758,7 @@
     renderUsernameEverywhere();
     initSettingsUI();
     initAuthSetup();
+    initTransfer();
     initEvents();
     renderFavorites();
     renderRoastLog();

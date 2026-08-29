@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V16 — air.js
+   What the Wether V17 — air.js
    Air quality and pollen from Open-Meteo's air-quality API (free,
    no key), plus sun and moon figures computed locally.
 

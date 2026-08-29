@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V16 — styles.css
+   What the Wether V17 — styles.css
    All colors come from CSS variables so themes are one block
    each. Default theme: Neon Dark. Others: Midnight, Light.
    ============================================================ */
@@ -754,6 +754,48 @@ body.modal-open { overflow: hidden; }
     #3b82f6 0%, #22c55e 32%, #eab308 58%, #f97316 78%, #ef4444 100%);
 }
 .legend-label { flex: 0 0 auto; }
+
+/* Pick a picture: emoji, so there is nothing to host or fetch. */
+.avatar-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+}
+.avatar-choice {
+  width: 36px;
+  height: 36px;
+  font-size: 1.05rem;
+  line-height: 1;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: var(--input-bg);
+  color: inherit;
+  cursor: pointer;
+}
+.avatar-choice:hover { border-color: var(--accent); }
+.avatar-choice.picked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent) inset;
+}
+
+/* Moving an account between devices. */
+.transfer-code {
+  width: 100%;
+  margin-top: 0.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  word-break: break-all;
+  background: var(--input-bg);
+  color: var(--text);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 0.5rem;
+  resize: vertical;
+}
+.transfer-restore { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
+.transfer-restore input { flex: 1; min-width: 0; font-size: 0.82rem; }
 
 /* Sign-in setup rows in Settings. */
 .provider-row { margin-top: 0.7rem; }

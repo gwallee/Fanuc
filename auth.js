@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V16 — auth.js
+   What the Wether V17 — auth.js
    Sign in with Google, Microsoft or Apple, through each provider's
    own browser SDK. Both are optional and both are key-free: a public
    client ID is not a secret, and no server is involved.
@@ -130,7 +130,12 @@ const WTWAuth = (() => {
      cannot work at all. It is a profile, not an identity, and the UI
      says so rather than implying otherwise. */
 
-  function signInLocally(rawName) {
+  // A picture without a provider: pick one of these rather than have an
+  // initial stand in. Emoji, so there is nothing to host and nothing to
+  // fetch.
+  const AVATARS = ['🌩️', '🌈', '❄️', '🌪️', '☀️', '🌙', '🔥', '🐸', '🦖', '👽', '🍕', '💀'];
+
+  function signInLocally(rawName, avatar) {
     const name = String(rawName || '').trim().replace(/\s+/g, ' ').slice(0, 24);
     if (!name) return { ok: false, reason: 'empty' };
     // Reuse this device's id if it already has one, so signing out and
@@ -149,6 +154,7 @@ const WTWAuth = (() => {
       givenName: name,
       email: '',
       picture: '',
+      avatar: AVATARS.includes(avatar) ? avatar : '',
       signedInAt: Date.now(),
     });
     return { ok: true };
@@ -432,6 +438,60 @@ const WTWAuth = (() => {
     }
   }
 
+  /* ------------------------------------------------------------
+     Moving an account to another device, with no server involved.
+
+     The code is this browser's account, saved places and settings,
+     JSON-encoded and base64'd. Deliberately NOT included: any
+     provider profile. A Google or Microsoft sign-in belongs to that
+     provider on that device, and a token or an email address has no
+     business travelling in a string somebody might paste into a chat.
+     What travels is a name, a picture, favourites and preferences —
+     which is why the panel can honestly say the code holds no
+     password and no sign-in token.
+     ------------------------------------------------------------ */
+  const TRANSFER_VERSION = 1;
+
+  function exportAccount() {
+    const profile = getProfile();
+    const payload = {
+      v: TRANSFER_VERSION,
+      name: profile && profile.provider === 'local' ? profile.name : '',
+      avatar: profile && profile.provider === 'local' ? (profile.avatar || '') : '',
+      settings: WTWStorage.getSettings(),
+      favorites: WTWStorage.getFavorites(),
+      madeAt: Date.now(),
+    };
+    try {
+      // btoa is byte-oriented; encodeURIComponent first so an emoji or
+      // an accented place name does not throw on the way out.
+      return btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+    } catch (err) {
+      console.warn('[auth] could not build a transfer code', err);
+      return '';
+    }
+  }
+
+  function importAccount(code) {
+    let payload;
+    try {
+      payload = JSON.parse(decodeURIComponent(escape(atob(String(code || '').trim()))));
+    } catch (err) {
+      return { ok: false, reason: 'unreadable' };
+    }
+    if (!payload || payload.v !== TRANSFER_VERSION) return { ok: false, reason: 'unreadable' };
+
+    const favorites = Array.isArray(payload.favorites) ? payload.favorites : [];
+    const settings = payload.settings && typeof payload.settings === 'object'
+      ? payload.settings : {};
+
+    if (Object.keys(settings).length) WTWStorage.saveSettings(settings);
+    if (favorites.length) WTWStorage.saveFavorites(favorites);
+    if (payload.name) signInLocally(payload.name, payload.avatar);
+
+    return { ok: true, name: payload.name || '', favorites: favorites.length };
+  }
+
   function init({ onChange } = {}) {
     state.onChange = onChange;
     WTWStorage.remove('guestMode');   // a flag from an older version
@@ -442,7 +502,9 @@ const WTWAuth = (() => {
   return {
     init, signOut, getProfile, isSignedIn, isConfigured, isSupportedHere,
     providers, renderGoogleButton, signInWithMicrosoft, signInWithApple,
-    signInLocally, decodeCredential, decodeJwt, toProfile,
+    signInLocally, avatars: () => AVATARS.slice(),
+    exportAccount, importAccount,
+    decodeCredential, decodeJwt, toProfile,
     setClientId, storedClientId, configuredClientId: idOf,
   };
 })();

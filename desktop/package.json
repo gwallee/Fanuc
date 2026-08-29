@@ -1,7 +1,7 @@
 {
   "name": "what-the-wether",
   "productName": "What the Wether",
-  "version": "16.0.0",
+  "version": "17.0.0",
   "description": "Neon weather with a real-map radar, 48-hour outlook, and a local AI that roasts the forecast. No API keys.",
   "author": {
     "name": "gwallee",

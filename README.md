@@ -1,4 +1,4 @@
-# What the Wether V16 ⚡🌩️
+# What the Wether V17 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -159,7 +159,7 @@ Fullscreen button to come back.
   toggles it
 - Set `radar.fullscreenOnTap = false` in `config.js` to require the button
 
-### 🌡️ Today, in context (V16)
+### 🌡️ Today, in context (V17)
 
 Under the conditions the card says how today compares with yesterday —
 **"18°F warmer than yesterday"** — with yesterday's actual high in the tooltip.
@@ -177,7 +177,7 @@ possible.
   That has its own function in `units.js` and its own tests
 
 Asking for a past day moved every index into the daily arrays by one, so the
-V16 suite exists mostly to prove today is still today: the fixture makes
+V17 suite exists mostly to prove today is still today: the fixture makes
 yesterday 62° against today's 80°, so an off-by-one would be unmistakable
 rather than plausible. Sunrise, sunset, UV and the forecast row are all checked
 against it. Visibility now comes from the hour nearest to now rather than the
@@ -203,7 +203,7 @@ is the truth. The badge also reports **staleness**: if the newest frame is
 older than `radarTiles.maxAgeMinutes`, it reads `RADAR (STALE)` instead of
 claiming to be live, and its tooltip gives the frame age in minutes.
 
-**`FORECAST` — where the rain is going (V16).** The same index publishes
+**`FORECAST` — where the rain is going (V17).** The same index publishes
 *nowcast* frames, and the loop now carries on past the present into the next
 half hour, so you can watch a band approach rather than only where it has
 been. Predictions are never dressed up as observations:
@@ -228,7 +228,7 @@ unreachable, the app falls back to base-reflectivity imagery from
 [NOAA's public GeoServer](https://opengeo.ncep.noaa.gov/) (`conus_bref_qcd`),
 drawn over the basemap as before.
 
-**A legend (V16).** A bar under the scope runs light → heavy, so the colours
+**A legend (V17).** A bar under the scope runs light → heavy, so the colours
 mean something without having to be looked up. It is deliberately labelled by
 order rather than by exact figures: RainViewer's palette and NOAA's mosaic do
 not share a scale, and a legend that claimed precise values would be wrong for
@@ -297,11 +297,29 @@ alongside the headline stats.
 
 ### 👤 Account — a name, or Google / Microsoft / Apple (optional)
 
-The **👤 button in the header** opens a sign-in screen. It always offers at
-least one way in: **use a name on this device**, which needs no provider, no
-client ID and no network, and works in the packaged desktop app too. Above it,
+The **👤 button in the header** opens a sign-in screen. It leads with an
+account that needs **nothing at all**: pick a name and a picture, press Create,
+and you have one. No client ID, no provider, no password, no email, no network —
+and it works in the packaged desktop app, where the providers cannot. Above it,
 when configured, sit **Sign in with Google**, **Sign in with Microsoft** and
-**Sign in with Apple**. Signing in sets your
+**Sign in with Apple**.
+
+Those three each need a client ID registered with the provider; that is their
+requirement, not a choice made here, and there is no way around it for any of
+them. The built-in account exists so that requirement never blocks anybody.
+
+**Moving an account to another device (V17).** Settings → *Move to another
+device* produces a code carrying your account, saved places and settings. Paste
+it into the same box on another device and everything arrives. No server is
+involved, which is also the limit: it is a deliberate transfer, not sync — the
+two devices do not stay in step afterwards.
+
+What the code deliberately does **not** carry is any provider profile. A Google
+or Microsoft sign-in belongs to that provider on that device, and a token or an
+email address has no business travelling in a string somebody might paste into a
+chat. What travels is a name, a picture, favourites and preferences, which is
+why the panel can honestly say it holds no password and no sign-in token. A
+malformed code is refused with a message and changes nothing. Signing in sets your
 name and picture, and the roast bot starts using your first name. That is the
 whole of what it does. **Settings → Account** opens the same screen, and shows
 the signed-in account with a **Log out** button once there is one.
@@ -451,7 +469,7 @@ dependencies** — `package.json` exists only for the tests.
 ## Project structure
 
 ```
-WhatTheWether-V16/
+WhatTheWether-V17/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
@@ -574,7 +592,7 @@ on the **Build desktop apps** action) and GitHub builds all three platforms
 natively and attaches them to a release:
 
 ```bash
-git tag v16.0.0 && git push origin v16.0.0
+git tag v17.0.0 && git push origin v17.0.0
 ```
 
 | Platform | Files |

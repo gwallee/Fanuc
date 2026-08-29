@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0e17" />
-  <meta name="description" content="What the Wether V16 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
-  <title>What the Wether V16 ⚡🌩️</title>
+  <meta name="description" content="What the Wether V17 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
+  <title>What the Wether V17 ⚡🌩️</title>
   <link rel="icon" type="image/svg+xml" href="logo.svg" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="manifest" href="manifest.json" />
@@ -305,6 +305,26 @@
       <p class="setting-hint" id="accountHint"></p>
     </div>
 
+    <div class="setting-group" id="transferGroup">
+      <label>Move to another device</label>
+      <p class="setting-hint">Your account, saved places and settings live in this
+        browser. This code carries them to another device — no server, no account
+        anywhere else. It holds no password and no sign-in token.</p>
+      <div class="setting-row">
+        <button type="button" id="transferShowBtn" class="btn btn-small">Show my code</button>
+        <button type="button" id="transferCopyBtn" class="btn btn-small" hidden>Copy</button>
+      </div>
+      <textarea id="transferCode" class="transfer-code" rows="3" readonly hidden
+                aria-label="Your transfer code"></textarea>
+
+      <div class="setting-row transfer-restore">
+        <input type="text" id="transferInput" autocomplete="off" spellcheck="false"
+               placeholder="Paste a code from another device" />
+        <button type="button" id="transferRestoreBtn" class="btn btn-primary btn-small">Restore</button>
+      </div>
+      <p class="setting-hint" id="transferStatus"></p>
+    </div>
+
     <!-- Switching a provider on without a deploy. The IDs are public
          values, not secrets, and this stores them on this device only —
          which the hint says plainly, because pasting one here does not
@@ -468,14 +488,16 @@
     <div class="signin-or" id="signInOr" hidden><span>or</span></div>
 
     <form class="signin-local" id="localSignInForm">
-      <label for="localNameInput">Use a name on this device</label>
+      <label for="localNameInput">Create your account</label>
       <div class="setting-row">
         <input type="text" id="localNameInput" maxlength="24" autocomplete="nickname"
                placeholder="Your name" />
-        <button type="submit" id="localSignInBtn" class="btn btn-primary btn-small">Continue</button>
+        <button type="submit" id="localSignInBtn" class="btn btn-primary btn-small">Create</button>
       </div>
-      <p class="signin-local-note">Kept on this device. It sets your name across the
-        app — it is not an account anywhere else.</p>
+      <div class="avatar-picker" id="avatarPicker" role="radiogroup"
+           aria-label="Pick a picture for your account"></div>
+      <p class="signin-local-note">No password, no email, nothing to set up. Your
+        account lives on this device — Settings can move it to another one.</p>
     </form>
 
     <p class="auth-note" id="signInNote" hidden></p>
