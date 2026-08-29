@@ -55,8 +55,8 @@ function omBody() {
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|ERR_TUNNEL|ERR_FAILED|net::/.test(m.text())) errors.push('CONSOLE: ' + m.text()); });
 
   const wmsUrls = [];
-  await page.route('https://opengeo.ncep.noaa.gov/**', (r) => { wmsUrls.push(r.request().url()); return r.fulfill({ contentType: 'image/png', body: PNG }); });
-  await page.route('https://basemaps.cartocdn.com/**', (r) => r.fulfill({ contentType: 'image/png', body: PNG }));
+  await page.route('https://opengeo.ncep.noaa.gov/**', (r) => { wmsUrls.push(r.request().url()); return r.fulfill({ headers: { 'cache-control': 'no-store' }, contentType: 'image/png', body: PNG }); });
+  await page.route('https://basemaps.cartocdn.com/**', (r) => r.fulfill({ headers: { 'cache-control': 'no-store' }, contentType: 'image/png', body: PNG }));
   await page.route('https://geocoding-api.open-meteo.com/**', (r) => r.fulfill({ contentType: 'application/json',
     body: JSON.stringify({ results: [{ name: 'Austin', admin1: 'Texas', country_code: 'US', latitude: AUSTIN.lat, longitude: AUSTIN.lon }] }) }));
   await page.route('https://api.open-meteo.com/**', (r) => r.fulfill({ contentType: 'application/json', body: omBody() }));

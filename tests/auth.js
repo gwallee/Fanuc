@@ -109,8 +109,8 @@ function omBody() {
       body: JSON.stringify({results:[{name:'Austin',admin1:'Texas',country:'United States',latitude:30.2672,longitude:-97.7431}]})}));
     await page.route('https://api.open-meteo.com/**', r => r.fulfill({contentType:'application/json', body: omBody()}));
     await page.route('https://api.weather.gov/**', r => r.fulfill({status:404, body:'{}'}));
-    await page.route('https://opengeo.ncep.noaa.gov/**', r => r.fulfill({contentType:'image/png', body:PNG}));
-    await page.route('https://basemaps.cartocdn.com/**', r => r.fulfill({contentType:'image/png', body:PNG}));
+    await page.route('https://opengeo.ncep.noaa.gov/**', r => r.fulfill({headers:{'cache-control':'no-store'}, contentType:'image/png', body:PNG}));
+    await page.route('https://basemaps.cartocdn.com/**', r => r.fulfill({headers:{'cache-control':'no-store'}, contentType:'image/png', body:PNG}));
     await page.goto(BASE_URL + '/index.html', { waitUntil:'networkidle' });
     await page.evaluate((tok) => { window.__fakeToken = tok; }, fakeIdToken(GOOGLE_PROFILE));
     await page.evaluate((c) => {

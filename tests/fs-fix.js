@@ -8,8 +8,8 @@ const fs = require('fs');
 const PNG = fs.readFileSync(__dirname + '/fixture-radar-frame.png');
 
 function stub(page) {
-  page.route('https://opengeo.ncep.noaa.gov/**', r => r.fulfill({contentType:'image/png', body:PNG}));
-  page.route('https://basemaps.cartocdn.com/**', r => r.fulfill({contentType:'image/png', body:PNG}));
+  page.route('https://opengeo.ncep.noaa.gov/**', r => r.fulfill({headers:{'cache-control':'no-store'}, contentType:'image/png', body:PNG}));
+  page.route('https://basemaps.cartocdn.com/**', r => r.fulfill({headers:{'cache-control':'no-store'}, contentType:'image/png', body:PNG}));
   page.route('https://air-quality-api.open-meteo.com/**', r => r.fulfill({contentType:'application/json',
     body: JSON.stringify({current:{us_aqi:42,pm2_5:8,pm10:18,ozone:61,nitrogen_dioxide:9}})}));
   page.route('https://api.weather.gov/**', r => r.fulfill({status:404, body:'{}'}));

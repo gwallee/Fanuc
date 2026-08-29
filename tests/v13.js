@@ -54,8 +54,8 @@ function omBody() {
   await page.route('https://api.met.no/**', r => r.abort());
   await page.route('https://air-quality-api.open-meteo.com/**', r => r.abort());
   await page.route('https://api.rainviewer.com/**', r => r.abort());
-  await page.route('https://opengeo.ncep.noaa.gov/**', r => r.fulfill({contentType:'image/png', body:PNG}));
-  await page.route('https://basemaps.cartocdn.com/**', r => r.fulfill({contentType:'image/png', body:PNG}));
+  await page.route('https://opengeo.ncep.noaa.gov/**', r => r.fulfill({headers:{'cache-control':'no-store'}, contentType:'image/png', body:PNG}));
+  await page.route('https://basemaps.cartocdn.com/**', r => r.fulfill({headers:{'cache-control':'no-store'}, contentType:'image/png', body:PNG}));
   await page.route('https://api.zippopotam.us/**', r => r.fulfill({contentType:'application/json',
     body: JSON.stringify({places:[{'place name':'Beverly Hills','state abbreviation':'CA',latitude:'34.0901',longitude:'-118.4065'}]})}));
 

@@ -70,8 +70,8 @@ const AIR_BODY = JSON.stringify({ current: {
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|ERR_TUNNEL|ERR_FAILED|net::/.test(m.text())) errors.push('CONSOLE: ' + m.text()); });
 
   const airCalls = [], compareCalls = [];
-  await page.route('https://opengeo.ncep.noaa.gov/**', (r) => r.fulfill({ contentType: 'image/png', body: PNG }));
-  await page.route('https://basemaps.cartocdn.com/**', (r) => r.fulfill({ contentType: 'image/png', body: PNG }));
+  await page.route('https://opengeo.ncep.noaa.gov/**', (r) => r.fulfill({ headers: { 'cache-control': 'no-store' }, contentType: 'image/png', body: PNG }));
+  await page.route('https://basemaps.cartocdn.com/**', (r) => r.fulfill({ headers: { 'cache-control': 'no-store' }, contentType: 'image/png', body: PNG }));
   await page.route('https://air-quality-api.open-meteo.com/**', (r) => {
     airCalls.push(r.request().url());
     return r.fulfill({ contentType: 'application/json', body: AIR_BODY });

@@ -63,8 +63,8 @@ function omBody() {
     await page.route('https://api.met.no/**', r => r.abort());
     await page.route('https://air-quality-api.open-meteo.com/**', r => r.abort());
     await page.route('https://api.rainviewer.com/**', r => r.abort());
-    await page.route('https://opengeo.ncep.noaa.gov/**', r => r.fulfill({contentType:'image/png', body:PNG}));
-    await page.route('https://basemaps.cartocdn.com/**', r => r.fulfill({contentType:'image/png', body:PNG}));
+    await page.route('https://opengeo.ncep.noaa.gov/**', r => r.fulfill({headers:{'cache-control':'no-store'}, contentType:'image/png', body:PNG}));
+    await page.route('https://basemaps.cartocdn.com/**', r => r.fulfill({headers:{'cache-control':'no-store'}, contentType:'image/png', body:PNG}));
     await page.goto(BASE_URL + '/index.html', { waitUntil:'networkidle' });
     return { ctx, page };
   };
@@ -196,8 +196,8 @@ function omBody() {
     await dpage.route('https://api.met.no/**', r => r.abort());
     await dpage.route('https://air-quality-api.open-meteo.com/**', r => r.abort());
     await dpage.route('https://api.rainviewer.com/**', r => r.abort());
-    await dpage.route('https://opengeo.ncep.noaa.gov/**', r => r.fulfill({contentType:'image/png', body:PNG}));
-    await dpage.route('https://basemaps.cartocdn.com/**', r => r.fulfill({contentType:'image/png', body:PNG}));
+    await dpage.route('https://opengeo.ncep.noaa.gov/**', r => r.fulfill({headers:{'cache-control':'no-store'}, contentType:'image/png', body:PNG}));
+    await dpage.route('https://basemaps.cartocdn.com/**', r => r.fulfill({headers:{'cache-control':'no-store'}, contentType:'image/png', body:PNG}));
     await dpage.goto(BASE_URL + '/index.html', { waitUntil:'networkidle' });
     await dpage.waitForTimeout(800);
 

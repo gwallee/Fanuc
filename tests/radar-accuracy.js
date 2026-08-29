@@ -54,8 +54,8 @@ function omBody() {
       tiles.push(r.request().url());
       return r.fulfill({ contentType:'image/png', body: PNG });
     });
-    await page.route('https://opengeo.ncep.noaa.gov/**', r => { wms.push(r.request().url()); return r.fulfill({contentType:'image/png', body:PNG}); });
-    await page.route('https://basemaps.cartocdn.com/**', r => r.fulfill({contentType:'image/png', body:PNG}));
+    await page.route('https://opengeo.ncep.noaa.gov/**', r => { wms.push(r.request().url()); return r.fulfill({headers:{'cache-control':'no-store'}, contentType:'image/png', body:PNG}); });
+    await page.route('https://basemaps.cartocdn.com/**', r => r.fulfill({headers:{'cache-control':'no-store'}, contentType:'image/png', body:PNG}));
     await page.route('https://api.met.no/**', r => r.abort());
     await page.route('https://air-quality-api.open-meteo.com/**', r => r.abort());
     await page.route('https://api.weather.gov/**', r => r.fulfill({status:404, body:'{}'}));

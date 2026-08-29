@@ -115,12 +115,12 @@ async function stubOpenMeteo(page) {
       errors.push('CONSOLE: ' + m.text());
     }
   });
-  await page.route('https://basemaps.cartocdn.com/**', (r) => r.fulfill({ contentType: 'image/png', body: RADAR_PNG }));
+  await page.route('https://basemaps.cartocdn.com/**', (r) => r.fulfill({ headers: { 'cache-control': 'no-store' }, contentType: 'image/png', body: RADAR_PNG }));
 
   const wmsUrls = [];
   await page.route('https://opengeo.ncep.noaa.gov/**', (r) => {
     wmsUrls.push(r.request().url());
-    return r.fulfill({ contentType: 'image/png', body: RADAR_PNG });
+    return r.fulfill({ headers: { 'cache-control': 'no-store' }, contentType: 'image/png', body: RADAR_PNG });
   });
   await stubNWS(page);
   await stubGeocode(page);

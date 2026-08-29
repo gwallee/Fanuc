@@ -120,8 +120,8 @@ function stubNws(page, { grid = true } = {}) {
     // forgot fails closed instead of quietly reaching the real internet.
     // A predicate, not a glob: 'https://**' matches nothing at all.
     await page.route((u) => u.protocol === 'https:', (r) => r.abort());
-    await page.route('https://opengeo.ncep.noaa.gov/**', r => r.fulfill({contentType:'image/png', body:PNG}));
-    await page.route('https://basemaps.cartocdn.com/**', r => r.fulfill({contentType:'image/png', body:PNG}));
+    await page.route('https://opengeo.ncep.noaa.gov/**', r => r.fulfill({headers:{'cache-control':'no-store'}, contentType:'image/png', body:PNG}));
+    await page.route('https://basemaps.cartocdn.com/**', r => r.fulfill({headers:{'cache-control':'no-store'}, contentType:'image/png', body:PNG}));
     await page.route('https://air-quality-api.open-meteo.com/**', r => r.fulfill({contentType:'application/json',
       body: JSON.stringify({current:{us_aqi:30,pm2_5:5,pm10:9,ozone:40,nitrogen_dioxide:4}})}));
     await page.route('https://geocoding-api.open-meteo.com/**', r => r.fulfill({contentType:'application/json',

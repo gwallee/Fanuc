@@ -75,14 +75,20 @@ function omBody() {
   page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/ERR_TUNNEL|Failed to load resource/.test(m.text())) errors.push('CONSOLE: ' + m.text()); });
 
+  // Every stubbed image is served no-store. Recentring asks for exactly
+  // the bbox and timestamps it asked for before the pan, so a cacheable
+  // response means the browser answers from memory, the route is never
+  // consulted, and a request the test is counting on simply never
+  // appears. That is a test that depends on the clock crossing a
+  // ten-minute boundary at the right moment.
   const wmsUrls = [], tileUrls = [];
   await page.route('https://opengeo.ncep.noaa.gov/**', (r) => {
     wmsUrls.push(r.request().url());
-    return r.fulfill({ contentType: 'image/png', body: RADAR_PNG });
+    return r.fulfill({ headers: { 'cache-control': 'no-store' }, contentType: 'image/png', body: RADAR_PNG });
   });
   await page.route('https://basemaps.cartocdn.com/**', (r) => {
     tileUrls.push(r.request().url());
-    return r.fulfill({ contentType: 'image/png', body: TILE_PNG });
+    return r.fulfill({ headers: { 'cache-control': 'no-store' }, contentType: 'image/png', body: TILE_PNG });
   });
   await page.route('https://geocoding-api.open-meteo.com/**', (r) => r.fulfill({ contentType: 'application/json',
     body: JSON.stringify({ results: [{ name: 'Austin', admin1: 'Texas', country_code: 'US',
