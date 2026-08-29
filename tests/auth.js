@@ -152,7 +152,7 @@ function omBody() {
     await page.click('#accountBtn');
     await page.waitForTimeout(700);
     return await page.isVisible('#signInModal') &&
-           /Sign in to What the Wether/i.test(await page.textContent('#signInTitle'));
+           /Sign in to Aither Weather/i.test(await page.textContent('#signInTitle'));
   });
   await check('no dead provider buttons are drawn', async () =>
     !(await page.isVisible('#microsoftBtn')) &&

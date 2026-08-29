@@ -8,7 +8,7 @@ const PNG = fs.readFileSync(__dirname + '/fixture-radar-frame.png');
 
 const RELEASE = {
   tag_name: 'v13.0.0',
-  name: 'What the Wether v13.0.0',
+  name: 'Aither Weather v13.0.0',
   published_at: '2026-08-28T12:00:00Z',
   html_url: 'https://github.com/gwallee/What-The-Weather/releases/tag/v13.0.0',
   // These are the real asset names from the published v13.0.0 release.

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* ============================================================
-   What the Wether — test runner
+   Aither Weather — test runner
 
    Serves the app on a free port, runs every suite against it in a
    real browser, and reports a single summary.

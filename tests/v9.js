@@ -107,7 +107,7 @@ function omBody() {
     // The installed app name is deliberately version-free so the
     // home-screen label stays stable across releases.
     return m.icons.length === 3 && m.display === 'standalone' &&
-           m.name === 'What the Wether' && !/V\d/.test(m.name);
+           m.name === 'Aither Weather' && !/V\d/.test(m.name);
   });
   await check('all three icons are served', async () => {
     for (const n of ['icon-192.png','icon-512.png','maskable-512.png']) {

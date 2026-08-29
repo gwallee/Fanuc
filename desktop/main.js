@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether — Electron main process.
+   Aither Weather — Electron main process.
 
    The desktop app is the same static web app, loaded from the
    packaged resources. No API keys, no bundled server, no build
@@ -91,11 +91,11 @@ function buildMenu() {
       label: 'Help',
       submenu: [
         {
-          label: 'About What the Wether',
+          label: 'About Aither Weather',
           click: () => dialog.showMessageBox(mainWindow, {
             type: 'info',
-            title: 'What the Wether',
-            message: `What the Wether ${app.getVersion()}`,
+            title: 'Aither Weather',
+            message: `Aither Weather ${app.getVersion()}`,
             detail: 'Neon weather with a real-map radar, a 48-hour outlook, and a\n' +
                     'local AI that roasts the forecast.\n\n' +
                     'No API keys. Weather from the National Weather Service,\n' +

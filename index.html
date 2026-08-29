@@ -4,15 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0e17" />
-  <meta name="description" content="What the Wether V19 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
-  <title>What the Wether V19 ⚡🌩️</title>
+  <meta name="description" content="Aither Weather V20 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
+  <title>Aither Weather V20 ⚡🌩️</title>
   <link rel="icon" type="image/svg+xml" href="logo.svg" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="What the Wether" />
+  <meta name="apple-mobile-web-app-title" content="Aither Weather" />
 </head>
 <body>
 
@@ -73,9 +73,9 @@
   <!-- ================= Header ================= -->
   <header class="app-header">
     <div class="brand">
-      <img src="logo.svg" alt="What the Wether logo" class="brand-logo" />
+      <img src="logo.svg" alt="Aither Weather logo" class="brand-logo" />
       <div class="brand-text">
-        <h1>What the Wether <span class="version-badge" id="appVersion">V13</span></h1>
+        <h1>Aither Weather <span class="version-badge" id="appVersion">V13</span></h1>
         <p class="brand-greeting">
           <img class="brand-avatar" id="brandAvatar" alt="" width="20" height="20" hidden />
           Yo, <strong data-username>DJTheBest</strong> ⚡
@@ -85,14 +85,14 @@
 
     <div class="header-tools" role="search">
       <div class="tool-row">
-        <button type="button" id="searchBtn" class="btn btn-primary btn-compact">🔍 Search</button>
-        <button type="button" id="geoBtn" class="btn btn-compact" title="Use my location" aria-label="Use my location">📍</button>
-        <button type="button" id="downloadBtn" class="btn btn-compact" title="Get the desktop app" aria-label="Get the desktop app">⬇️</button>
+        <button type="button" id="searchBtn" class="btn btn-primary btn-compact"><span class="btn-ico" data-ui-icon="search"></span> Search</button>
+        <button type="button" id="geoBtn" class="btn btn-compact" title="Use my location" aria-label="Use my location"><span class="btn-ico" data-ui-icon="location"></span></button>
+        <button type="button" id="downloadBtn" class="btn btn-compact" title="Get the desktop app" aria-label="Get the desktop app"><span class="btn-ico" data-ui-icon="download"></span></button>
         <button type="button" id="accountBtn" class="btn btn-compact" title="Sign in" aria-label="Sign in">
           <img class="account-btn-avatar" id="accountBtnAvatar" alt="" width="20" height="20" hidden />
-          <span id="accountBtnIcon">👤</span>
+          <span id="accountBtnIcon" class="btn-ico" data-ui-icon="account"></span>
         </button>
-        <button type="button" id="settingsBtn" class="btn btn-compact" title="Settings" aria-label="Open settings">⚙️</button>
+        <button type="button" id="settingsBtn" class="btn btn-compact" title="Settings" aria-label="Open settings"><span class="btn-ico" data-ui-icon="settings"></span></button>
       </div>
       <div class="search-field">
         <input
@@ -119,8 +119,8 @@
     <p>Search for a city or ZIP code, or use your location to get started.
        Fair warning: the forecast comes with attitude.</p>
     <div class="welcome-actions">
-      <button type="button" id="welcomeGeoBtn" class="btn btn-primary">📍 Use my location</button>
-      <button type="button" id="welcomeSearchBtn" class="btn">🔍 Search a place</button>
+      <button type="button" id="welcomeGeoBtn" class="btn btn-primary"><span class="btn-ico" data-ui-icon="location"></span> Use my location</button>
+      <button type="button" id="welcomeSearchBtn" class="btn"><span class="btn-ico" data-ui-icon="search"></span> Search a place</button>
     </div>
   </section>
 
@@ -140,8 +140,8 @@
       <div class="card-head">
         <h2 id="wxCity">—</h2>
         <div class="card-head-actions">
-          <button type="button" id="saveFavBtn" class="btn btn-small">☆ Save location</button>
-          <button type="button" id="refreshBtn" class="btn btn-small" title="Refresh weather">🔄</button>
+          <button type="button" id="saveFavBtn" class="btn btn-small"><span class="btn-ico" data-ui-icon="star" data-ui-size="15"></span> Save location</button>
+          <button type="button" id="refreshBtn" class="btn btn-small" title="Refresh weather"><span class="btn-ico" data-ui-icon="refresh" data-ui-size="15"></span></button>
         </div>
       </div>
 
@@ -151,6 +151,14 @@
         <div class="wx-condition" id="wxCondition">Loading…</div>
         <div class="wx-hilo-line" id="wxHiLoLine"></div>
         <div class="wx-yesterday" id="wxYesterday" hidden></div>
+
+        <!-- Decoration, and only decoration: the sky doing what the
+             forecast says it is doing. Hidden from screen readers,
+             switched off by the Animated sky setting, and still when
+             the system asks for reduced motion. -->
+        <div class="wx-scene" id="wxScene" data-scene="clear" aria-hidden="true">
+          <canvas id="wxSceneCanvas"></canvas>
+        </div>
       </div>
 
       <div class="wx-stats">
@@ -196,8 +204,8 @@
         </div>
         <p class="roast-text" id="roastText">Load some weather and I'll tell you what I really think, <span data-username>DJTheBest</span>.</p>
         <div class="roast-actions">
-          <button type="button" id="roastBtn" class="btn btn-primary">🔥 Roast me again</button>
-          <button type="button" id="shareRoastBtn" class="btn" title="Save or share this roast as an image">📤 Share</button>
+          <button type="button" id="roastBtn" class="btn btn-primary"><span class="btn-ico" data-ui-icon="flame"></span> Roast me again</button>
+          <button type="button" id="shareRoastBtn" class="btn" title="Save or share this roast as an image"><span class="btn-ico" data-ui-icon="share"></span> Share</button>
         </div>
         <button type="button" id="roastLogToggle" class="roast-log-toggle" aria-expanded="false">▸ Roast history</button>
         <div class="roast-log-panel" id="roastLogPanel" hidden>
@@ -216,7 +224,7 @@
           <span id="radarStatusText">STANDBY</span>
           <span class="radar-source" id="radarSource" title="Radar data source">SIMULATED</span>
           <button type="button" id="radarFullscreenBtn" class="btn btn-small radar-fs-btn"
-                  aria-pressed="false">⛶ Fullscreen</button>
+                  aria-pressed="false"><span class="btn-ico" data-ui-icon="expand" data-ui-size="15"></span> Fullscreen</button>
         </div>
       </div>
 
@@ -241,16 +249,16 @@
       </div>
 
       <div class="radar-controls">
-        <button type="button" id="radarPlayBtn" class="btn" aria-pressed="true">⏸ Pause</button>
-        <button type="button" id="radarStopBtn" class="btn">⏹ Stop</button>
-        <button type="button" id="radarRefreshBtn" class="btn">🔄 Refresh</button>
-        <button type="button" id="radarLocateBtn" class="btn">📍 My Location</button>
+        <button type="button" id="radarPlayBtn" class="btn" aria-pressed="true"><span class="btn-ico" data-ui-icon="pause"></span> Pause</button>
+        <button type="button" id="radarStopBtn" class="btn"><span class="btn-ico" data-ui-icon="stop"></span> Stop</button>
+        <button type="button" id="radarRefreshBtn" class="btn"><span class="btn-ico" data-ui-icon="refresh"></span> Refresh</button>
+        <button type="button" id="radarLocateBtn" class="btn"><span class="btn-ico" data-ui-icon="location"></span> My Location</button>
       </div>
       <div class="radar-controls radar-zoom-row">
-        <button type="button" id="radarZoomOut" class="btn btn-small" aria-label="Zoom out">➖</button>
+        <button type="button" id="radarZoomOut" class="btn btn-small" aria-label="Zoom out"><span class="btn-ico" data-ui-icon="minus" data-ui-size="15"></span></button>
         <span class="radar-range" id="radarRange">150 km</span>
-        <button type="button" id="radarZoomIn" class="btn btn-small" aria-label="Zoom in">➕</button>
-        <button type="button" id="radarRecenter" class="btn btn-small">🎯 Recenter</button>
+        <button type="button" id="radarZoomIn" class="btn btn-small" aria-label="Zoom in"><span class="btn-ico" data-ui-icon="plus" data-ui-size="15"></span></button>
+        <button type="button" id="radarRecenter" class="btn btn-small"><span class="btn-ico" data-ui-icon="target" data-ui-size="15"></span> Recenter</button>
       </div>
       <p class="radar-attribution">Tap the scope to toggle fullscreen · drag to pan. Basemap © OpenStreetMap contributors © CARTO.</p>
     </section>
@@ -300,7 +308,7 @@
     <section class="card compare-card" id="comparePanel" aria-label="Compare saved locations">
       <div class="card-head">
         <h2>🗺️ Your Locations</h2>
-        <button type="button" id="compareRefreshBtn" class="btn btn-small">🔄 Refresh</button>
+        <button type="button" id="compareRefreshBtn" class="btn btn-small"><span class="btn-ico" data-ui-icon="refresh" data-ui-size="15"></span> Refresh</button>
       </div>
       <p class="compare-empty" id="compareEmpty">Save a few locations and they'll line up here side by side.</p>
       <div class="compare-grid" id="compareGrid"></div>
@@ -314,7 +322,7 @@
 
     <!-- Favorites -->
     <section class="card favorites-card" aria-label="Favorite locations">
-      <div class="card-head"><h2>⭐ Favorites</h2></div>
+      <div class="card-head"><h2><span class="btn-ico" data-ui-icon="star" data-ui-size="20"></span> Favorites</h2></div>
       <p class="favorites-empty" id="favoritesEmpty">No favorites yet. Load a place and hit “Save location”.</p>
       <ul class="favorites-list" id="favoritesList"></ul>
     </section>
@@ -325,8 +333,8 @@
   <div class="settings-overlay" id="settingsOverlay" hidden></div>
   <aside class="settings-panel" id="settingsPanel" aria-label="Settings">
     <div class="settings-head">
-      <h2>⚙️ Settings</h2>
-      <button type="button" id="settingsCloseBtn" class="btn btn-small" aria-label="Close settings">✕</button>
+      <h2><span class="btn-ico" data-ui-icon="settings" data-ui-size="20"></span> Settings</h2>
+      <button type="button" id="settingsCloseBtn" class="btn btn-small" aria-label="Close settings"><span class="btn-ico" data-ui-icon="close" data-ui-size="15"></span></button>
     </div>
 
     <div class="setting-group" id="accountGroup">
@@ -437,6 +445,15 @@
     </div>
 
     <div class="setting-group">
+      <label class="toggle-row" for="sceneToggle">
+        <span>Animated sky under the weather</span>
+        <input type="checkbox" id="sceneToggle" />
+      </label>
+      <p class="setting-hint">Rain falls, snow drifts, storms flash. Off here, and
+        off automatically if your system asks for reduced motion.</p>
+    </div>
+
+    <div class="setting-group">
       <label for="iconStyleSelect">Weather icons</label>
       <select id="iconStyleSelect"></select>
       <p class="setting-hint">Rendered icons are drawn by the app and look the same
@@ -490,12 +507,12 @@
 
     <div class="setting-group">
       <label>Roast history</label>
-      <button type="button" id="clearRoastLogBtn" class="btn btn-small">🗑️ Clear roast history</button>
+      <button type="button" id="clearRoastLogBtn" class="btn btn-small"><span class="btn-ico" data-ui-icon="trash" data-ui-size="15"></span> Clear roast history</button>
     </div>
 
     <div class="setting-group">
       <label>Desktop app</label>
-      <button type="button" id="settingsDownloadBtn" class="btn btn-small">⬇️ Download for Windows, macOS or Linux</button>
+      <button type="button" id="settingsDownloadBtn" class="btn btn-small"><span class="btn-ico" data-ui-icon="download" data-ui-size="15"></span> Download for Windows, macOS or Linux</button>
       <p class="setting-hint">Installs the same app locally, with a shortcut and its own icon.</p>
     </div>
 
@@ -503,7 +520,7 @@
       <label>App version</label>
       <div class="setting-row">
         <span class="version-readout" id="versionReadout">—</span>
-        <button type="button" id="forceUpdateBtn" class="btn btn-small">⬇️ Force update</button>
+        <button type="button" id="forceUpdateBtn" class="btn btn-small"><span class="btn-ico" data-ui-icon="refresh" data-ui-size="15"></span> Force update</button>
       </div>
       <p class="setting-hint">Clears the offline cache and reloads from the server. Use this if the app looks out of date.</p>
     </div>
@@ -517,10 +534,10 @@
        aria-labelledby="downloadTitle" hidden>
     <div class="temp-modal-head">
       <div>
-        <h2 id="downloadTitle">⬇️ Get the Desktop App</h2>
+        <h2 id="downloadTitle"><span class="btn-ico" data-ui-icon="download" data-ui-size="20"></span> Get the Desktop App</h2>
         <p class="temp-modal-summary">Same app, installed on your machine. No API keys.</p>
       </div>
-      <button type="button" id="downloadClose" class="btn btn-small" aria-label="Close downloads">✕</button>
+      <button type="button" id="downloadClose" class="btn btn-small" aria-label="Close downloads"><span class="btn-ico" data-ui-icon="close" data-ui-size="15"></span></button>
     </div>
     <div class="dl-body" id="downloadBody"></div>
   </div>
@@ -530,9 +547,9 @@
   <div class="signin-modal" id="signInModal" role="dialog" aria-modal="true"
        aria-labelledby="signInTitle" tabindex="-1" hidden>
     <button type="button" id="signInClose" class="signin-close btn btn-small"
-            aria-label="Close sign in">✕</button>
+            aria-label="Close sign in"><span class="btn-ico" data-ui-icon="close" data-ui-size="15"></span></button>
     <img class="signin-logo" src="logo.svg" alt="" width="56" height="56" />
-    <h2 id="signInTitle">Sign in to What the Wether</h2>
+    <h2 id="signInTitle">Sign in to Aither Weather</h2>
     <p class="signin-sub" id="signInSub">Use an account you already have. It sets
       your name and picture across the app — nothing else changes.</p>
 
@@ -587,10 +604,10 @@
        aria-labelledby="tempModalTitle" hidden>
     <div class="temp-modal-head">
       <div>
-        <h2 id="tempModalTitle">📈 Temperature Trend</h2>
+        <h2 id="tempModalTitle"><span class="btn-ico" data-ui-icon="chart" data-ui-size="20"></span> Temperature Trend</h2>
         <p class="temp-modal-summary" id="tempModalSummary"></p>
       </div>
-      <button type="button" id="tempModalClose" class="btn btn-small" aria-label="Close chart">✕</button>
+      <button type="button" id="tempModalClose" class="btn btn-small" aria-label="Close chart"><span class="btn-ico" data-ui-icon="close" data-ui-size="15"></span></button>
     </div>
     <div class="temp-chart-wrap">
       <canvas id="tempChartCanvas" aria-label="Seven day high and low temperature chart"></canvas>
@@ -607,7 +624,7 @@
         <h2 id="dayModalTitle">Day</h2>
         <p class="temp-modal-summary" id="dayModalSummary"></p>
       </div>
-      <button type="button" id="dayModalClose" class="btn btn-small" aria-label="Close day">✕</button>
+      <button type="button" id="dayModalClose" class="btn btn-small" aria-label="Close day"><span class="btn-ico" data-ui-icon="close" data-ui-size="15"></span></button>
     </div>
 
     <p class="day-roast" id="dayRoast"></p>
@@ -623,7 +640,7 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <footer class="app-footer">
-    <span>What the Wether <span id="appVersionFooter">V13</span> ⚡🌩️ — data from the
+    <span>Aither Weather <span id="appVersionFooter">V13</span> ⚡🌩️ — data from the
       <a href="https://www.weather.gov/documentation/services-web-api" target="_blank" rel="noopener">National Weather Service</a>
       and <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>, radar from
       <a href="https://opengeo.ncep.noaa.gov/" target="_blank" rel="noopener">NOAA</a> — no API keys needed
@@ -633,6 +650,7 @@
   <!-- Load order matters: config → storage → themes → AI → radar → app -->
   <script src="config.js"></script>
   <script src="icons.js"></script>
+  <script src="weatheranim.js"></script>
   <script src="storage.js"></script>
   <script src="themes.js"></script>
   <script src="units.js"></script>

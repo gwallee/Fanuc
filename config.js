@@ -1,12 +1,12 @@
 /* ============================================================
-   What the Wether V19 — config.js
+   Aither Weather V20 — config.js
    Central configuration. No API keys required, ever.
    ============================================================ */
 
 const WTW_CONFIG = {
   app: {
-    name: 'What the Wether',
-    version: 'V19',
+    name: 'Aither Weather',
+    version: 'V20',
     tagline: 'Weather with an attitude problem.',
   },
 
@@ -24,6 +24,7 @@ const WTW_CONFIG = {
     accent: 'neon',              // see accents below
     forecastDays: 7,             // days in the forecast list
     hourlyHours: 24,             // hours in the outlook strip
+    sceneAnimation: true,        // moving sky under the current weather
   },
 
   // Free, key-less public services.

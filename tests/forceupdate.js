@@ -51,7 +51,7 @@ const APP_VERSION = (require('fs').readFileSync(APP_DIR + '/config.js', 'utf8')
       // is that the old one was torn down and the document reloaded.
       title: document.title,
     }));
-    return /[?&]v=/.test(url) && /What the Wether/.test(state.title);
+    return /[?&]v=/.test(url) && /Aither Weather/.test(state.title);
   });
   await check('app still works after the reset', async () =>
     (await page.textContent('#appVersion')).trim() === APP_VERSION);

@@ -1,7 +1,7 @@
 {
-  "name": "what-the-wether",
-  "productName": "What the Wether",
-  "version": "19.0.0",
+  "name": "aither-weather",
+  "productName": "Aither Weather",
+  "version": "20.0.0",
   "description": "Neon weather with a real-map radar, 48-hour outlook, and a local AI that roasts the forecast. No API keys.",
   "author": {
     "name": "gwallee",
@@ -22,7 +22,7 @@
   },
   "build": {
     "appId": "com.whatthewether.app",
-    "productName": "What the Wether",
+    "productName": "Aither Weather",
     "copyright": "MIT licensed",
     "directories": {
       "output": "dist",
@@ -74,19 +74,19 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "What the Wether",
-      "artifactName": "WhatTheWether-Setup-${version}.${ext}",
-      "uninstallDisplayName": "What the Wether ${version}"
+      "shortcutName": "Aither Weather",
+      "artifactName": "AitherWeather-Setup-${version}.${ext}",
+      "uninstallDisplayName": "Aither Weather ${version}"
     },
     "portable": {
-      "artifactName": "WhatTheWether-Portable-${version}.${ext}"
+      "artifactName": "AitherWeather-Portable-${version}.${ext}"
     },
     "linux": {
       "icon": "build/icon.png",
       "category": "Utility;Science",
       "synopsis": "Neon weather with a real-map radar",
       "desktop": {
-        "Name": "What the Wether",
+        "Name": "Aither Weather",
         "Comment": "Neon weather with a real-map radar and a local roast AI",
         "Categories": "Utility;Science;"
       },
@@ -119,10 +119,10 @@
       "maintainer": "gwallee <gwallee@users.noreply.github.com>"
     },
     "appImage": {
-      "artifactName": "WhatTheWether-${version}.${ext}"
+      "artifactName": "AitherWeather-${version}.${ext}"
     },
     "deb": {
-      "artifactName": "what-the-wether_${version}_amd64.${ext}",
+      "artifactName": "aither-weather_${version}_amd64.${ext}",
       "depends": [
         "libgtk-3-0",
         "libnotify4",
@@ -133,7 +133,7 @@
       ]
     },
     "rpm": {
-      "artifactName": "what-the-wether-${version}.${ext}"
+      "artifactName": "aither-weather-${version}.${ext}"
     },
     "mac": {
       "icon": "build/icon.png",
@@ -156,7 +156,7 @@
       ]
     },
     "dmg": {
-      "artifactName": "WhatTheWether-${version}-${arch}.${ext}"
+      "artifactName": "AitherWeather-${version}-${arch}.${ext}"
     }
   },
   "homepage": "https://github.com/gwallee/What-The-Weather",

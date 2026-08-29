@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag (e.g. v19.0.0)'
+        description: 'Release tag (e.g. v20.0.0)'
         required: true
-        default: 'v19.0.0'
+        default: 'v20.0.0'
       prerelease:
         description: 'Mark as a pre-release'
         type: boolean

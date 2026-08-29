@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V19 — app.js
+   Aither Weather V20 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -342,6 +342,9 @@
 
     $('wxCity').textContent = w.city;
     $('wxIcon').innerHTML = icon;
+    // The sky underneath follows the same code the icon does, so the
+    // two can never disagree about what the weather is.
+    if (window.WTWScene) WTWScene.set(w.weatherCode, w.isDay !== false);
     $('wxTemp').textContent = fmtTemp(w.tempF);
     $('wxCondition').textContent = w.conditionText || label;
     $('wxFeels').textContent = fmtTemp(w.feelsLikeF);
@@ -1274,6 +1277,19 @@
       el.value = String(value);
     };
 
+    const sceneT = $('sceneToggle');
+    if (sceneT) {
+      sceneT.checked = s.sceneAnimation !== false;
+      sceneT.addEventListener('change', () => {
+        WTWStorage.saveSettings({ sceneAnimation: sceneT.checked });
+        if (window.WTWScene) WTWScene.setEnabled(sceneT.checked);
+        if (sceneT.checked && state.weather) {
+          WTWScene.set(state.weather.weatherCode, state.weather.isDay !== false);
+        }
+        toast(sceneT.checked ? 'Animated sky on' : 'Animated sky off');
+      });
+    }
+
     const iSel = $('iconStyleSelect');
     fillSelect(iSel, WTW_CONFIG.iconStyles || [], s.iconStyle);
     if (iSel) iSel.addEventListener('change', () => {
@@ -1482,9 +1498,18 @@
     img.hidden = true;
     img.removeAttribute('src');
     icon.hidden = false;
-    icon.textContent = profile
-      ? (profile.avatar || (profile.name || '?').trim().charAt(0).toUpperCase())
-      : '\u{1F464}';
+    if (profile) {
+      icon.removeAttribute('data-ui-icon');
+      icon.textContent = profile.avatar ||
+        (profile.name || '?').trim().charAt(0).toUpperCase();
+    } else {
+      // Signed out, the button is a plain interface icon like the
+      // ones beside it — not a face emoji at the platform's mercy.
+      icon.textContent = '';
+      icon.setAttribute('data-ui-icon', 'account');
+      if (window.WTWIcons && WTWIcons.paintUI) WTWIcons.paintUI(icon.parentNode);
+      else icon.textContent = '\u{1F464}';
+    }
   }
 
   // Google supplies a picture; Microsoft's ID token does not, and
@@ -2008,6 +2033,7 @@
 
   function init() {
     WTWThemes.init();
+    if (window.WTWIcons && WTWIcons.paintUI) WTWIcons.paintUI(document);
     renderUsernameEverywhere();
     initSettingsUI();
     updateHourlyTitle();
@@ -2022,6 +2048,10 @@
     WTWRadar.init('radarCanvas');
     WTWHourly.init('hourlyCanvas');
     WTWTempChart.init('tempChartCanvas');
+    if (window.WTWScene) {
+      WTWScene.init();
+      WTWScene.setEnabled(WTWStorage.getSettings().sceneAnimation !== false);
+    }
     registerServiceWorker();
     watchConnectivity();
     watchResize();

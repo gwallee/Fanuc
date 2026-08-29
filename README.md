@@ -1,4 +1,4 @@
-# What the Wether V19 ⚡🌩️
+# Aither Weather V20 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -7,7 +7,7 @@ outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
 Installs to a phone or desktop as a standalone app, and keeps working with no
 connection.
 
-![What the Wether logo](logo.svg)
+![Aither Weather logo](logo.svg)
 
 ## Features
 
@@ -158,6 +158,44 @@ Fullscreen button to come back.
 - Keyboard accessible: the scope is a focusable control, `Enter`/`Space`
   toggles it
 - Set `radar.fullscreenOnTap = false` in `config.js` to require the button
+
+### 🖼️ Drawn buttons and a moving sky (V20)
+
+**The interface icons are drawn now too.** V19 replaced the *weather* emoji
+with real artwork and left the buttons as they were, which was half a job: the
+magnifying glass beside the word "Search" was still whatever the platform felt
+like drawing, at whatever size, in whatever colour, sitting on the text
+baseline rather than beside it. Every button in the header and in Settings now
+carries an inline SVG that inherits `currentColor`, so the same icon is dark on
+a light theme, the accent contrast colour on a primary button, and identical on
+every device.
+
+They are declared, not pasted. Markup carries a name — `data-ui-icon="search"`
+— and `icons.js` fills in the picture, so an icon is defined in exactly one
+place and changing it changes it everywhere. The icons are `aria-hidden`; the
+button keeps its own `aria-label`, so a screen reader still announces "Use my
+location" once rather than announcing a picture as well.
+
+**And the sky underneath moves.** Below the temperature there is a strip that
+does what the forecast says: rain falls at a slant, snow drifts, cloud slides
+across, the sun breathes, lightning cracks in a thunderstorm, fog rolls. It is
+driven by the same weather code as the icon above it, through the same name
+table, so the two cannot disagree about what the weather is.
+
+It is decoration and it behaves like decoration:
+
+- `aria-hidden` and `pointer-events: none` — it says nothing and it swallows
+  nothing
+- It stops when nobody is looking: a hidden tab, or the card scrolled out of
+  view, parks the loop rather than throttling it
+- `prefers-reduced-motion: reduce` gets a single still frame, not a slower storm
+- **Settings → Animated sky under the weather** turns it off entirely
+
+The V20 suite checks the parts a screenshot would miss: that the icons are
+really SVG and really take the button's colour, that the labels survived, and —
+the check most likely to earn its keep later — that *every* weather name the
+icon set knows has a scene of its own, so a new condition can't quietly fall
+back to generic cloud.
 
 ### 🎨 Icons, layout and things to change (V19)
 
@@ -524,7 +562,7 @@ dependencies** — `package.json` exists only for the tests.
 ## Project structure
 
 ```
-WhatTheWether-V19/
+AitherWeather-V20/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
@@ -546,6 +584,8 @@ WhatTheWether-V19/
 ├── share.js        # Renders shareable roast cards
 ├── manifest.json   # PWA manifest
 ├── sw.js           # Service worker (offline shell + data cache)
+├── icons.js        # Weather + interface icons (drawn, not emoji)
+├── weatheranim.js  # The animated sky under the current weather
 ├── icons/          # PWA icons (192, 512, maskable)
 ├── config.js       # Central configuration + defaults
 ├── storage.js      # Safe localStorage wrapper
@@ -647,7 +687,7 @@ on the **Build desktop apps** action) and GitHub builds all three platforms
 natively and attaches them to a release:
 
 ```bash
-git tag v19.0.0 && git push origin v19.0.0
+git tag v20.0.0 && git push origin v20.0.0
 ```
 
 | Platform | Files |

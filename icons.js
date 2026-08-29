@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V19 — icons.js
+   Aither Weather V20 — icons.js
    Weather icons drawn as SVG rather than typed as emoji.
 
    Why not emoji: they are somebody else's artwork, they differ on
@@ -167,7 +167,103 @@ const WTWIcons = (() => {
     el.innerHTML = markup(code, opts);
   }
 
-  return { markup, paint, emojiFor, nameFor, style, names: () => Object.keys(BODY) };
+  /* ------------------------------------------------------------
+     Interface icons — search, settings, and the rest. Separate from
+     the weather set on purpose: these are single-colour strokes that
+     take the button's own colour, so they sit correctly on a primary
+     button, a quiet one, and in every theme. Emoji did none of that,
+     and a magnifying glass rendered as a whole illustration next to
+     the word "Search".
+     ------------------------------------------------------------ */
+  const UI = {
+    search: '<circle cx="11" cy="11" r="6.5"/><line x1="16" y1="16" x2="21" y2="21"/>',
+    location: '<path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/>' +
+              '<circle cx="12" cy="10" r="2.6"/>',
+    download: '<path d="M12 3v12"/><path d="M7.5 10.5 12 15l4.5-4.5"/>' +
+              '<path d="M4.5 19.5h15"/>',
+    account: '<circle cx="12" cy="8.5" r="3.8"/>' +
+             '<path d="M4.8 20a7.2 7.2 0 0 1 14.4 0"/>',
+    settings: '<circle cx="12" cy="12" r="3.2"/>' +
+              '<path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0' +
+              '-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0' +
+              '-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2' +
+              ' 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1' +
+              'a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5' +
+              ' 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6' +
+              ' 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>',
+    refresh: '<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/>',
+    star: '<path d="m12 3.6 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>',
+    chart: '<path d="M4 19V5"/><path d="M4 19h16"/><path d="m7.5 15 3.5-4 3 2.5 4.5-6"/>',
+    close: '<line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>',
+    check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+    trash: '<path d="M4.5 6.5h15"/><path d="M9 6.5V4.8h6v1.7"/>' +
+           '<path d="M6.5 6.5 7.4 20h9.2l.9-13.5"/>',
+    share: '<circle cx="17.5" cy="6" r="2.6"/><circle cx="6.5" cy="12" r="2.6"/>' +
+           '<circle cx="17.5" cy="18" r="2.6"/><path d="m9 10.7 6-3.4"/><path d="m9 13.3 6 3.4"/>',
+    key: '<circle cx="8" cy="14" r="4"/><path d="m11 11 8-8"/><path d="m16.5 5.5 2 2"/>' +
+         '<path d="m14 8 2 2"/>',
+    device: '<rect x="7" y="3" width="10" height="18" rx="2.2"/><line x1="11" y1="18" x2="13" y2="18"/>',
+    palette: '<path d="M12 3a9 9 0 1 0 0 18 2 2 0 0 0 1.6-3.2 2 2 0 0 1 1.6-3.2H18a3 3 0 0 0 3-3' +
+             ' 9 9 0 0 0-9-8.6z"/><circle cx="8" cy="10" r="1.2"/><circle cx="12" cy="7.5" r="1.2"/>' +
+             '<circle cx="16" cy="10" r="1.2"/>',
+    play: '<path d="M8 5.5 18 12 8 18.5z"/>',
+    pause: '<line x1="9.5" y1="5.5" x2="9.5" y2="18.5"/><line x1="14.5" y1="5.5" x2="14.5" y2="18.5"/>',
+    stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="1.6"/>',
+    plus: '<line x1="12" y1="5.5" x2="12" y2="18.5"/><line x1="5.5" y1="12" x2="18.5" y2="12"/>',
+    minus: '<line x1="5.5" y1="12" x2="18.5" y2="12"/>',
+    target: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.2"/>' +
+            '<line x1="12" y1="2.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="21.5"/>' +
+            '<line x1="2.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="21.5" y2="12"/>',
+    expand: '<path d="M9 4H4v5"/><path d="M15 4h5v5"/><path d="M9 20H4v-5"/><path d="M15 20h5v-5"/>',
+    flame: '<path d="M12 2.8c.4 2.6 2 3.7 3.2 5.2A6.6 6.6 0 0 1 16.8 12a4.8 4.8 0 0 1-9.6 0c0-1.6.6-2.9 1.5-3.9.2 1.3.9 2 1.6 2 .9 0 1.3-.9 1.1-2.2-.2-1.4-.6-2.7-.4-5.1z"/>',
+    chevron: '<path d="m9.5 5.5 6.5 6.5-6.5 6.5"/>',
+    clock: '<circle cx="12" cy="12" r="8.2"/><path d="M12 7.2V12l3.2 2"/>',
+    logout: '<path d="M14.5 4.5H19a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-4.5"/>' +
+            '<path d="M10 8.5 13.5 12 10 15.5"/><line x1="13.5" y1="12" x2="4" y2="12"/>',
+  };
+
+  /* Markup for an interface icon. Stroked, not filled, and coloured by
+     whatever it sits inside. */
+  function ui(name, { size = 18, label = '' } = {}) {
+    const body = UI[name];
+    if (!body) return '';
+    const a11y = label ? `role="img" aria-label="${label}"` : 'aria-hidden="true"';
+    return `<svg class="ui-icon" data-ui="${name}" viewBox="0 0 24 24" width="${size}"` +
+      ` height="${size}" fill="none" stroke="currentColor" stroke-width="1.8"` +
+      ` stroke-linecap="round" stroke-linejoin="round" focusable="false" ${a11y}>${body}</svg>`;
+  }
+
+
+  /* Static markup carries the name, not the picture: any element with
+     data-ui-icon gets its icon filled in here. That keeps index.html
+     readable and means an icon is defined in exactly one place. */
+  function paintUI(root) {
+    const scope = root || document;
+    const hosts = scope.querySelectorAll ? scope.querySelectorAll('[data-ui-icon]') : [];
+    hosts.forEach((el) => {
+      const name = el.getAttribute('data-ui-icon');
+      const size = Number(el.getAttribute('data-ui-size')) || 18;
+      const first = el.firstElementChild;
+      // Already painted at this size: leave it be, so repainting a
+      // panel does not churn the DOM on every render.
+      if (first && first.getAttribute('data-ui') === name &&
+          first.getAttribute('width') === String(size)) return;
+      el.innerHTML = ui(name, { size });
+    });
+  }
+
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => paintUI(document));
+    } else {
+      paintUI(document);
+    }
+  }
+
+  return {
+    markup, paint, emojiFor, nameFor, style, names: () => Object.keys(BODY),
+    ui, paintUI, uiNames: () => Object.keys(UI),
+  };
 })();
 
 window.WTWIcons = WTWIcons;

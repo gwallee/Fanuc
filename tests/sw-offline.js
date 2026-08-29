@@ -67,7 +67,7 @@ const BROWSER = process.env.PLAYWRIGHT_CHROMIUM || undefined;
   await page.waitForTimeout(4000);
 
   await check('app shell still loads offline (served from cache)', async () =>
-    (await page.title()).includes('What the Wether'));
+    (await page.title()).includes('Aither Weather'));
   await check('offline banner is shown', () => page.isVisible('#offlineBanner'));
   await check('snapshot forecast is restored', async () =>
     /Cached City/.test(await page.textContent('#wxCity')));

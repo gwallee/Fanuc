@@ -1,5 +1,5 @@
 {
-  "name": "What the Wether",
+  "name": "Aither Weather",
   "short_name": "Wether",
   "description": "Neon weather with a fullscreen animated radar over a real map, a 48-hour outlook, and a local AI that roasts the forecast. No API keys.",
   "start_url": "./index.html",

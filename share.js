@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V19 — share.js
+   Aither Weather V20 — share.js
    Renders a roast as a shareable image on an offscreen canvas,
    then hands it to the Web Share API or a download. Everything
    is drawn locally; nothing is uploaded anywhere.
@@ -75,7 +75,7 @@ const WTWShare = (() => {
     ctx.font = 'bold 26px system-ui, "Segoe UI", sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText('⚡ What the Wether', padX, y);
+    ctx.fillText('⚡ Aither Weather', padX, y);
 
     ctx.fillStyle = dim;
     ctx.font = '20px system-ui, "Segoe UI", sans-serif';

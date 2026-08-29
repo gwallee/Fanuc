@@ -1,6 +1,6 @@
 # Tests
 
-Browser tests for What the Wether. They drive the real app in Chromium
+Browser tests for Aither Weather. They drive the real app in Chromium
 via Playwright, with every external service stubbed — so the suite is
 deterministic, needs no API keys, and works offline.
 
@@ -36,6 +36,12 @@ project and no global state is touched.
 | `sw-offline.js` | Service worker precache and the offline snapshot path |
 | `downloads.js` | Desktop download panel, asset grouping, and the reorganised header |
 | `auth.js` | Optional Google sign-in: unconfigured behaviour, sign in/out, username handling, malformed tokens |
+| `v13.js` | Alerts over the map, radar timeline scrubbing, share cards |
+| `v16.js` | The sign-in screen itself: providers offered, guest continue, sign out |
+| `v17.js` | An account with no client ID, and the transfer code that moves it |
+| `v18.js` | The day view: the day tapped, its own hours, its own roast |
+| `v19.js` | Drawn weather icons, the centred hero, yesterday's comparison, the customisation settings |
+| `v20.js` | Drawn interface icons on every button, and the animated sky under the weather |
 
 ## Environment
 

@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V19 — rain.js
+   Aither Weather V20 — rain.js
    Picks the most authoritative precipitation source available and
    says which one answered.
 

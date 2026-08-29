@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V19 — tempchart.js
+   Aither Weather V20 — tempchart.js
    The temperature trend chart behind the High / Low readout.
 
    Draws the 7-day forecast as a high/low band with both curves and

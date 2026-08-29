@@ -110,7 +110,7 @@ function stub(page) {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(1200);
     const body = await page.textContent('body');
-    return !/STALE COPY/.test(body) && /What the Wether/.test(await page.title());
+    return !/STALE COPY/.test(body) && /Aither Weather/.test(await page.title());
   });
 
   await check('the poisoned entry still serves the app when offline', async () => {
@@ -119,7 +119,7 @@ function stub(page) {
     await ctx.setOffline(true);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(1500);
-    const ok = /What the Wether/.test(await page.title());
+    const ok = /Aither Weather/.test(await page.title());
     await ctx.setOffline(false);
     return ok;
   });

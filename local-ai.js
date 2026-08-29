@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V19 — local-ai.js
+   Aither Weather V20 — local-ai.js
    Local AI 3.0: a fully offline roast generator. No API key,
    no cloud, no network. It reacts to temperature, rain, snow,
    thunderstorms, wind, fog, extreme heat, cold and clear skies,

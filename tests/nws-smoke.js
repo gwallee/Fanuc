@@ -1,4 +1,4 @@
-/* NWS + live-radar smoke test for What the Wether V8. */
+/* NWS + live-radar smoke test for Aither Weather V8. */
 const { chromium } = require('playwright');
 const BASE_URL = process.env.WTW_BASE_URL || 'http://localhost:8901';
 const APP_DIR = process.env.WTW_APP_DIR || require('path').join(__dirname, '..');

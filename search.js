@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V19 — search.js
+   Aither Weather V20 — search.js
    Place search with real choices.
 
    Through V12 the search box took the single first geocoding hit,
