@@ -295,6 +295,13 @@ A name on this device is a profile, not an identity: it is stored in this
 browser, it proves nothing, and the screen says as much. Signing out and back
 in with the same device keeps the same account id.
 
+**Switching one on without a deploy.** **Settings → Sign-in providers** takes a
+client ID for each of the three. Pasting one switches that provider on
+immediately — the button appears on the sign-in screen without a reload, and
+the whole flow can be tried before anything is committed. That ID is kept in
+that browser only: to offer the provider to everyone who visits, put the same
+value in `config.js`, which is what the steps below do.
+
 **Turning on Google:**
 
 1. Create an **OAuth 2.0 Client ID** (type: *Web application*) at

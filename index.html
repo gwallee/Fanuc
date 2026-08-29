@@ -298,6 +298,46 @@
       <p class="setting-hint" id="accountHint"></p>
     </div>
 
+    <!-- Switching a provider on without a deploy. The IDs are public
+         values, not secrets, and this stores them on this device only —
+         which the hint says plainly, because pasting one here does not
+         give it to anybody else who visits. -->
+    <div class="setting-group" id="authSetupGroup">
+      <label>Sign-in providers</label>
+      <p class="setting-hint">Paste a client ID to switch a provider on. Kept on
+        this device — to offer it to everyone who visits, put the same ID in
+        <code>config.js</code>. Setup steps for all three are in the README.</p>
+
+      <div class="provider-row">
+        <label for="googleIdInput">Google client ID</label>
+        <div class="setting-row">
+          <input type="text" id="googleIdInput" autocomplete="off" spellcheck="false"
+                 placeholder="…apps.googleusercontent.com" />
+          <button type="button" id="googleIdSave" class="btn btn-small">Save</button>
+        </div>
+      </div>
+
+      <div class="provider-row">
+        <label for="microsoftIdInput">Microsoft client ID</label>
+        <div class="setting-row">
+          <input type="text" id="microsoftIdInput" autocomplete="off" spellcheck="false"
+                 placeholder="Application (client) ID" />
+          <button type="button" id="microsoftIdSave" class="btn btn-small">Save</button>
+        </div>
+      </div>
+
+      <div class="provider-row">
+        <label for="appleIdInput">Apple Services ID</label>
+        <div class="setting-row">
+          <input type="text" id="appleIdInput" autocomplete="off" spellcheck="false"
+                 placeholder="com.example.app.web" />
+          <button type="button" id="appleIdSave" class="btn btn-small">Save</button>
+        </div>
+      </div>
+
+      <p class="setting-hint" id="authSetupStatus"></p>
+    </div>
+
     <div class="setting-group">
       <label for="usernameInput">Username</label>
       <div class="setting-row">

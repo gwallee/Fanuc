@@ -1244,6 +1244,52 @@
     }
   }
 
+  /* ------------------------------------------------------------
+     Sign-in setup. Pasting an ID here switches a provider on for this
+     device immediately — no reload, no deploy — so the whole flow can
+     be tried before committing anything.
+     ------------------------------------------------------------ */
+  const PROVIDER_FIELDS = [
+    { key: 'google', input: 'googleIdInput', save: 'googleIdSave', label: 'Google' },
+    { key: 'microsoft', input: 'microsoftIdInput', save: 'microsoftIdSave', label: 'Microsoft' },
+    { key: 'apple', input: 'appleIdInput', save: 'appleIdSave', label: 'Apple' },
+  ];
+
+  function initAuthSetup() {
+    PROVIDER_FIELDS.forEach(({ key, input, save, label }) => {
+      const field = $(input);
+      const btn = $(save);
+      if (!field || !btn) return;
+      field.value = WTWAuth.storedClientId(key);
+      const apply = () => {
+        const now = WTWAuth.setClientId(key, field.value);
+        // The screen is rebuilt from scratch next time it opens, so a
+        // provider switched on here appears without a reload.
+        signInRendered = false;
+        renderAuthSetupStatus();
+        toast(now ? `${label} sign-in is on for this device.`
+                  : `${label} sign-in is off again.`);
+      };
+      btn.addEventListener('click', apply);
+      field.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply(); });
+    });
+    renderAuthSetupStatus();
+  }
+
+  function renderAuthSetupStatus() {
+    const el = $('authSetupStatus');
+    if (!el) return;
+    const on = WTWAuth.providers();
+    if (!WTWAuth.isSupportedHere()) {
+      el.textContent = 'These need a web address, so they cannot be used in the ' +
+        'desktop app whatever is pasted here.';
+      return;
+    }
+    el.textContent = on.length
+      ? `On right now: ${on.map((p) => p[0].toUpperCase() + p.slice(1)).join(', ')}.`
+      : 'None switched on yet — the name on the sign-in screen works regardless.';
+  }
+
   function isLocalDev() {
     return location.hostname === 'localhost' || location.hostname === '127.0.0.1';
   }
@@ -1553,6 +1599,7 @@
     WTWThemes.init();
     renderUsernameEverywhere();
     initSettingsUI();
+    initAuthSetup();
     initEvents();
     renderFavorites();
     renderRoastLog();

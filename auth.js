@@ -46,11 +46,44 @@ const WTWAuth = (() => {
 
   const cfg = () => (window.WTW_CONFIG && WTW_CONFIG.auth) || {};
 
-  // A placeholder left in config.js is not a client ID.
-  function idOf(section) {
-    const raw = ((cfg()[section] && cfg()[section].clientId) || '').trim();
-    return raw && !/^your[_-]/i.test(raw) ? raw : null;
+  /* ------------------------------------------------------------
+     A client ID can come from two places: config.js, which is the
+     committed one everybody who visits the site gets, and one pasted
+     into Settings, which lives in this browser only. The pasted one
+     wins, so a provider can be switched on and tried out without a
+     code change or a deploy — but it switches it on for one device,
+     which the panel says in as many words.
+     ------------------------------------------------------------ */
+  function storedIds() {
+    const saved = WTWStorage.get('clientIds', null);
+    return saved && typeof saved === 'object' ? saved : {};
   }
+
+  function usable(raw) {
+    const value = String(raw || '').trim();
+    // A placeholder left in config.js is not a client ID.
+    return value && !/^your[_-]/i.test(value) ? value : null;
+  }
+
+  function idOf(section) {
+    return usable(storedIds()[section]) ||
+           usable(cfg()[section] && cfg()[section].clientId);
+  }
+
+  // Returns the id actually in force, or null. An empty value clears
+  // the stored one and hands the provider back to config.js.
+  function setClientId(section, raw) {
+    const ids = storedIds();
+    const value = String(raw || '').trim();
+    if (value) ids[section] = value;
+    else delete ids[section];
+    WTWStorage.set('clientIds', ids);
+    return idOf(section);
+  }
+
+  // What Settings should show in each box: the pasted value only, so
+  // an empty box never implies a provider is off when config.js has it.
+  const storedClientId = (section) => storedIds()[section] || '';
 
   const googleClientId    = () => idOf('google');
   const microsoftClientId = () => idOf('microsoft');
@@ -410,6 +443,7 @@ const WTWAuth = (() => {
     init, signOut, getProfile, isSignedIn, isConfigured, isSupportedHere,
     providers, renderGoogleButton, signInWithMicrosoft, signInWithApple,
     signInLocally, decodeCredential, decodeJwt, toProfile,
+    setClientId, storedClientId, configuredClientId: idOf,
   };
 })();
 

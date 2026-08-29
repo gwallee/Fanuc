@@ -726,6 +726,18 @@ body.modal-open { overflow: hidden; }
 }
 .btn-plain:hover { color: var(--accent); }
 
+/* Sign-in setup rows in Settings. */
+.provider-row { margin-top: 0.7rem; }
+.provider-row label {
+  display: block;
+  font-size: 0.76rem;
+  color: var(--text-dim);
+  margin-bottom: 0.3rem;
+}
+.provider-row .setting-row { display: flex; gap: 0.5rem; }
+.provider-row input { flex: 1; min-width: 0; font-size: 0.82rem; }
+#authSetupStatus { margin-top: 0.7rem; }
+
 /* Apple's mark is monochrome and takes the button's own colour. */
 .apple-btn {
   background: #000;

@@ -462,6 +462,59 @@ function omBody() {
   });
   await ctx.close();
 
+  console.log('\n=== Switching a provider on from Settings ===');
+  ({ ctx, page } = await mk());
+  await page.fill('#searchInput', 'Austin');
+  await page.click('#searchBtn');
+  await page.waitForSelector('#weatherPanels:not([hidden])', { timeout: 15000 });
+  await check('Settings says nothing is switched on yet', async () => {
+    await page.click('#settingsBtn');
+    await page.waitForTimeout(500);
+    return /none switched on/i.test(await page.textContent('#authSetupStatus'));
+  });
+  await check('pasting a client ID switches that provider on', async () => {
+    await page.fill('#googleIdInput', GOOGLE_ID);
+    await page.click('#googleIdSave');
+    await page.waitForTimeout(400);
+    return /Google/.test(await page.textContent('#authSetupStatus')) &&
+           await page.evaluate((id) => WTWAuth.configuredClientId('google') === id, GOOGLE_ID);
+  });
+  await check('the button appears without a reload', async () => {
+    await page.click('#settingsCloseBtn');
+    await page.click('#accountBtn');
+    await page.waitForSelector('#fakeGoogleButton', { timeout: 8000 });
+    return page.isVisible('#fakeGoogleButton');
+  });
+  await check('and it actually signs in', async () => {
+    await page.click('#fakeGoogleButton');
+    await page.waitForTimeout(700);
+    return (await page.textContent('.brand-greeting strong')) === 'Ada';
+  });
+  await check('the pasted ID survives a reload', async () => {
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForTimeout(1500);
+    await page.click('#settingsBtn');
+    await page.waitForTimeout(500);
+    return (await page.inputValue('#googleIdInput')) === GOOGLE_ID;
+  });
+  await check('clearing the box switches it off again', async () => {
+    await page.fill('#googleIdInput', '');
+    await page.click('#googleIdSave');
+    await page.waitForTimeout(400);
+    return /none switched on/i.test(await page.textContent('#authSetupStatus')) &&
+           await page.evaluate(() => WTWAuth.configuredClientId('google') === null);
+  });
+  await check('and the button is gone from the screen', async () => {
+    await page.click('#signOutBtn');
+    await page.waitForTimeout(500);
+    await page.click('#settingsCloseBtn');
+    await page.click('#accountBtn');
+    await page.waitForTimeout(700);
+    return !(await page.isVisible('#googleButtonHost')) &&
+           await page.isVisible('#localSignInForm');
+  });
+  await ctx.close();
+
   console.log('\n=== Signing in with Apple ===');
   ({ ctx, page } = await mk({ apple: APPLE_ID }));
   await page.evaluate((tok) => {
