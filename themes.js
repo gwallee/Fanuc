@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V18 — themes.js
+   What the Wether V19 — themes.js
    Theme switching via a data-theme attribute on <html>.
    All actual colors live in styles.css as CSS variables, so
    adding a theme = one CSS block + one entry in config.js.
@@ -10,10 +10,34 @@ const WTWThemes = (() => {
     return (WTW_CONFIG.themes || []).map((t) => t.id);
   }
 
+  /* ------------------------------------------------------------
+     The accent is applied on top of whichever theme is active, as two
+     custom properties. Themes set their own defaults, so an accent of
+     'neon' means "leave the theme's own" rather than forcing one
+     theme's green onto the others.
+     ------------------------------------------------------------ */
+  function applyAccent(accentId) {
+    const list = (window.WTW_CONFIG && WTW_CONFIG.accents) || [];
+    const chosen = list.find((a) => a.id === accentId);
+    const root = document.documentElement;
+    if (!chosen) {
+      root.style.removeProperty('--accent');
+      root.style.removeProperty('--accent-2');
+      root.removeAttribute('data-accent');
+      return;
+    }
+    root.style.setProperty('--accent', chosen.accent);
+    root.style.setProperty('--accent-2', chosen.accent2);
+    root.setAttribute('data-accent', chosen.id);
+  }
+
   function apply(themeId) {
     const ids = validThemes();
     const theme = ids.includes(themeId) ? themeId : WTW_CONFIG.defaults.theme;
     document.documentElement.setAttribute('data-theme', theme);
+    // A theme change repaints the palette from CSS, so the accent has to
+    // be re-stamped on top of it or it silently reverts.
+    if (typeof applyAccent === 'function') applyAccent(currentAccent());
 
     // Keep the mobile browser chrome color in sync with the theme.
     const meta = document.querySelector('meta[name="theme-color"]');
@@ -49,11 +73,17 @@ const WTWThemes = (() => {
     selectEl.value = current();
   }
 
-  function init() {
-    apply(current());
+  function currentAccent() {
+    const settings = window.WTWStorage ? WTWStorage.getSettings() : null;
+    return (settings && settings.accent) || 'neon';
   }
 
-  return { init, apply, setTheme, current, populateSelect };
+  function init() {
+    apply(current());
+    applyAccent(currentAccent());
+  }
+
+  return { init, apply, applyAccent, currentAccent, setTheme, current, populateSelect };
 })();
 
 window.WTWThemes = WTWThemes;

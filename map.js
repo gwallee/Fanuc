@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V18 — map.js
+   What the Wether V19 — map.js
    Web Mercator projection helpers plus a basemap tile layer for
    the radar scope.
 

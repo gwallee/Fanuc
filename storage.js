@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V18 — storage.js
+   What the Wether V19 — storage.js
    Safe localStorage wrapper. Everything is namespaced and
    JSON-encoded, and every call is guarded so the app never
    crashes in private-browsing / blocked-storage situations.

@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V18 — compare.js
+   What the Wether V19 — compare.js
    Side-by-side view of every saved location.
 
    Uses Open-Meteo for all rows regardless of country: one compact

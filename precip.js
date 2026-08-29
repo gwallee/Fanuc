@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V18 — precip.js
+   What the Wether V19 — precip.js
    Precipitation nowcast: "rain starts in ~20 min".
 
    The series itself comes from rain.js, which picks the most

@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V18 — styles.css
+   What the Wether V19 — styles.css
    All colors come from CSS variables so themes are one block
    each. Default theme: Neon Dark. Others: Midnight, Light.
    ============================================================ */
@@ -755,6 +755,44 @@ body.modal-open { overflow: hidden; }
 }
 .legend-label { flex: 0 0 auto; }
 
+/* ---------------- Weather icons ---------------- */
+
+.wx-svg { display: block; overflow: visible; }
+.wx-glyph { display: inline-block; line-height: 1; }
+
+/* The hero, laid out down the middle. */
+.current-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.1rem;
+  padding: 0.4rem 0 0.9rem;
+}
+.current-main .wx-icon { display: flex; justify-content: center; }
+.current-main .wx-temp {
+  font-size: clamp(3.4rem, 14vw, 5rem);
+  font-weight: 300;
+  letter-spacing: -2px;
+  line-height: 1.05;
+}
+.current-main .wx-condition { font-size: 1rem; color: var(--text-dim); }
+.wx-hilo-line {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  margin-top: 0.15rem;
+}
+
+/* Accent swatches in Settings. */
+.accent-preview { display: flex; gap: 0.4rem; margin-top: 0.5rem; }
+.accent-dot {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+.accent-dot.picked { border-color: var(--text); }
+
 /* A day in detail. */
 .day-roast {
   font-size: 0.9rem;
@@ -1323,30 +1361,52 @@ body.radar-fullscreen { overflow: hidden; }
 
 /* ---------------- Forecast ---------------- */
 
-.forecast-row {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 0.6rem;
-}
+/* The forecast reads down the page: one row per day, with the day's
+   range drawn against the whole week's so the rows compare. */
+.forecast-row { display: flex; flex-direction: column; gap: 0.1rem; }
 .forecast-card {
+  display: grid;
+  grid-template-columns: minmax(2.8rem, 3.4rem) 2.2rem minmax(2.2rem, 2.8rem)
+                         minmax(2.4rem, 3rem) minmax(0, 1fr) minmax(2.4rem, 3rem);
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
   font: inherit;
   color: var(--text);
   cursor: pointer;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--card-border);
+  border-radius: 0;
+  padding: 0.5rem 0.25rem;
+  transition: background 0.15s ease;
+}
+.forecast-card:last-child { border-bottom: 0; }
+.forecast-card:hover { background: var(--input-bg); }
+.forecast-card:active { background: var(--input-bg); }
+.fc-day { font-size: 0.86rem; font-weight: 700; }
+.fc-icon { display: flex; justify-content: center; align-items: center; }
+.fc-icon .wx-glyph { font-size: 1.3rem; }
+.fc-rain { font-size: 0.72rem; color: var(--accent); text-align: center; }
+.fc-lo { color: var(--text-dim); font-size: 0.88rem; text-align: right; }
+.fc-hi { font-weight: 800; font-size: 0.88rem; text-align: right; }
+.fc-range {
+  position: relative;
+  height: 5px;
+  min-width: 0;
+  border-radius: 999px;
   background: var(--input-bg);
   border: 1px solid var(--card-border);
-  border-radius: 12px;
-  padding: 0.7rem 0.4rem;
-  text-align: center;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
-.forecast-card:hover { transform: translateY(-3px); box-shadow: var(--glow); border-color: var(--accent); }
-.forecast-card:active { transform: scale(0.97); }
-.fc-day { font-size: 0.78rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.6px; }
-.fc-icon { font-size: 1.7rem; margin: 0.35rem 0; }
-.fc-temps { display: flex; justify-content: center; gap: 0.5rem; font-size: 0.9rem; }
-.fc-hi { font-weight: 800; }
-.fc-lo { color: var(--text-dim); }
-.fc-rain { margin-top: 0.3rem; font-size: 0.72rem; color: var(--accent-2); }
+.fc-range-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-2, var(--accent)), var(--accent));
+}
 
 /* ---------------- Favorites ---------------- */
 

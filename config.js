@@ -1,12 +1,12 @@
 /* ============================================================
-   What the Wether V18 — config.js
+   What the Wether V19 — config.js
    Central configuration. No API keys required, ever.
    ============================================================ */
 
 const WTW_CONFIG = {
   app: {
     name: 'What the Wether',
-    version: 'V18',
+    version: 'V19',
     tagline: 'Weather with an attitude problem.',
   },
 
@@ -20,6 +20,10 @@ const WTW_CONFIG = {
     units: 'imperial',           // imperial | metric
     clock: '12',                 // 12 | 24
     alertNotifications: false,   // browser notifications for severe alerts
+    iconStyle: 'rendered',       // rendered | emoji
+    accent: 'neon',              // see accents below
+    forecastDays: 7,             // days in the forecast list
+    hourlyHours: 24,             // hours in the outlook strip
   },
 
   // Free, key-less public services.
@@ -51,6 +55,25 @@ const WTW_CONFIG = {
       'open-meteo': 'Open-Meteo',
     },
   },
+
+  // Accent colours. Each is a pair: the line colour and the one it
+  // fades into, so gradients and glows stay coherent.
+  accents: [
+    { id: 'neon',   label: 'Neon Green', accent: '#00e08a', accent2: '#00b3ff' },
+    { id: 'sky',    label: 'Sky Blue',   accent: '#38bdf8', accent2: '#6366f1' },
+    { id: 'violet', label: 'Violet',     accent: '#a78bfa', accent2: '#ec4899' },
+    { id: 'amber',  label: 'Amber',      accent: '#fbbf24', accent2: '#fb7185' },
+    { id: 'rose',   label: 'Rose',       accent: '#fb7185', accent2: '#a78bfa' },
+    { id: 'mint',   label: 'Mint',       accent: '#34d399', accent2: '#22d3ee' },
+  ],
+
+  iconStyles: [
+    { id: 'rendered', label: 'Rendered' },
+    { id: 'emoji',    label: 'Emoji' },
+  ],
+
+  forecastLengths: [5, 7, 10],
+  hourlyLengths: [12, 24, 48],
 
   unitSystems: [
     { id: 'imperial', label: 'Imperial (°F, mph)' },

@@ -147,7 +147,9 @@ async function stubOpenMeteo(page) {
   await check('shows NWS condition text verbatim', async () =>
     (await page.textContent('#wxCondition')).trim() === 'Thunderstorm');
   await check('maps NWS text to a thunderstorm icon', async () =>
-    (await page.textContent('#wxIcon')).includes('⛈'));
+    // Match on what the icon IS, not on the glyph: from V19 the icon is
+    // drawn rather than typed, and either style names itself the same.
+    (await page.getAttribute('#wxIcon [data-icon]', 'data-icon')) === 'thunder');
   await check('7-day forecast built from 12-hour periods', async () =>
     (await page.locator('.forecast-card').count()) === 7);
   await check('forecast pairs day high with night low', async () => {

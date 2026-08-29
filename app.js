@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V18 — app.js
+   What the Wether V19 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -52,6 +52,15 @@
   };
   const describeCode = (code) => WMO[code] || ['Weather', '🌡️'];
 
+  // Markup for the icon that goes with a code. Day or night matters for
+  // anything with a sun or a moon in it.
+  function iconFor(code, size, isDay) {
+    const day = isDay === undefined
+      ? (state.weather ? state.weather.isDay !== false : true)
+      : isDay;
+    return WTWIcons.markup(code, { isDay: day, size });
+  }
+
   /* ---------------- Toasts ---------------- */
 
   // Screen readers get nothing from a silent canvas repaint, so the
@@ -82,6 +91,29 @@
   }
 
 
+  /* ---------------- Chosen lengths ---------------- */
+
+  // Settings win over config; config is the default and the fallback if
+  // somebody's stored value is nonsense.
+  function chosenForecastDays() {
+    const allowed = WTW_CONFIG.forecastLengths || [];
+    const want = Number(WTWStorage.getSettings().forecastDays);
+    return allowed.includes(want) ? want : WTW_CONFIG.weather.forecastDays;
+  }
+
+  // The heading names a number of hours, so it has to follow the
+  // setting rather than claim 48 forever.
+  function updateHourlyTitle() {
+    const el = $('hourlyTitle');
+    if (el) el.textContent = `⏱️ Next ${chosenHourlyHours()} Hours`;
+  }
+
+  function chosenHourlyHours() {
+    const allowed = WTW_CONFIG.hourlyLengths || [];
+    const want = Number(WTWStorage.getSettings().hourlyHours);
+    return allowed.includes(want) ? want : WTW_CONFIG.weather.forecastHours;
+  }
+
   /* ---------------- Open-Meteo ---------------- */
 
   async function fetchOpenMeteo(location) {
@@ -99,7 +131,7 @@
       temperature_unit: WTW_CONFIG.weather.temperatureUnit,
       wind_speed_unit: WTW_CONFIG.weather.windSpeedUnit,
       timezone: 'auto',
-      forecast_days: String(WTW_CONFIG.weather.forecastDays),
+      forecast_days: String(chosenForecastDays()),
       // Yesterday, so today can be put in context. Everything below
       // indexes off todayIdx rather than 0 because of it.
       past_days: '1',
@@ -116,7 +148,7 @@
     // one this browser is in, and a date comparison across that gap is
     // wrong for a few hours every day.
     const times = d.time || [];
-    const forecastDays = WTW_CONFIG.weather.forecastDays;
+    const forecastDays = chosenForecastDays();
     const todayIdx = Math.max(0, times.length - forecastDays);
     const at = (arr, i) => (Array.isArray(arr) ? arr[i] : null);
 
@@ -185,7 +217,7 @@
       visibilityMi,
     };
 
-    const hours = WTWHourly.fromOpenMeteo(data, WTW_CONFIG.weather.forecastHours);
+    const hours = WTWHourly.fromOpenMeteo(data, chosenHourlyHours());
     // The strip shows 48 hours; the day view needs the whole week, so
     // the raw series is kept rather than re-fetched.
     return { weather, daily, hours, detail, yesterday, hourlyRaw: h, raw: data };
@@ -226,7 +258,7 @@
     const [nws, om] = await Promise.all([nwsPromise, omPromise]);
 
     if (nws) {
-      const daily = nws.daily;
+      const daily = nws.daily.slice(0, chosenForecastDays());
       // NWS publishes neither sun times nor UV. Where Open-Meteo has
       // them for the same date, carry them over so a day tapped in the
       // forecast row can show them whichever source drew the row.
@@ -250,7 +282,7 @@
       const o = nws.obs;
 
       const hours = nws.hourly
-        ? WTWHourly.fromNWS(nws.hourly, WTW_CONFIG.weather.forecastHours, NWS.textToCode)
+        ? WTWHourly.fromNWS(nws.hourly, chosenHourlyHours(), NWS.textToCode)
         : (om ? om.hours : []);
 
       return {
@@ -305,16 +337,19 @@
   function renderCurrent() {
     const w = state.weather;
     if (!w) return;
-    const [label, icon] = describeCode(w.weatherCode);
+    const [label] = describeCode(w.weatherCode);
+    const icon = iconFor(w.weatherCode, 96, w.isDay !== false);
 
     $('wxCity').textContent = w.city;
-    $('wxIcon').textContent = icon;
+    $('wxIcon').innerHTML = icon;
     $('wxTemp').textContent = fmtTemp(w.tempF);
     $('wxCondition').textContent = w.conditionText || label;
     $('wxFeels').textContent = fmtTemp(w.feelsLikeF);
     $('wxHumidity').textContent = U().percent(w.humidity);
     $('wxWind').textContent = U().speed(w.windMph);
     $('wxHiLo').textContent = `${fmtTemp(w.highF)} / ${fmtTemp(w.lowF)}`;
+    const hiLoLine = $('wxHiLoLine');
+    if (hiLoLine) hiLoLine.textContent = `H:${fmtTemp(w.highF)}  L:${fmtTemp(w.lowF)}`;
     $('wxRain').textContent = U().percent(w.precipProb);
 
     let line = state.offline ? 'Offline · showing last saved forecast · ' : `Updated ${clock(new Date())} · `;
@@ -376,20 +411,36 @@
     const wrap = $('forecastRow');
     if (!wrap) return;
     wrap.innerHTML = '';
+
+    // One scale for the whole week, so the bars can be read against
+    // each other rather than each being scaled to itself.
+    const lows = state.daily.map((d) => d.lowF).filter((v) => v != null);
+    const highs = state.daily.map((d) => d.highF).filter((v) => v != null);
+    const weekLow = lows.length ? Math.min(...lows) : 0;
+    const weekHigh = highs.length ? Math.max(...highs) : 1;
+    const spread = Math.max(1, weekHigh - weekLow);
+
     state.daily.forEach((day, i) => {
-      const [label, icon] = describeCode(day.code);
+      const [label] = describeCode(day.code);
+      const icon = iconFor(day.code, 30, true);
       const date = new Date(day.dateISO + 'T12:00:00');
       const dayName = i === 0 ? 'Today' : date.toLocaleDateString([], { weekday: 'short' });
+
+      const from = day.lowF == null ? 0 : ((day.lowF - weekLow) / spread) * 100;
+      const to = day.highF == null ? 100 : ((day.highF - weekLow) / spread) * 100;
 
       const card = document.createElement('button');
       card.type = 'button';
       card.className = 'forecast-card';
-      card.title = `${label} — tap for a roast`;
       card.innerHTML = `
-        <div class="fc-day">${dayName}</div>
-        <div class="fc-icon">${icon}</div>
-        <div class="fc-temps"><span class="fc-hi">${fmtTemp(day.highF)}</span><span class="fc-lo">${fmtTemp(day.lowF)}</span></div>
-        <div class="fc-rain">💧 ${U().percent(day.precipProb)}</div>
+        <span class="fc-day">${dayName}</span>
+        <span class="fc-icon">${icon}</span>
+        <span class="fc-rain">${U().percent(day.precipProb)}</span>
+        <span class="fc-lo">${fmtTemp(day.lowF)}</span>
+        <span class="fc-range" aria-hidden="true">
+          <span class="fc-range-fill" style="left:${from}%;right:${100 - to}%"></span>
+        </span>
+        <span class="fc-hi">${fmtTemp(day.highF)}</span>
       `;
       card.title = `${label} — tap for the day and a roast`;
       card.addEventListener('click', () => {
@@ -737,7 +788,8 @@
       btn.type = 'button';
       btn.className = 'compare-tile' + (row.ok ? '' : ' compare-failed');
       if (row.ok) {
-        const [label, icon] = describeCode(row.code);
+        const [label] = describeCode(row.code);
+        const icon = iconFor(row.code, 34, true);
         btn.innerHTML = `
           <div class="compare-name">${row.location.name}</div>
           <div class="compare-main"><span class="compare-icon">${icon}</span>
@@ -822,9 +874,9 @@
       return;
     }
 
-    const [label, icon] = describeCode(day.code);
+    const [label] = describeCode(day.code);
     const date = new Date(day.dateISO + 'T12:00:00');
-    $('dayModalTitle').textContent = `${icon} ${dayName}`;
+    $('dayModalTitle').innerHTML = `${iconFor(day.code, 34, true)}<span>${dayName}</span>`;
     $('dayModalSummary').textContent =
       `${date.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })} · ${label}`;
 
@@ -1008,7 +1060,8 @@
     if (btn) btn.disabled = on;
   }
 
-  async function loadLocation(location, { announce: announceToast = true } = {}) {
+  async function loadLocation(location, { announce: announceToast = true, silent = false } = {}) {
+    if (silent) announceToast = false;
     if (state.loading) return;
     state.loading = true;
     setLoading(true);
@@ -1208,6 +1261,70 @@
     });
 
     // Units
+    /* ---- Look and feel ---- */
+    const fillSelect = (el, items, value) => {
+      if (!el) return;
+      el.innerHTML = '';
+      items.forEach((item) => {
+        const opt = document.createElement('option');
+        opt.value = String(item.id !== undefined ? item.id : item);
+        opt.textContent = item.label !== undefined ? item.label : String(item);
+        el.appendChild(opt);
+      });
+      el.value = String(value);
+    };
+
+    const iSel = $('iconStyleSelect');
+    fillSelect(iSel, WTW_CONFIG.iconStyles || [], s.iconStyle);
+    if (iSel) iSel.addEventListener('change', () => {
+      WTWStorage.saveSettings({ iconStyle: iSel.value });
+      rerenderAll();
+      toast(`Icons: ${iSel.options[iSel.selectedIndex].text}`);
+    });
+
+    const aSel = $('accentSelect');
+    fillSelect(aSel, WTW_CONFIG.accents || [], s.accent);
+    const paintAccentPreview = () => {
+      const host = $('accentPreview');
+      if (!host) return;
+      host.innerHTML = (WTW_CONFIG.accents || []).map((a) =>
+        `<span class="accent-dot${a.id === (WTWStorage.getSettings().accent || 'neon') ? ' picked' : ''}"
+          style="background:linear-gradient(135deg,${a.accent},${a.accent2})"
+          title="${a.label}"></span>`).join('');
+    };
+    paintAccentPreview();
+    if (aSel) aSel.addEventListener('change', () => {
+      WTWStorage.saveSettings({ accent: aSel.value });
+      WTWThemes.applyAccent(aSel.value);
+      paintAccentPreview();
+      // The radar and the charts draw their own colours from the theme,
+      // so they have to be told rather than left to notice.
+      WTWRadar.onThemeChange();
+      WTWHourly.redraw();
+      WTWTempChart.redraw();
+      toast(`Accent: ${aSel.options[aSel.selectedIndex].text}`);
+    });
+
+    const dSel = $('forecastDaysSelect');
+    fillSelect(dSel, (WTW_CONFIG.forecastLengths || []).map((n) => ({ id: n, label: `${n} days` })),
+      s.forecastDays);
+    if (dSel) dSel.addEventListener('change', () => {
+      WTWStorage.saveSettings({ forecastDays: Number(dSel.value) });
+      toast(`Forecast: ${dSel.value} days`);
+      // A different number of days is a different request.
+      if (state.location) loadLocation(state.location, { silent: true });
+    });
+
+    const hSel = $('hourlyHoursSelect');
+    fillSelect(hSel, (WTW_CONFIG.hourlyLengths || []).map((n) => ({ id: n, label: `${n} hours` })),
+      s.hourlyHours);
+    if (hSel) hSel.addEventListener('change', () => {
+      WTWStorage.saveSettings({ hourlyHours: Number(hSel.value) });
+      WTWHourly.setHours(state.hours.slice(0, Number(hSel.value)));
+      updateHourlyTitle();
+      toast(`Outlook: ${hSel.value} hours`);
+    });
+
     const uSel = $('unitsSelect');
     uSel.innerHTML = '';
     (WTW_CONFIG.unitSystems || []).forEach((u) => {
@@ -1893,6 +2010,7 @@
     WTWThemes.init();
     renderUsernameEverywhere();
     initSettingsUI();
+    updateHourlyTitle();
     initAuthSetup();
     initTransfer();
     initEvents();

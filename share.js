@@ -1,5 +1,5 @@
 /* ============================================================
-   What the Wether V18 — share.js
+   What the Wether V19 — share.js
    Renders a roast as a shareable image on an offscreen canvas,
    then hands it to the Web Share API or a download. Everything
    is drawn locally; nothing is uploaded anywhere.

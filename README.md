@@ -1,4 +1,4 @@
-# What the Wether V18 ⚡🌩️
+# What the Wether V19 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -159,7 +159,44 @@ Fullscreen button to come back.
   toggles it
 - Set `radar.fullscreenOnTap = false` in `config.js` to require the button
 
-### 📅 A day in detail (V18)
+### 🎨 Icons, layout and things to change (V19)
+
+**The weather icons are drawn, not typed.** Emoji were somebody else's artwork,
+they differ on every platform — the same forecast looked like three different
+things on Android, Windows and iOS — several weather emoji are nearly
+indistinguishable at 20px, and none of them took the app's accent colour. The
+icons are now original SVG built from a handful of gradients: sun, moon, cloud,
+rain, snow, sleet, fog, bolt, and the combinations. Day and night differ where
+a sun or a moon is part of the picture.
+
+They are **not** copies of any platform's icon set. The style — soft gradients,
+a sun behind a cloud — is a common one; the paths are this project's own.
+Gradients and the cloud body live once in a hidden sprite, referenced by id: a
+document with forty copies of the same gradient id has forty ambiguous
+references.
+
+**The layout reads down the middle.** The current card centres: icon, a large
+light temperature, the condition, then `H:80° L:65°`. The forecast is a list
+rather than a row of tiles — day, icon, rain chance, low, a range bar, high —
+and the bars share one scale across the whole week, so a mild day next to a hot
+one actually looks like one.
+
+**Four more things to change**, in Settings:
+
+| Setting | Options |
+| --- | --- |
+| Weather icons | Rendered (drawn by the app) or Emoji |
+| Accent colour | Neon Green, Sky Blue, Violet, Amber, Rose, Mint |
+| Days in the forecast | 5, 7 or 10 |
+| Hours in the outlook | 12, 24 or 48 |
+
+The accent colours the radar, the charts, buttons and highlights, and is
+re-applied on top of whichever theme is active — a theme change repaints the
+palette from CSS, so the accent has to be re-stamped or it silently reverts.
+Changing the forecast length is a different request, so it reloads; the outlook
+heading follows its setting rather than claiming 48 hours forever.
+
+### 📅 A day in detail (V19)
 
 Tapping a day in the forecast row opens that day: its roast, its high, low,
 rain chance, UV, sunrise and sunset, and an hour-by-hour strip you can scroll —
@@ -177,7 +214,7 @@ showing an empty box, and the day's own facts are still there. Where NWS drew
 the forecast row, Open-Meteo's sun times and UV are merged in by date — NWS
 publishes neither.
 
-### 🌡️ Today, in context (V18)
+### 🌡️ Today, in context (V19)
 
 Under the conditions the card says how today compares with yesterday —
 **"18°F warmer than yesterday"** — with yesterday's actual high in the tooltip.
@@ -195,7 +232,7 @@ possible.
   That has its own function in `units.js` and its own tests
 
 Asking for a past day moved every index into the daily arrays by one, so the
-V18 suite exists mostly to prove today is still today: the fixture makes
+V19 suite exists mostly to prove today is still today: the fixture makes
 yesterday 62° against today's 80°, so an off-by-one would be unmistakable
 rather than plausible. Sunrise, sunset, UV and the forecast row are all checked
 against it. Visibility now comes from the hour nearest to now rather than the
@@ -221,7 +258,7 @@ is the truth. The badge also reports **staleness**: if the newest frame is
 older than `radarTiles.maxAgeMinutes`, it reads `RADAR (STALE)` instead of
 claiming to be live, and its tooltip gives the frame age in minutes.
 
-**`FORECAST` — where the rain is going (V18).** The same index publishes
+**`FORECAST` — where the rain is going (V19).** The same index publishes
 *nowcast* frames, and the loop now carries on past the present into the next
 half hour, so you can watch a band approach rather than only where it has
 been. Predictions are never dressed up as observations:
@@ -246,7 +283,7 @@ unreachable, the app falls back to base-reflectivity imagery from
 [NOAA's public GeoServer](https://opengeo.ncep.noaa.gov/) (`conus_bref_qcd`),
 drawn over the basemap as before.
 
-**A legend (V18).** A bar under the scope runs light → heavy, so the colours
+**A legend (V19).** A bar under the scope runs light → heavy, so the colours
 mean something without having to be looked up. It is deliberately labelled by
 order rather than by exact figures: RainViewer's palette and NOAA's mosaic do
 not share a scale, and a legend that claimed precise values would be wrong for
@@ -326,7 +363,7 @@ Those three each need a client ID registered with the provider; that is their
 requirement, not a choice made here, and there is no way around it for any of
 them. The built-in account exists so that requirement never blocks anybody.
 
-**Moving an account to another device (V18).** Settings → *Move to another
+**Moving an account to another device (V19).** Settings → *Move to another
 device* produces a code carrying your account, saved places and settings. Paste
 it into the same box on another device and everything arrives. No server is
 involved, which is also the limit: it is a deliberate transfer, not sync — the
@@ -487,7 +524,7 @@ dependencies** — `package.json` exists only for the tests.
 ## Project structure
 
 ```
-WhatTheWether-V18/
+WhatTheWether-V19/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
@@ -610,7 +647,7 @@ on the **Build desktop apps** action) and GitHub builds all three platforms
 natively and attaches them to a release:
 
 ```bash
-git tag v18.0.0 && git push origin v18.0.0
+git tag v19.0.0 && git push origin v19.0.0
 ```
 
 | Platform | Files |
