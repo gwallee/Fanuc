@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V21 — precip.js
+   Aither Weather V22 — precip.js
    Precipitation nowcast: "rain starts in ~20 min".
 
    The series itself comes from rain.js, which picks the most

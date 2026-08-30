@@ -43,6 +43,7 @@ project and no global state is touched.
 | `v19.js` | Drawn weather icons, the centred hero, yesterday's comparison, the customisation settings |
 | `v20.js` | Drawn interface icons on every button, and the animated sky under the weather |
 | `v21.js` | The weather-driven sky, the detail tiles and their sentences, contrast over the sky, and the four look settings |
+| `v22.js` | Reading order on screen (not in the DOM), the hero off its card, the hour row with its sun events, and the air-quality tile |
 
 ## Environment
 

@@ -265,12 +265,24 @@ const WTWScene = (() => {
 
     /* ---------------- The loop ---------------- */
 
+    /* The backdrop is a full window of canvas at up to 2x pixel
+       density, and it is scenery — nobody is going to notice 30fps
+       drifting cloud, and a phone in a pocket will notice 60. The
+       strip is small enough to run free.
+
+       Skipping a frame is not the same as slowing the weather down:
+       dt is real elapsed time either way, so the rain falls at the
+       same speed and simply updates half as often. */
+    const MIN_MS = fullscreen ? 1000 / 30 : 0;
+
     function frame(now) {
       if (!running) return;
-      const dt = Math.min(0.05, (now - last) / 1000 || 0.016);
+      raf = requestAnimationFrame(frame);
+      const elapsed = now - last;
+      if (elapsed < MIN_MS) return;
+      const dt = Math.min(0.05, elapsed / 1000 || 0.016);
       last = now;
       draw(dt);
-      raf = requestAnimationFrame(frame);
     }
 
     function shouldRun() {

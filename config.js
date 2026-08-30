@@ -1,12 +1,12 @@
 /* ============================================================
-   Aither Weather V21 — config.js
+   Aither Weather V22 — config.js
    Central configuration. No API keys required, ever.
    ============================================================ */
 
 const WTW_CONFIG = {
   app: {
     name: 'Aither Weather',
-    version: 'V21',
+    version: 'V22',
     tagline: 'Weather with an attitude problem.',
   },
 

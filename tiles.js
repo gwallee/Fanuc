@@ -278,6 +278,121 @@ const WTWTiles = (() => {
     ctx.restore();
   }
 
+
+  /* ---------------- The hour row ---------------- */
+
+  /* The next few hours as a row, the way people actually read a
+     forecast: what it is now, then each hour, with sunrise and sunset
+     dropped in at the hour they happen rather than left to be
+     inferred from a chart's shading.
+
+     Built as a list because that is what it is — a screen reader
+     hears "6 PM, clear, 94 degrees" and not a run of loose numbers. */
+  function renderHours(hours, daily) {
+    const host = $('hourStrip');
+    if (!host) return;
+    host.innerHTML = '';
+    if (!Array.isArray(hours) || !hours.length) return;
+
+    const time = (d) => (U() ? U().time(d) : '');
+    const temp = (f) => (U() ? U().temp(f) : `${Math.round(f)}°`);
+
+    // Sun events inside the window shown, so they can be slotted in.
+    const first = hours[0].time.getTime();
+    const last = hours[hours.length - 1].time.getTime();
+    const events = [];
+    (daily || []).forEach((day) => {
+      [['sunrise', day.sunrise], ['sunset', day.sunset]].forEach(([kind, iso]) => {
+        if (!iso) return;
+        const at = new Date(iso).getTime();
+        if (at >= first && at <= last) events.push({ kind, at });
+      });
+    });
+    events.sort((a, b) => a.at - b.at);
+
+    const cell = (label, art, value, extra) => {
+      const li = document.createElement('li');
+      li.className = 'hour-cell' + (extra ? ' ' + extra : '');
+      li.innerHTML = `<span class="hour-label">${label}</span>` +
+        `<span class="hour-art">${art}</span>` +
+        `<span class="hour-temp">${value}</span>`;
+      return li;
+    };
+
+    let e = 0;
+    hours.forEach((h, i) => {
+      // Any sun event before this hour goes in first, in order.
+      while (e < events.length && events[e].at < h.time.getTime()) {
+        const ev = events[e++];
+        host.appendChild(cell(
+          time(new Date(ev.at)),
+          window.WTWIcons ? WTWIcons.ui(ev.kind === 'sunrise' ? 'sun' : 'sunset', { size: 24 }) : '',
+          ev.kind === 'sunrise' ? 'Sunrise' : 'Sunset',
+          'hour-event'));
+      }
+      const art = window.WTWIcons
+        ? WTWIcons.markup(h.code, { isDay: isDaylight(h.time, daily), size: 28 })
+        : '';
+      const li = cell(i === 0 ? 'Now' : time(h.time), art, temp(h.tempF), i === 0 ? 'hour-now' : '');
+      // Rain worth knowing about is worth showing; a 5% chance is not.
+      if (h.precipProb != null && h.precipProb >= 20) {
+        const p = document.createElement('span');
+        p.className = 'hour-pop';
+        p.textContent = `${Math.round(h.precipProb)}%`;
+        li.insertBefore(p, li.querySelector('.hour-temp'));
+      }
+      li.setAttribute('aria-label',
+        `${i === 0 ? 'Now' : time(h.time)}, ${temp(h.tempF)}` +
+        (h.precipProb != null ? `, ${Math.round(h.precipProb)}% chance of rain` : ''));
+      host.appendChild(li);
+    });
+  }
+
+  /* Whether a given hour is in daylight, so the row shows a moon at
+     2am rather than a sun.
+
+     One rule: the hour is daylight if some day's sunrise..sunset
+     bracket contains it. Anything else is night — and if the forecast
+     gave no sun times at all, the honest answer is "assume day"
+     rather than turning every icon into a moon. */
+  function isDaylight(when, daily) {
+    const at = when.getTime();
+    let known = false;
+    for (const day of daily || []) {
+      if (!day.sunrise || !day.sunset) continue;
+      known = true;
+      const rise = new Date(day.sunrise).getTime();
+      const set = new Date(day.sunset).getTime();
+      if (at >= rise && at <= set) return true;
+    }
+    return !known;
+  }
+
+  /* The AQI headline, on the published 0–300+ scale. The bar is the
+     scale, not a decoration: a dot two-thirds along means something
+     the number alone does not. */
+  function renderAqi(air) {
+    const tile = $('aqiTile');
+    if (!tile || !window.WTWAir) return;
+    const value = air && air.aqi != null ? air.aqi : null;
+    if (value == null) { tile.hidden = true; return; }
+    tile.hidden = false;
+    const cat = WTWAir.aqiCategory(value);
+    const badge = $('aqiBadge');
+    if (badge) {
+      badge.textContent = String(Math.round(value));
+      badge.className = `aqi-badge ${cat.className}`;
+    }
+    setText('aqiLabel', cat.label);
+    setText('aqiAdvice', cat.advice);
+    const dot = $('aqiDot');
+    if (dot) {
+      // 0–300 covers Good through Hazardous; beyond that it pins.
+      dot.style.left = `${Math.min(100, (value / 300) * 100)}%`;
+      dot.hidden = false;
+    }
+  }
+
   /* ---------------- Putting it together ---------------- */
 
   function render(view) {
@@ -312,6 +427,9 @@ const WTWTiles = (() => {
     drawSunArc(d.sunrise, d.sunset);
     drawPressureDial(d.pressureInHg, view && view.pressureTrend);
 
+    renderHours(view && view.hours, view && view.daily);
+    renderAqi(view && view.air);
+
     if (window.WTWAir) {
       const moon = WTWAir.moonPhase(new Date());
       const tile = $('moonTile');
@@ -325,7 +443,8 @@ const WTWTiles = (() => {
     }
   }
 
-  return { render, feelsNote, uvBand, uvNote, windNote, visibilityNote,
+  return { render, renderHours, renderAqi, isDaylight,
+           feelsNote, uvBand, uvNote, windNote, visibilityNote,
            precipNote, compass, drawSunArc, drawPressureDial, drawMoon };
 })();
 

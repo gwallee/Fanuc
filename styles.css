@@ -460,6 +460,113 @@ body.loading { cursor: progress; }
    facts and its disc simply do not fit in half of one. */
 .tile-wide { grid-column: 1 / -1; }
 
+/* The AQI scale runs Good → Hazardous, the same order the published
+   bands do, so a dot two-thirds along means something. */
+.aqi-scale {
+  background: linear-gradient(90deg, #4ade80 0%, #facc15 17%, #fb923c 33%,
+                                     #ef4444 50%, #a855f7 67%, #7f1d1d 100%);
+}
+[data-tile="aqi"] .aqi-badge {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  box-shadow: none;
+  width: auto;
+  height: auto;
+  display: inline;
+}
+
+/* ============================================================
+   The hero
+
+   Not a card. It is the sky's own weather, and a border round it
+   makes the background read as wallpaper behind a window rather
+   than as the thing being reported.
+   ============================================================ */
+
+.hero {
+  text-align: center;
+  padding: 1.6rem 1rem 0.6rem;
+}
+.hero-city {
+  font-size: 1.6rem;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  margin: 0 0 0.1rem;
+}
+.hero .wx-temp { font-weight: 200; }
+.hero-actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+/* Over a sky, type needs a little separation from whatever is moving
+   behind it — a shadow does that without a box. */
+[data-sky]:not([data-sky="none"]) .hero {
+  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.35);
+}
+
+/* ============================================================
+   The hour row
+   ============================================================ */
+
+.hour-strip-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 0 -0.4rem 0.9rem;
+  padding: 0 0.4rem 0.35rem;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+.hour-strip {
+  display: flex;
+  gap: 0.15rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: min-content;
+}
+.hour-cell {
+  flex: 0 0 auto;
+  width: 62px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.55rem 0.2rem;
+  border-radius: calc(var(--tile-radius) * 0.7);
+  text-align: center;
+}
+.hour-label {
+  font-size: 0.76rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.hour-art { line-height: 0; min-height: 30px; display: flex; align-items: center; }
+.hour-temp {
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.hour-pop {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--accent-2);
+  line-height: 1;
+}
+/* "Now" is the one people look for first. */
+.hour-now { background: var(--tile-bg); }
+.hour-now .hour-label { color: var(--text); font-weight: 700; }
+/* Sunrise and sunset read as markers, not as hours with a temperature. */
+.hour-event .hour-temp { font-size: 0.78rem; font-weight: 500; color: var(--text-dim); }
+.hour-event .ui-icon { opacity: 0.9; }
+
 /* ---------------- Buttons ---------------- */
 
 .btn {
@@ -685,12 +792,18 @@ body.loading { cursor: progress; }
 .app-main {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  /* Reading order, not drawing order. What people came for goes
+     first: where they are and what it is doing, then the next few
+     hours, then the week — and only then the detail, the scope and
+     the rest. The hero spans both columns because it is the sky, not
+     a card sitting in a column. */
   grid-template-areas:
-    "alerts  alerts"
-    "current radar"
-    "hourly  hourly"
-    "air     compare"
-    "forecast forecast"
+    "alerts   alerts"
+    "hero     hero"
+    "hourly   hourly"
+    "forecast radar"
+    "current  current"
+    "air      compare"
     "favorites favorites";
   gap: 1.1rem;
   padding: 1.25rem;
@@ -702,6 +815,7 @@ body.loading { cursor: progress; }
   align-items: start;
 }
 
+.hero { grid-area: hero; }
 .current-card { grid-area: current; }
 .radar-card { grid-area: radar; }
 .hourly-card { grid-area: hourly; }
@@ -1192,6 +1306,15 @@ body.modal-open { overflow: hidden; }
   pointer-events: none;
 }
 .wx-scene canvas { display: block; width: 100%; height: 72px; }
+
+/* With the whole page already showing the sky, the strip's own border
+   and fill read as a pale band stuck across the hero. Over a sky it
+   keeps only its particles, which drift across the hero and belong
+   there; with the background off it goes back to being a panel. */
+[data-sky]:not([data-sky="none"]) .wx-scene {
+  border: 0;
+  background: none;
+}
 
 
 /* Accent swatches in Settings. */
@@ -1992,12 +2115,13 @@ body.radar-fullscreen { overflow: hidden; }
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "alerts"
+      "hero"
+      "hourly"
+      "forecast"
       "current"
       "radar"
-      "hourly"
-      "compare"
       "air"
-      "forecast"
+      "compare"
       "favorites";
     padding: 0.9rem;
     gap: 0.9rem;
@@ -2020,13 +2144,11 @@ body.radar-fullscreen { overflow: hidden; }
   .wx-icon { font-size: 3.2rem; }
   .current-main { gap: 0.8rem; }
 
-  .forecast-row {
-    display: flex;
-    overflow-x: auto;
-    padding-bottom: 0.4rem;
-    scroll-snap-type: x mandatory;
-  }
-  .forecast-card { flex: 0 0 96px; scroll-snap-align: start; }
+  /* The forecast was a horizontal scroller until V19 and this block
+     was the mobile half of it. The base rule is a vertical list now,
+     and this one was still forcing every row to a fixed 96px — which
+     is a flex-basis on the cross axis in a column, so each row was
+     stretched to nearly twice the height of its contents. */
 
   .radar-controls .btn { min-width: calc(50% - 0.5rem); }
 }

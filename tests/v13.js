@@ -126,8 +126,15 @@ function omBody() {
   await page.fill('#searchInput', '');
 
   console.log('\n=== Radar stops animating when nothing can see it ===');
-  await check('radar animates while visible', async () =>
-    page.evaluate(() => WTWRadar.isAnimating()));
+  await check('radar animates while visible', async () => {
+    // Say what "visible" means rather than assuming it. The scope used
+    // to sit near the top of the page and does not now, so on arrival
+    // it is correctly parked — which is the very behaviour the next
+    // two checks are about.
+    await page.evaluate(() => document.getElementById('radarCard').scrollIntoView());
+    await page.waitForTimeout(1200);
+    return page.evaluate(() => WTWRadar.isAnimating());
+  });
   await check('scrolling the scope away parks the loop', async () => {
     await page.evaluate(() => document.querySelector('.favorites-card').scrollIntoView());
     await page.waitForTimeout(1200);

@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V21 — app.js
+   Aither Weather V22 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -123,7 +123,11 @@
   // setting rather than claim 48 forever.
   function updateHourlyTitle() {
     const el = $('hourlyTitle');
-    if (el) el.textContent = `⏱️ Next ${chosenHourlyHours()} Hours`;
+    if (!el) return;
+    // Rebuilt rather than patched: the icon is markup and the count is
+    // text, so setting textContent alone would eat the icon.
+    const icon = window.WTWIcons ? WTWIcons.ui('clock', { size: 20 }) : '';
+    el.innerHTML = `${icon}<span>Next ${chosenHourlyHours()} Hours</span>`;
   }
 
   function chosenHourlyHours() {
@@ -410,6 +414,9 @@
     WTWTiles.render({
       weather: state.weather,
       detail: state.detail,
+      daily: state.daily,
+      hours: state.hours,
+      air: state.air,
       nowcastText: state.nowcastText || '',
     });
   }
@@ -665,14 +672,9 @@
     const air = state.air;
     const d = state.detail || {};
 
-    // AQI
-    const badge = $('aqiBadge');
-    const cat = WTWAir.aqiCategory(air ? air.aqi : null);
-    badge.textContent = air && air.aqi != null ? Math.round(air.aqi) : '--';
-    badge.className = `aqi-badge ${cat.className}`;
-    $('aqiLabel').textContent = cat.label;
-    $('aqiAdvice').textContent = air && air.aqi != null ? cat.advice : 'Air quality unavailable for this location.';
-
+    // The AQI headline lives in its own tile now, and the tiles own
+    // it: two places writing the same three elements is how they end
+    // up disagreeing. This card keeps the breakdown underneath.
     const setVal = (id, value, unit) => {
       const el = $(id);
       if (el) el.textContent = (value === null || value === undefined)
@@ -733,7 +735,11 @@
     if (!n || !n.text) { wrap.hidden = true; return; }
     wrap.hidden = false;
     $('nowcastText').textContent = n.text;
-    $('nowcastIcon').textContent = n.rainingNow ? '🌧️' : (n.startsIn !== null ? '⏳' : '✅');
+    // Three states, three drawn icons: raining now, rain on the way,
+    // and nothing coming.
+    const nowcastIcon = n.rainingNow ? 'droplet' : (n.startsIn !== null ? 'hourglass' : 'check');
+    $('nowcastIcon').innerHTML = window.WTWIcons
+      ? WTWIcons.ui(nowcastIcon, { size: 16 }) : '';
     const resolution = n.precise ? '15-minute data' : 'hourly data';
     $('nowcastPrecision').textContent = n.sourceLabel
       ? `${n.sourceLabel} · ${resolution}`

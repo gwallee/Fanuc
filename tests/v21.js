@@ -370,12 +370,18 @@ function over(fg, alpha, bg) {
     return page.evaluate(() =>
       document.documentElement.scrollWidth <= window.innerWidth + 1);
   });
+  // A tile with no data to show is hidden, and a hidden tile has no
+  // width — measuring it proves nothing either way.
+  const shownTiles = '.tile:not([hidden])';
   await check('the tiles stack rather than squeezing to nothing', async () =>
-    page.evaluate(() => [...document.querySelectorAll('.tile')]
-      .every((t) => t.getBoundingClientRect().width >= 120)));
+    page.evaluate((sel) => {
+      const tiles = [...document.querySelectorAll(sel)];
+      return tiles.length >= 8 &&
+             tiles.every((t) => t.getBoundingClientRect().width >= 120);
+    }, shownTiles));
   await check('no tile spills its own text', async () =>
-    page.evaluate(() => [...document.querySelectorAll('.tile')]
-      .every((t) => t.scrollWidth <= t.clientWidth + 1)));
+    page.evaluate((sel) => [...document.querySelectorAll(sel)]
+      .every((t) => t.scrollWidth <= t.clientWidth + 1), shownTiles));
   await check('no JS errors', () => errors.length === 0);
   if (errors.length) console.log(errors.join('\n'));
   await ctx.close();

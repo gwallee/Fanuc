@@ -1,4 +1,4 @@
-# Aither Weather V21 ⚡🌩️
+# Aither Weather V22 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -158,6 +158,48 @@ Fullscreen button to come back.
 - Keyboard accessible: the scope is a focusable control, `Enter`/`Space`
   toggles it
 - Set `radar.fullscreenOnTap = false` in `config.js` to require the button
+
+### 🧭 Reading order, and an hour row (V22)
+
+**The hero came off its card.** The city, the temperature and the conditions
+now sit on the sky itself, with no border around them. A box there made the
+background read as wallpaper behind a window rather than as the thing being
+reported. Everything below it is still a card.
+
+**The page is in the order people read it:** where you are and what it is
+doing, then the next few hours, then the week — and only then the detail tiles,
+the scope and the rest. That decision lives in two `grid-template-areas`
+blocks, so the V22 suite asserts it against **positions on screen**, not DOM
+order. That distinction is not academic: the reorder shipped broken the first
+time precisely because the markup was right and the grid was still placing the
+hourly card 2,000px further down.
+
+**An hour row**, above the chart that was already there. Each hour gets a time,
+an icon and a temperature, with the rain chance shown only when it is worth
+knowing — and sunrise and sunset dropped in at the hour they actually happen
+rather than left to be inferred from shading. The icons know night from day, so
+2am gets a moon. It is an `<ol>`, so a screen reader hears "6 PM, 94 degrees"
+rather than a run of loose numbers.
+
+The chart stays underneath: a row shows you the next few hours, and a chart
+shows you the shape of the whole period. They answer different questions.
+
+**Air quality is a tile** with the published 0–300 scale, and it is *hidden*
+rather than blank when the location has no air data. Two places used to write
+the same three AQI elements; one does now.
+
+**The backdrop runs at 30fps.** It is a full window of canvas at up to 2× pixel
+density, and it is scenery — nobody notices 30fps drifting cloud, and a phone
+in a pocket notices 60. Skipping a frame is not the same as slowing the weather
+down: elapsed time is still real, so the rain falls at the same speed and
+simply updates half as often.
+
+**A four-version-old bug fell out of this.** V19 turned the forecast from a
+horizontal scroller into a vertical list, and the *mobile* half of the old rule
+survived: `flex: 0 0 96px`, which in a column flex is a height, not a width. So
+every forecast row on a phone was padded to nearly twice the height of its
+contents. Nothing looked broken — it just looked airy. Rows are 53px now,
+which is what their contents measure.
 
 ### 🌤️ The sky is the page (V21)
 
@@ -619,7 +661,7 @@ dependencies** — `package.json` exists only for the tests.
 ## Project structure
 
 ```
-AitherWeather-V21/
+AitherWeather-V22/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
@@ -745,7 +787,7 @@ on the **Build desktop apps** action) and GitHub builds all three platforms
 natively and attaches them to a release:
 
 ```bash
-git tag v21.0.0 && git push origin v21.0.0
+git tag v22.0.0 && git push origin v22.0.0
 ```
 
 | Platform | Files |

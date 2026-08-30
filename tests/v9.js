@@ -215,6 +215,11 @@ function omBody() {
   };
 
   await check('dragging the scope pans it', async () => {
+    // Raw mouse events are viewport coordinates and Playwright does
+    // not scroll for them, so the scope has to actually be on screen.
+    // It sat near the top of the page for versions; it does not now.
+    await page.locator('#radarCanvas').scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
     const b = await page.locator('#radarCanvas').boundingBox();
     const beforeCount = wmsUrls.length;
     await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
