@@ -60,6 +60,16 @@ const WTWScene = (() => {
   function makeLayer({ hostId, canvasId, fullscreen }) {
     let canvas = null, ctx = null, host = null;
     let raf = 0, running = false, enabled = true, visible = true;
+    /* Which run of the loop is the live one.
+
+       stop() cancels the frame it knows about, but a callback already
+       dispatched by the browser cannot be cancelled — it will run, see
+       running === true again after a restart, and schedule its own
+       successor. Now there are two chains sharing one `last`, so the
+       frame cap stops working and the animation stutters. start() and
+       stop() both bump this, and a frame from an older run returns
+       without rescheduling. */
+    let runToken = 0;
     let w = 0, h = 0;
     let scene = 'clear', isDay = true;
     let last = 0, bolt = 0, boltAt = 0;
@@ -273,16 +283,32 @@ const WTWScene = (() => {
        Skipping a frame is not the same as slowing the weather down:
        dt is real elapsed time either way, so the rain falls at the
        same speed and simply updates half as often. */
-    const MIN_MS = fullscreen ? 1000 / 30 : 0;
+    /* Both surfaces are capped. The backdrop is a full window of
+       canvas and obviously worth capping; the strip was left to run
+       free and was measured drawing 60 times a second — a decorative
+       band of drifting particles, at the full frame rate, on top of
+       everything else. Neither needs more than 30.
 
-    function frame(now) {
-      if (!running) return;
-      raf = requestAnimationFrame(frame);
-      const elapsed = now - last;
-      if (elapsed < MIN_MS) return;
-      const dt = Math.min(0.05, elapsed / 1000 || 0.016);
-      last = now;
-      draw(dt);
+       The cap subtracts a frame's slack so a 30fps target on a 60Hz
+       display lands on every second frame rather than every third:
+       33.3ms against a 16.7ms cadence misses, and 25ms does not. */
+    const TARGET_FPS = 30;
+    const MIN_MS = (1000 / TARGET_FPS) * 0.75;
+
+    /* The token has to be captured per chain, in the closure. Hanging
+       it on the shared frame function does nothing: every chain reads
+       the same property, which always equals the current token, so
+       none of them ever retires. */
+    function makeFrame(token) {
+      return function frame(now) {
+        if (!running || token !== runToken) return;
+        raf = requestAnimationFrame(frame);
+        const elapsed = now - last;
+        if (elapsed < MIN_MS) return;
+        const dt = Math.min(0.05, elapsed / 1000 || 0.016);
+        last = now;
+        draw(dt);
+      };
     }
 
     function shouldRun() {
@@ -301,11 +327,23 @@ const WTWScene = (() => {
       if (running) return;
       running = true;
       last = performance.now();
-      raf = requestAnimationFrame(frame);
+      raf = requestAnimationFrame(makeFrame(++runToken));
+    }
+
+    /* One frame, then hold it. Not the same as stop(): stop leaves
+       whatever was last painted, which may be mid-fade or empty. */
+    function freeze() {
+      stop();
+      if (!ctx || !enabled) return;
+      last = performance.now();
+      draw(0);
     }
 
     function stop() {
       running = false;
+      // Bumping the token retires any callback the browser has already
+      // dispatched and that cancelAnimationFrame can no longer reach.
+      runToken++;
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
     }
@@ -324,9 +362,22 @@ const WTWScene = (() => {
         cssH = Math.max(56, Math.round(cssW * 0.22));
         canvas.style.height = cssH + 'px';
       }
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      canvas.width = Math.round(cssW * dpr);
-      canvas.height = Math.round(cssH * dpr);
+      /* The strip is small and crisp-edged, so it gets real pixel
+         density. The backdrop is blurred gradients and soft particles
+         behind frosted cards — at 2x on a phone that was a 1.6
+         megapixel canvas being repainted continuously, and not one
+         pixel of the extra resolution is visible through the blur. */
+      const dpr = fullscreen
+        ? Math.min(1.25, window.devicePixelRatio || 1)
+        : Math.min(2, window.devicePixelRatio || 1);
+      const nextW = Math.round(cssW * dpr);
+      const nextH = Math.round(cssH * dpr);
+      // Assigning width or height clears and reallocates the canvas
+      // even when the value is unchanged, so only do it when it is.
+      if (canvas.width !== nextW || canvas.height !== nextH) {
+        canvas.width = nextW;
+        canvas.height = nextH;
+      }
       w = cssW; h = cssH;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       seed();
@@ -360,7 +411,10 @@ const WTWScene = (() => {
         host.hidden = !enabled;
       }
       if (!ctx) return;
-      if (changed) { resize(); }
+      // Only reseed when the weather actually changed. resize() throws
+      // away every particle, so calling it on an unchanged refresh
+      // restarts the rain from nothing every few minutes.
+      if (changed) resize();
       start();
     }
 
@@ -370,7 +424,7 @@ const WTWScene = (() => {
       if (enabled) { resize(); start(); } else { stop(); }
     }
 
-    return { init, set, setEnabled, start, stop, resize,
+    return { init, set, setEnabled, start, stop, freeze, resize,
              isRunning: () => running, current: () => scene,
              isEnabled: () => enabled };
   }
@@ -399,6 +453,7 @@ const WTWScene = (() => {
   function init() {
     layers.forEach((l) => l.init());
     backdrop.setEnabled(background === 'animated');
+    applyStripMotion();
     paintPage();
 
     window.addEventListener('resize', () => {
@@ -421,11 +476,37 @@ const WTWScene = (() => {
     isDay = day !== false;
     paintPage();
     layers.forEach((l) => l.set(scene, isDay));
+    applyStripMotion();
   }
 
   // The strip's own switch, kept as it was.
+  /* The strip and the backdrop show the same weather.
+
+     With the backdrop animated, the strip is a second canvas painting
+     the same rain thirty times a second, inside a card, over a sky
+     that is already raining. Measured, that was half the app's
+     continuous drawing for no information at all — so the strip holds
+     a single still frame instead, and only animates when the backdrop
+     is not: colours-only or plain-theme backgrounds, where it is the
+     only moving weather there is.
+
+     "Still" is one drawn frame, not a blank box. */
+  function stripShouldMove() {
+    return stripEnabled && background !== 'animated';
+  }
+
+  let stripEnabled = true;
+
+  function applyStripMotion() {
+    strip.setEnabled(stripEnabled);
+    if (!stripEnabled) return;
+    if (stripShouldMove()) strip.start();
+    else strip.freeze();
+  }
+
   function setEnabled(on) {
-    strip.setEnabled(on);
+    stripEnabled = !!on;
+    applyStripMotion();
   }
 
   /* How much of the sky the page itself shows: the full animation, the
@@ -433,6 +514,7 @@ const WTWScene = (() => {
   function setBackground(mode) {
     background = ['animated', 'gradient', 'off'].includes(mode) ? mode : 'animated';
     backdrop.setEnabled(background === 'animated');
+    applyStripMotion();
     paintPage();
   }
 
@@ -442,6 +524,7 @@ const WTWScene = (() => {
     stop: () => layers.forEach((l) => l.stop()),
     current: () => scene,
     isRunning: () => strip.isRunning(),
+    stripMoves: () => stripShouldMove(),
     backdropRunning: () => backdrop.isRunning(),
     background: () => background,
     sceneFor, scenes: () => Object.assign({}, SCENE_FOR),

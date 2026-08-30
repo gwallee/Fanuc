@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V26 — app.js
+   Aither Weather V27 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -73,6 +73,7 @@
     root.dataset.cards = s.cardStyle || 'glass';
     root.dataset.corners = s.corners || 'round';
     root.dataset.density = s.density || 'comfortable';
+    root.dataset.radar = s.radarStyle === 'scope' ? 'scope' : 'map';
     if (window.WTWScene) WTWScene.setBackground(s.background || 'animated');
   }
 
@@ -1667,6 +1668,18 @@
     }
 
     /* ---- Radar: how it looks and how fast it runs ---- */
+
+    const radarStyleSel = $('radarStyleSelect');
+    if (radarStyleSel) {
+      fillSelect(radarStyleSel, WTW_CONFIG.radarStyles || [], s.radarStyle);
+      radarStyleSel.addEventListener('change', () => {
+        WTWStorage.saveSettings({ radarStyle: radarStyleSel.value });
+        applyLook();
+        // The canvas changes shape, so it has to be measured again.
+        if (window.WTWRadar && WTWRadar.relayout) WTWRadar.relayout();
+        toast(`Radar: ${radarStyleSel.options[radarStyleSel.selectedIndex].text.split(' —')[0]}`);
+      });
+    }
 
     const bindRadarSlider = (id, key, outId, format) => {
       const el = $(id);

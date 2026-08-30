@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V26 — map.js
+   Aither Weather V27 — map.js
    Web Mercator projection helpers plus a basemap tile layer for
    the radar scope.
 

@@ -368,19 +368,30 @@ const WTWMetricSheet = (() => {
     const w = Math.max(200, Math.round(box.width));
     const h = height;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    canvas.style.height = h + 'px';
-    canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round(h * dpr);
+    const nextW = Math.round(w * dpr);
+    const nextH = Math.round(h * dpr);
+    // Same reason as the tiles: assigning either dimension reallocates
+    // and clears, so only do it when the size really changed.
+    if (canvas.width !== nextW || canvas.height !== nextH) {
+      canvas.style.height = h + 'px';
+      canvas.width = nextW;
+      canvas.height = nextH;
+    }
     const ctx = canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
     return { ctx, w, h };
   }
 
-  const ink = (name, fallback) => {
-    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    return v || fallback;
-  };
+  // Read once per paint, not once per colour: see tiles.js.
+  let inkCache = null;
+  function ink(name, fallback) {
+    if (!inkCache) {
+      inkCache = getComputedStyle(document.documentElement);
+      Promise.resolve().then(() => { inkCache = null; });
+    }
+    return inkCache.getPropertyValue(name).trim() || fallback;
+  }
 
   function drawChart(canvas, metric, points, altPoints, arrows) {
     if (!canvas || !canvas.getContext) return false;

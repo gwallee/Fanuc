@@ -256,21 +256,37 @@ body.loading { cursor: progress; }
 [data-sky]:not([data-sky="none"]) input[type="text"],
 [data-sky]:not([data-sky="none"]) input[type="password"],
 [data-sky]:not([data-sky="none"]) input[type="search"],
-[data-sky]:not([data-sky="none"]) select,
-[data-sky]:not([data-sky="none"]) .nowcast-panel,
-[data-sky]:not([data-sky="none"]) .roast-inline {
+[data-sky]:not([data-sky="none"]) select {
   background: rgba(9, 20, 38, 0.4);
   border-color: rgba(255, 255, 255, 0.16);
+  color: var(--text);
+}
+
+/* The bot and the nowcast belong to the card they sit in.
+
+   They had their own dark ground, which put a box inside a box: a
+   panel of one shade of glass floating on a card of another, for
+   content that is part of that card's story. They keep a hairline
+   above them to separate the sections and nothing else. */
+[data-sky]:not([data-sky="none"]) .roast-inline,
+[data-sky]:not([data-sky="none"]) .nowcast-panel {
+  background: none;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  padding-left: 0;
+  padding-right: 0;
   color: var(--text);
 }
 [data-theme="light"][data-sky]:not([data-sky="none"]) input[type="text"],
 [data-theme="light"][data-sky]:not([data-sky="none"]) input[type="password"],
 [data-theme="light"][data-sky]:not([data-sky="none"]) input[type="search"],
-[data-theme="light"][data-sky]:not([data-sky="none"]) select,
-[data-theme="light"][data-sky]:not([data-sky="none"]) .nowcast-panel,
-[data-theme="light"][data-sky]:not([data-sky="none"]) .roast-inline {
+[data-theme="light"][data-sky]:not([data-sky="none"]) select {
   background: rgba(255, 255, 255, 0.6);
   border-color: rgba(16, 32, 46, 0.12);
+}
+[data-theme="light"][data-sky]:not([data-sky="none"]) .roast-inline,
+[data-theme="light"][data-sky]:not([data-sky="none"]) .nowcast-panel {
+  border-top-color: rgba(16, 32, 46, 0.14);
 }
 [data-sky]:not([data-sky="none"]) ::placeholder { color: var(--text-dim); }
 
@@ -1218,9 +1234,14 @@ body.loading { cursor: progress; }
 #radarCanvas {
   display: block;
   max-width: 100%;
-  border-radius: 50%;
+  /* A map has corners. The circle belonged to the scope, and the
+     scope is now an option rather than the only thing on offer. */
+  border-radius: 14px;
   touch-action: pan-y;
 }
+[data-radar="scope"] #radarCanvas { border-radius: 50%; }
+[data-radar="map"] .radar-wrap { display: block; padding: 0; }
+[data-radar="map"] .radar-legend { margin-top: 0.7rem; }
 .radar-location {
   position: absolute;
   bottom: 0.8rem;
@@ -1283,12 +1304,21 @@ input[type="range"]::-moz-range-thumb {
   cursor: grab;
 }
 
+/* Transport controls, sized to what they say.
+
+   Every button stretched to at least 96px and grew to fill the row,
+   so adding the two step buttons turned a tidy strip into a grid of
+   eight slabs. The stepping buttons are icons and should stay
+   icon-sized; the rest take the width of their own label. */
 .radar-controls {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.4rem;
   flex-wrap: wrap;
+  align-items: center;
 }
-.radar-controls .btn { flex: 1 1 auto; min-width: 96px; }
+.radar-controls .btn { flex: 0 0 auto; min-width: 0; }
+.radar-controls .btn-small { padding: 0.35rem 0.5rem; }
+#radarStepBack, #radarStepFwd { min-width: 40px; justify-content: center; }
 
 /* ---------------- Offline banner ---------------- */
 
@@ -2387,7 +2417,9 @@ body.radar-fullscreen { overflow: hidden; }
      is a flex-basis on the cross axis in a column, so each row was
      stretched to nearly twice the height of its contents. */
 
-  .radar-controls .btn { min-width: calc(50% - 0.5rem); }
+  /* Left to their own widths on a phone too: forcing half a row each
+     is what produced four rows of two. */
+  .radar-controls .btn { flex: 0 0 auto; min-width: 0; font-size: 0.85rem; }
 }
 
 /* Reduced motion: keep it calm */

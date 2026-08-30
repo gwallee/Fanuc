@@ -1,12 +1,12 @@
 /* ============================================================
-   Aither Weather V26 — config.js
+   Aither Weather V27 — config.js
    Central configuration. No API keys required, ever.
    ============================================================ */
 
 const WTW_CONFIG = {
   app: {
     name: 'Aither Weather',
-    version: 'V26',
+    version: 'V27',
     tagline: 'Weather with an attitude problem.',
   },
 
@@ -22,6 +22,7 @@ const WTW_CONFIG = {
     personality: 'sassy',        // friendly | sassy | rude | brutal
     botBrain: 'local',           // local | gemini — local needs no key
     showRoast: true,             // the Wether Bot panel at all
+    radarStyle: 'map',           // map | scope
     radarOpacity: 0.85,          // how strongly rain is painted
     radarSpeed: 1,               // loop playback multiplier
     autoRoast: true,             // roast automatically after each weather load
@@ -129,6 +130,11 @@ const WTW_CONFIG = {
     { id: 'gradient', label: 'Sky colours only' },
     { id: 'off',      label: 'Plain theme' },
   ],
+  radarStyles: [
+    { id: 'map',   label: 'Map — flat, like a weather map' },
+    { id: 'scope', label: 'Scope — round, with a sweep' },
+  ],
+
   cardStyles: [
     { id: 'glass',   label: 'Glass' },
     { id: 'solid',   label: 'Solid' },

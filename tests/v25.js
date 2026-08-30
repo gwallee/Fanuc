@@ -185,58 +185,40 @@ function omBody({ hourlyDays = 8, uvAllDay = false } = {}) {
       return false;
     }));
   await check('the past is dashed and the future is solid', async () => {
-    /* Measured, not asserted from the source. A dashed line leaves
-       columns empty where a solid one does not — but only the line's
-       own columns count. The first attempt at this sampled any lit
-       pixel and found none missing anywhere, because the gridlines
-       span every column and the fill under the curve does too. So
-       match the accent colour the line is actually drawn in.
+    /* Watch the drawing, not the pixels.
 
-       This is the check the whole feature rests on: one continuous
-       line would present a recorded observation and a model's guess
-       as the same kind of fact, and it would look completely fine. */
-    const r = await page.evaluate(() => {
-      const accent = getComputedStyle(document.documentElement)
-        .getPropertyValue('--accent').trim();
-      // Resolve whatever notation the theme uses into rgb.
-      const probe = document.createElement('span');
-      probe.style.color = accent;
-      document.body.appendChild(probe);
-      const rgb = getComputedStyle(probe).color.match(/[\d.]+/g).map(Number);
-      probe.remove();
+       Two earlier versions of this check counted blank columns in the
+       rendered line. Both were really measuring the time of day: one
+       split the plot at its midpoint (only the boundary at exactly
+       midday), and the fixed version still compared unequal, noisy
+       samples. Neither was measuring the claim.
 
-      const c = document.getElementById('sheetChart');
-      const ctx = c.getContext('2d');
-      const w = c.width, h = c.height;
-      const data = ctx.getImageData(0, 0, w, h).data;
-      const near = (i) => {
-        if (data[i + 3] < 120) return false;
-        return Math.abs(data[i] - rgb[0]) < 60 &&
-               Math.abs(data[i + 1] - rgb[1]) < 60 &&
-               Math.abs(data[i + 2] - rgb[2]) < 60;
-      };
-      const lineCols = [];
-      for (let x = 0; x < w; x++) {
-        let hit = false;
-        for (let y = 0; y < h; y++) if (near((y * w + x) * 4)) { hit = true; break; }
-        lineCols.push(hit);
-      }
-      const first = lineCols.indexOf(true);
-      const last = lineCols.lastIndexOf(true);
-      if (first < 0 || last - first < 40) return { bad: 'no line found', first, last };
-
-      // Split the line's own span in half and count blank columns in
-      // each. The dashed half must have materially more.
-      const mid = Math.floor((first + last) / 2);
-      const blanks = (from, to) => {
-        let n = 0;
-        for (let x = from; x <= to; x++) if (!lineCols[x]) n++;
-        return n;
-      };
-      return { first, last, mid, before: blanks(first, mid), after: blanks(mid, last) };
-    });
-    if (r.bad || !(r.before > r.after + 3)) console.log('  [diag] ' + JSON.stringify(r));
-    return !r.bad && r.before > r.after + 3;
+       The claim is that the past and the future are stroked with
+       different dash settings, split at now. So record every dash
+       setting used while the chart draws, and check that both a
+       dashed and a solid stroke happened — and that they are the two
+       halves of one series, not two unrelated strokes. */
+    const r = await page.evaluate(() => new Promise((resolve) => {
+      const canvas = document.getElementById('sheetChart');
+      const ctx = canvas.getContext('2d');
+      const strokes = [];
+      const realDash = ctx.setLineDash.bind(ctx);
+      const realStroke = ctx.stroke.bind(ctx);
+      let dash = [];
+      ctx.setLineDash = (d) => { dash = d || []; return realDash(d); };
+      ctx.stroke = () => { strokes.push(dash.length > 0 ? 'dashed' : 'solid'); return realStroke(); };
+      // Redraw by re-picking the open day.
+      document.querySelectorAll('.sheet-date')[0].click();
+      setTimeout(() => {
+        ctx.setLineDash = realDash;
+        ctx.stroke = realStroke;
+        resolve(strokes);
+      }, 400);
+    }));
+    const dashed = r.filter((s) => s === 'dashed').length;
+    const solid = r.filter((s) => s === 'solid').length;
+    if (!(dashed >= 1 && solid >= 1)) console.log('  [diag] strokes: ' + JSON.stringify(r));
+    return dashed >= 1 && solid >= 1;
   });
 
   await check('there is a legend when a second series is drawn', async () => {

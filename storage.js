@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V26 — storage.js
+   Aither Weather V27 — storage.js
    Safe localStorage wrapper. Everything is namespaced and
    JSON-encoded, and every call is guarded so the app never
    crashes in private-browsing / blocked-storage situations.

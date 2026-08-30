@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V26 — radar.js
+   Aither Weather V27 — radar.js
    Canvas radar scope with a real basemap underneath.
 
    Layers, bottom to top, all projected in EPSG:3857 so they align:
@@ -31,6 +31,21 @@ const WTWRadar = (() => {
     return isFinite(v) && v >= 0.2 && v <= 1 ? v : 0.85;
   }
 
+  /* Flat map, or the old scope.
+
+     Apple's precipitation view is a rectangular map — dark basemap,
+     place labels, rain painted over it, a temperature pill where you
+     are. No sweep, no range rings, no bezel. That is what this app
+     shows now by default; the scope it used to be is still there for
+     anybody who preferred it, because it was a deliberate look rather
+     than an accident. */
+  function radarStyle() {
+    const v = window.WTWStorage && WTWStorage.getSettings().radarStyle;
+    return v === 'scope' ? 'scope' : 'map';
+  }
+
+  const isMap = () => radarStyle() === 'map';
+
   function radarSpeed() {
     const v = Number((window.WTWStorage && WTWStorage.getSettings().radarSpeed));
     return isFinite(v) && v >= 0.25 && v <= 4 ? v : 1;
@@ -58,6 +73,8 @@ const WTWRadar = (() => {
     dragging: false, dragLast: null, dragStart: null, moved: false,
     refetchTimer: null,
     lastRefreshAt: 0,
+    lastPaintTime: 0,   // paint-rate cap, separate from the physics clock
+    pinDrawn: null,     // the label drawn on the map, for tests and debugging
     preloadedPath: null,       // when imagery was last (re)loaded
     fullscreen: false,
     visible: true,          // scope is on screen
@@ -238,9 +255,20 @@ const WTWRadar = (() => {
     return m ? `rgba(${m[1]},${m[2]},${m[3]},${alpha})` : color;
   }
 
+  /* Theme colours, resolved once per frame.
+
+     draw() asks for half a dozen of these and runs on every animation
+     frame, and each call made the browser resolve style afresh. A
+     scroll was measured triggering 125 of them. The cache is dropped
+     on the next microtask, so it never outlives a paint and a theme
+     change is picked up immediately. */
+  let themeCache = null;
   function themeVar(name, fallback) {
-    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    return v || fallback;
+    if (!themeCache) {
+      themeCache = getComputedStyle(document.documentElement);
+      Promise.resolve().then(() => { themeCache = null; });
+    }
+    return themeCache.getPropertyValue(name).trim() || fallback;
   }
 
   /* ================= Drawing ================= */
@@ -250,9 +278,17 @@ const WTWRadar = (() => {
     if (!ctx || width === 0) return;
 
     const cx = width / 2, cy = height / 2;
+    const map = isMap();
+
+    /* The projection is square, so a rectangular map is that square
+       scaled to cover the box and centred — the same idea as
+       background-size: cover. Everything downstream keeps using one
+       size and origin, so the basemap, the imagery, the alerts and
+       the marker all stay aligned. */
     const radius = Math.min(width, height) / 2 - 10;
-    const size = radius * 2;
-    const originX = cx - radius, originY = cy - radius;
+    const size = map ? Math.max(width, height) : radius * 2;
+    const originX = map ? cx - size / 2 : cx - radius;
+    const originY = map ? cy - size / 2 : cy - radius;
 
     const accent = themeVar('--radar-accent', '#00ff9d');
     const ringColor = themeVar('--radar-ring', 'rgba(0,255,157,0.28)');
@@ -263,19 +299,29 @@ const WTWRadar = (() => {
 
     ctx.save();
     ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    if (map) ctx.rect(0, 0, width, height);
+    else ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.clip();
 
     // 1. Basemap
-    const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
-    bg.addColorStop(0, themeVar('--radar-bg-2', '#04241a'));
-    bg.addColorStop(1, themeVar('--radar-bg-1', '#02100a'));
-    ctx.fillStyle = bg;
-    ctx.fillRect(originX, originY, size, size);
+    if (map) {
+      // A flat neutral ground, not a scope's glow: the point of the
+      // map is the map, so the place names have to stay readable.
+      ctx.fillStyle = '#1c1f26';
+      ctx.fillRect(0, 0, width, height);
+    } else {
+      const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+      bg.addColorStop(0, themeVar('--radar-bg-2', '#04241a'));
+      bg.addColorStop(1, themeVar('--radar-bg-1', '#02100a'));
+      ctx.fillStyle = bg;
+      ctx.fillRect(originX, originY, size, size);
+    }
 
     const painted = WTWMap.drawBasemap(ctx, view, size, originX, originY, () => draw());
-    if (painted) {
-      // Knock the basemap back so weather reads on top of it.
+    if (painted && !map) {
+      // Knock the basemap back so weather reads on top of it. On the
+      // flat map the rain is already the brightest thing, and dimming
+      // the map only makes the labels harder to read.
       ctx.fillStyle = withAlpha(themeVar('--radar-bg-1', '#02100a'), 0.35);
       ctx.fillRect(originX, originY, size, size);
     }
@@ -319,20 +365,26 @@ const WTWRadar = (() => {
         ctx.globalAlpha = 1;
       }
     } else {
-      drawSimulatedCells(ctx, cx, cy, radius, t);
+      drawSimulatedCells(ctx, cx, cy, map ? size / 2 : radius, t);
     }
 
     // 3. Alert polygons
     drawAlerts(ctx, view, size, originX, originY);
 
-    // 4. Instrument overlay
-    drawRings(ctx, cx, cy, radius, ringColor, accent, t);
-    drawSweep(ctx, cx, cy, radius, accent);
+    // 4. Instrument overlay — the scope's, and only the scope's.
+    if (!map) {
+      drawRings(ctx, cx, cy, radius, ringColor, accent, t);
+      drawSweep(ctx, cx, cy, radius, accent);
+    }
     ctx.restore();
 
-    drawRangeLabels(ctx, cx, cy, radius, accent);
-    drawMarker(ctx, view, size, originX, originY, accent, t);
-    drawBezel(ctx, cx, cy, radius, accent);
+    if (!map) {
+      drawRangeLabels(ctx, cx, cy, radius, accent);
+      drawMarker(ctx, view, size, originX, originY, accent, t);
+      drawBezel(ctx, cx, cy, radius, accent);
+    } else {
+      state.pinDrawn = drawTempPin(ctx, view, size, originX, originY);
+    }
   }
 
   // Fetch the frame after this one while this one is on screen, so a
@@ -486,6 +538,61 @@ const WTWRadar = (() => {
 
   // The marker sits on the searched location, which is not the scope
   // centre once the user has panned.
+  /* Where you are, and what it is there.
+
+     Apple puts a temperature pill on the map rather than a crosshair,
+     which answers "where am I and what is it doing" in one glance
+     instead of two. The temperature comes from the same reading the
+     hero shows, so the map cannot disagree with the page above it. */
+  function drawTempPin(ctx, view, size, originX, originY) {
+    if (!state.coords) return false;
+    const p = WTWMap.project(state.coords.lat, state.coords.lon, view, size, originX, originY);
+    if (p.x < -40 || p.y < -40 || p.x > state.width + 40 || p.y > state.height + 40) return false;
+
+    const w = state.weatherSeed || {};
+    const label = (w.tempF != null && window.WTWUnits)
+      ? WTWUnits.temp(w.tempF) : (state.locationLabel || '');
+    if (!label) return false;
+
+    ctx.font = '700 15px system-ui, -apple-system, sans-serif';
+    const textW = ctx.measureText(label).width;
+    const padX = 11, h = 28;
+    const boxW = textW + padX * 2;
+    const x = p.x - boxW / 2;
+    const y = p.y - h - 10;
+
+    // The pill, with a small tail pointing at the actual coordinates.
+    ctx.beginPath();
+    const r = h / 2;
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + boxW, y, x + boxW, y + h, r);
+    ctx.arcTo(x + boxW, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + boxW, y, r);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(20, 78, 158, 0.94)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(p.x - 5, y + h - 1);
+    ctx.lineTo(p.x, y + h + 6);
+    ctx.lineTo(p.x + 5, y + h - 1);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(20, 78, 158, 0.94)';
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, p.x, y + h / 2 + 0.5);
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
+    return label;
+  }
+
   function drawMarker(ctx, view, size, originX, originY, accent, t) {
     if (!state.coords) return;
     const p = WTWMap.project(state.coords.lat, state.coords.lon, view, size, originX, originY);
@@ -576,16 +683,31 @@ const WTWRadar = (() => {
     // observers below.
     if (!state.visible || !state.pageVisible) {
       state.rafId = null;
+      state.lastPaintTime = 0;
       return;
     }
 
-    draw();
+    /* Capped at 30, like the sky.
+
+       draw() composites the basemap, one or two radar frames, the
+       alert polygons, the rings and the sweep — the heaviest paint in
+       the app — and it was running at whatever rate the display
+       offered. A sweeping beam and ten-minute imagery do not read any
+       better at 60 than at 30, and on a phone the difference is the
+       whole reason the page feels heavy.
+
+       The slack keeps a 30fps target landing on every second frame of
+       a 60Hz display rather than slipping to every third. */
     state.rafId = requestAnimationFrame(frame);
+    if (now - (state.lastPaintTime || 0) < 25) return;
+    state.lastPaintTime = now;
+    draw();
   }
 
   function startLoop() {
     if (state.rafId !== null) return;
     state.lastFrameTime = 0;
+    state.lastPaintTime = 0;
     state.rafId = requestAnimationFrame(frame);
   }
 
@@ -625,13 +747,33 @@ const WTWRadar = (() => {
       const viewportCap = Math.max(200, (window.innerWidth || 520) - 56);
       size = Math.max(200, Math.min(rect.width || 300, 520, viewportCap));
     }
-    state.dpr = window.devicePixelRatio || 1;
-    state.width = size;
-    state.height = size;
-    canvas.width = Math.round(size * state.dpr);
-    canvas.height = Math.round(size * state.dpr);
-    canvas.style.width = size + 'px';
-    canvas.style.height = size + 'px';
+    /* A map is a rectangle. The scope was square because a scope is
+       round; a map that shape wastes the width of the card and shows
+       less of the country than it could. */
+    const mapStyle = isMap();
+    let boxW, boxH;
+    if (!mapStyle) {
+      boxW = boxH = size;
+    } else if (state.fullscreen) {
+      /* Measure the window, not the parent.
+
+         The card is mid-transition into fullscreen when this runs, so
+         its rect is still the small one — taking the width from it
+         left the map its normal size on a fullscreen page. */
+      boxW = Math.max(240, window.innerWidth - 24);
+      boxH = Math.max(240, window.innerHeight - (window.innerWidth < 640 ? 300 : 250));
+    } else {
+      boxW = Math.max(200, rect.width || size);
+      boxH = Math.round(Math.min(boxW * 0.72, 420));
+    }
+
+    state.dpr = Math.min(2, window.devicePixelRatio || 1);
+    state.width = boxW;
+    state.height = boxH;
+    canvas.width = Math.round(boxW * state.dpr);
+    canvas.height = Math.round(boxH * state.dpr);
+    canvas.style.width = boxW + 'px';
+    canvas.style.height = boxH + 'px';
     state.ctx = canvas.getContext('2d');
     state.ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
     draw();
@@ -1085,6 +1227,9 @@ const WTWRadar = (() => {
     // Repaint without refetching: the opacity slider changes how the
     // frames are drawn, not which frames they are.
     redraw: () => draw(),
+    // Re-measure and repaint: switching between the map and the scope
+    // changes the canvas's shape, not its contents.
+    relayout: () => resize(),
     onThemeChange, onUnitsChange, enterFullscreen, exitFullscreen, toggleFullscreen,
     isFullscreen: () => state.fullscreen,
     isAnimating: () => state.rafId !== null,
@@ -1097,6 +1242,11 @@ const WTWRadar = (() => {
       coords: state.coords ? { ...state.coords } : null,
       rangeKm: state.rangeKm,
       source: state.source,
+      style: radarStyle(),
+      // What the map is showing where you are, if anything. Basemap
+      // tiles taint the canvas, so pixels cannot be read back — the
+      // drawing has to report itself.
+      pin: state.pinDrawn || null,
       frameCount: state.frames.length,
       frameIndex: state.frameIndex,
       opacity: radarOpacity(),

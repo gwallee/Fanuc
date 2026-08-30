@@ -1,4 +1,4 @@
-# Aither Weather V26 ⚡🌩️
+# Aither Weather V27 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -158,6 +158,50 @@ Fullscreen button to come back.
 - Keyboard accessible: the scope is a focusable control, `Enter`/`Space`
   toggles it
 - Set `radar.fullscreenOnTap = false` in `config.js` to require the button
+
+### 🗺️ A map, and the frames back (V27)
+
+**The radar is a map now.** Apple's precipitation view is a flat rectangle —
+dark basemap, place names, rain painted over it, a temperature pill where you
+are. No sweep, no range rings, no bezel. That is the default. The scope it used
+to be is still there under **Settings → Radar style**, because it was a
+deliberate look rather than an accident.
+
+The projection is still square; a rectangular map is that square scaled to cover
+the box and centred, so the basemap, the imagery, the alert polygons and the pin
+all keep using one size and origin and stay aligned. The pill reads the same
+temperature the hero does, so the map cannot disagree with the page above it.
+
+**The lag, measured rather than guessed.** Profiling the app at phone size found
+three things, and only one of them was what I expected:
+
+| | before | after |
+| --- | --- | --- |
+| Hero strip | drawing every frame (uncapped) | **frozen** while the sky animates |
+| Backdrop canvas | 860×1860 = 1.6M pixels | 538×1163 = **0.63M** |
+| Radar paints | whatever the display offered | **30/sec**, capped |
+| `getComputedStyle` per scroll | 125 | **15** |
+| Canvas reallocations | on every render | only when the size changes |
+
+The strip is the interesting one. It and the backdrop show the same weather, so
+with the animated background on, the strip was a second canvas painting the same
+rain thirty times a second, inside a card, over a sky that was already raining.
+It holds a single still frame now, and only animates when the backdrop is *not*
+— colours-only or plain-theme backgrounds, where it is the only moving weather
+there is.
+
+I was also wrong about something: I was sure the loop was leaking animation
+chains, and wrote a guard for it. Instrumenting the loop showed exactly one
+chain per layer. The guard stayed — it is cheap insurance against a real
+hazard — but it fixed nothing, and the honest fix was the frame caps.
+
+**The bot blends in.** It had its own dark ground, which put a box inside a box:
+one shade of glass floating on another, for content that is part of that card's
+story. It keeps a hairline above it and nothing else. Same for the nowcast strip.
+
+**The transport controls fit.** Every radar button was forced to at least half
+the row, so adding two step buttons turned a tidy strip into four rows of slabs.
+A button is the width of its label again.
 
 ### 🎛️ Five asks (V26)
 
@@ -866,7 +910,7 @@ dependencies** — `package.json` exists only for the tests.
 ## Project structure
 
 ```
-AitherWeather-V26/
+AitherWeather-V27/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
@@ -995,7 +1039,7 @@ on the **Build desktop apps** action) and GitHub builds all three platforms
 natively and attaches them to a release:
 
 ```bash
-git tag v26.0.0 && git push origin v26.0.0
+git tag v27.0.0 && git push origin v27.0.0
 ```
 
 | Platform | Files |

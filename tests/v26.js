@@ -256,6 +256,54 @@ function omBody() {
   });
   await ctx.close();
 
+  console.log('\n=== The radar is a map ===');
+  ({ ctx, page, errors } = await mk());
+  await page.locator('#radarCard').scrollIntoViewIfNeeded();
+  await page.waitForTimeout(1500);
+  await check('it is a rectangle, not a round scope', async () => {
+    const box = await page.locator('#radarCanvas').boundingBox();
+    const radius = await page.evaluate(() =>
+      getComputedStyle(document.getElementById('radarCanvas')).borderRadius);
+    // A map has corners and uses the width it is given.
+    return box.width > box.height * 1.15 && !/50%/.test(radius);
+  });
+  await check('the style is reported as a map', async () =>
+    (await page.evaluate(() => WTWRadar.getView().style)) === 'map');
+  await check('there is a temperature pill where you are', async () => {
+    // Basemap tiles are cross-origin, which taints the canvas and
+    // makes getImageData throw — so the drawing reports what it drew
+    // rather than the test reading it back.
+    const pin = await page.evaluate(() => WTWRadar.getView().pin);
+    return typeof pin === 'string' && /\d/.test(pin) && /°/.test(pin);
+  });
+  await check('and it agrees with the temperature on the page', async () => {
+    const pin = await page.evaluate(() => WTWRadar.getView().pin);
+    const hero = (await page.textContent('#wxTemp')).trim();
+    return hero.startsWith(pin.trim());
+  });
+  await check('no transport button hogs the row', async () =>
+    // Each was forced to at least half the row, so six buttons became
+    // four rows of slabs. A button should be the width of its label.
+    page.evaluate(() => {
+      const row = document.querySelector('.radar-controls');
+      const w = row.getBoundingClientRect().width;
+      return [...row.querySelectorAll('.btn')]
+        .every((b) => b.getBoundingClientRect().width < w * 0.6);
+    }));
+  await check('the scope is still available for anybody who preferred it', async () => {
+    await page.click('#settingsBtn');
+    await page.waitForTimeout(400);
+    await page.selectOption('#radarStyleSelect', 'scope');
+    await page.waitForTimeout(700);
+    await page.click('#settingsCloseBtn');
+    await page.waitForTimeout(500);
+    const style = await page.evaluate(() => WTWRadar.getView().style);
+    const radius = await page.evaluate(() =>
+      getComputedStyle(document.getElementById('radarCanvas')).borderRadius);
+    return style === 'scope' && /50%/.test(radius);
+  });
+  await ctx.close();
+
   console.log('\n=== The radar ===');
   ({ ctx, page, errors } = await mk());
   await check('the frame being shown has a wall-clock time on it', async () => {

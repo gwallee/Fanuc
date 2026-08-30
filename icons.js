@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V26 — icons.js
+   Aither Weather V27 — icons.js
    Weather icons drawn as SVG rather than typed as emoji.
 
    Why not emoji: they are somebody else's artwork, they differ on

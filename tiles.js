@@ -120,19 +120,41 @@ const WTWTiles = (() => {
     const w = Math.max(40, Math.round(box.width));
     const h = Math.max(24, Math.round(w * heightRatio));
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    canvas.style.height = h + 'px';
-    canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round(h * dpr);
+    const nextW = Math.round(w * dpr);
+    const nextH = Math.round(h * dpr);
+    /* Setting width or height reallocates the backing store and
+       clears it, even when the value has not changed. render() runs on
+       every weather refresh, every settings change and every air or
+       normals arrival, so three tile canvases were being thrown away
+       and rebuilt several times per load for no reason. */
+    if (canvas.width !== nextW || canvas.height !== nextH) {
+      canvas.style.height = h + 'px';
+      canvas.width = nextW;
+      canvas.height = nextH;
+    }
     const ctx = canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
     return { ctx, w, h };
   }
 
-  const ink = (name, fallback) => {
-    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  /* Theme colours, read once per paint rather than once per call.
+
+     getComputedStyle forces the browser to resolve style, and these
+     drawing routines ask for three or four colours each. Caching for a
+     frame turns a dozen style resolutions per render into one, and a
+     theme change is a re-render anyway. */
+  let inkCache = null;
+  function ink(name, fallback) {
+    if (!inkCache) {
+      const style = getComputedStyle(document.documentElement);
+      inkCache = { style, at: Date.now() };
+      // Dropped on the next task, so a theme switch is never stale.
+      Promise.resolve().then(() => { inkCache = null; });
+    }
+    const v = inkCache.style.getPropertyValue(name).trim();
     return v || fallback;
-  };
+  }
 
   /* The sun's path across the day, with a dot at where it actually is.
      Below the horizon line the curve is dimmed rather than hidden, so

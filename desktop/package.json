@@ -1,7 +1,7 @@
 {
   "name": "aither-weather",
   "productName": "Aither Weather",
-  "version": "26.0.0",
+  "version": "27.0.0",
   "description": "Neon weather with a real-map radar, 48-hour outlook, and a local AI that roasts the forecast. No API keys.",
   "author": {
     "name": "gwallee",
