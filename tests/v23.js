@@ -183,13 +183,21 @@ function archiveBody({ normalHigh = 92, years = 10 } = {}) {
   await ctx.close();
 
   console.log('\n=== Gusts ===');
+  /* V23 put the gust in a sentence and suppressed it when it barely
+     differed from the steady wind, because a sentence repeating the
+     number above it is noise. V25 moved wind to three labelled rows —
+     Wind, Gusts, Direction — where a row is a fact rather than a
+     remark, so it is always shown. The claim being tested is the same
+     one: the gust is available and it is the real figure. */
   ({ ctx, page, errors } = await mk({ gustMph: 26 }));
-  await check('a gust well above the wind is worth saying', async () =>
-    /gusts up to 26 mph/i.test(await page.textContent('#gustNote')));
+  await check('the gust is shown as its own labelled figure', async () =>
+    /26 mph/.test(await page.textContent('#wxGusts')));
+  await check('beside the steady wind, not instead of it', async () =>
+    /10 mph/.test(await page.textContent('#wxWind')));
   await ctx.close();
   ({ ctx, page, errors } = await mk({ gustMph: 11 }));
-  await check('a gust barely above the wind is the same fact twice', async () =>
-    (await page.textContent('#gustNote')).trim() === '');
+  await check('a gust close to the wind is still reported honestly', async () =>
+    /11 mph/.test(await page.textContent('#wxGusts')));
   await ctx.close();
 
   console.log('\n=== A barometer that has to have moved to claim it moved ===');

@@ -1,4 +1,4 @@
-# Aither Weather V24 ⚡🌩️
+# Aither Weather V25 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -158,6 +158,50 @@ Fullscreen button to come back.
 - Keyboard accessible: the scope is a focusable control, `Enter`/`Space`
   toggles it
 - Set `radar.fullscreenOnTap = false` in `config.js` to require the button
+
+### 📊 Every tile opens (V25)
+
+A tile shows one number. That number nearly always has a **shape over the day** —
+UV peaks at noon, wind picks up in the afternoon, humidity falls as the
+temperature climbs — and the shape is usually the part worth knowing.
+
+So every tile is now a button, and opens a sheet with that metric charted across
+the day, a strip of dates to move between days, and a sentence saying what the
+shape means. Conditions, UV index, wind, precipitation, visibility, humidity and
+pressure all have one. It is one panel, not seven: a metric is a *definition* in
+`metricsheet.js` — where its numbers come from, how to write one, what to say
+about a day of them — and adding another is an entry in a table.
+
+Three rules the chart follows, because each is a way this kind of thing quietly
+lies:
+
+- **The past is dashed and the future is solid**, with a marker at now. A single
+  continuous line presents a recorded observation and a model's guess as the
+  same kind of fact. This is the claim the whole feature rests on, so the test
+  for it samples the line's own pixels either side of the now-marker and demands
+  the earlier half have more gaps.
+- **The axis carries real values and real hours** — and cannot show a value the
+  metric can't take. The first version drew a UV axis reaching **−1**, and
+  clipped midnight to read "2AM". Both are wrong numbers on an axis, not
+  cosmetic problems.
+- **A metric with no hourly data draws nothing and says so.** An empty axis is
+  an invitation to read meaning into blank space.
+
+The summaries are derived from the series they sit under, so they cannot
+describe a peak the chart does not show — "The peak UV index today is 9. Levels
+of Moderate or higher are reached from 9:00 AM to 6:00 PM" is computed by
+finding the first and last hour at or above 3.
+
+**UV gets the published WHO bands** behind the curve, so the number means
+something without a legend. **Wind gets direction arrows** along the top, since
+a speed chart alone can't tell you where it's coming from — and they point where
+the wind is *going*, which is the opposite of the direction it is named for.
+
+**The wind tile** now carries three labelled facts — Wind, Gusts, Direction —
+as the reference does. V23 put the gust in a sentence and suppressed it when it
+barely differed from the steady wind, because a sentence repeating the number
+above it is noise. A labelled row is a fact rather than a remark, so it is
+always shown.
 
 ### 🤖 The bot, optionally with a real model behind it (V24)
 
@@ -765,7 +809,7 @@ dependencies** — `package.json` exists only for the tests.
 ## Project structure
 
 ```
-AitherWeather-V24/
+AitherWeather-V25/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
@@ -792,6 +836,7 @@ AitherWeather-V24/
 ├── tiles.js        # The detail tiles and their small drawings
 ├── normals.js      # Climate normals from the key-less Open-Meteo archive
 ├── gemini.js       # Optional: the bot with your own Google Gemini key
+├── metricsheet.js  # The per-metric day sheet and its chart engine
 ├── icons/          # PWA icons (192, 512, maskable)
 ├── config.js       # Central configuration + defaults
 ├── storage.js      # Safe localStorage wrapper
@@ -893,7 +938,7 @@ on the **Build desktop apps** action) and GitHub builds all three platforms
 natively and attaches them to a release:
 
 ```bash
-git tag v24.0.0 && git push origin v24.0.0
+git tag v25.0.0 && git push origin v25.0.0
 ```
 
 | Platform | Files |

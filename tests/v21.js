@@ -218,7 +218,10 @@ function over(fg, alpha, bg) {
       if (tiles.length < 8) return false;
       return tiles.every((t) => {
         const head = t.querySelector('.tile-head');
-        const body = t.querySelector('.tile-value, .moon-facts');
+        // A tile's "value" is whichever shape carries its numbers:
+        // one big figure, the moon's facts, or — since V25 — wind's
+        // three labelled rows.
+        const body = t.querySelector('.tile-value, .moon-facts, .wind-facts, .avg-facts');
         return head && head.textContent.trim().length > 1 && body;
       });
     }));

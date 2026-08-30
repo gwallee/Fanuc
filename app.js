@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V24 — app.js
+   Aither Weather V25 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -151,8 +151,13 @@
                 'pressure_msl', 'dew_point_2m', 'precipitation'].join(','),
       // pressure_msl hourly is what makes a real barometric trend
       // possible: one reading cannot be rising or falling.
-      hourly: ['temperature_2m', 'precipitation_probability', 'precipitation', 'weather_code',
-               'wind_speed_10m', 'wind_gusts_10m', 'visibility', 'pressure_msl'].join(','),
+      // Everything the per-metric day charts draw. All of it hourly,
+      // because a tile that opens a chart of one number needs that
+      // number for every hour, not a daily maximum.
+      hourly: ['temperature_2m', 'apparent_temperature', 'relative_humidity_2m',
+               'precipitation_probability', 'precipitation', 'weather_code',
+               'wind_speed_10m', 'wind_gusts_10m', 'wind_direction_10m',
+               'visibility', 'pressure_msl', 'uv_index'].join(','),
       minutely_15: ['precipitation', 'precipitation_probability'].join(','),
       daily: ['weather_code', 'temperature_2m_max', 'temperature_2m_min',
               'precipitation_probability_max', 'precipitation_sum', 'wind_gusts_10m_max',
@@ -2356,6 +2361,34 @@
     WTWRadar.init('radarCanvas');
     WTWHourly.init('hourlyCanvas');
     WTWTempChart.init('tempChartCanvas');
+    if (window.WTWMetricSheet) {
+      WTWMetricSheet.init();
+      /* One listener on the grid rather than one per tile: the tiles
+         are static markup, but a delegated handler keeps working if
+         they ever stop being. Keyboard too — a role="button" that
+         only answers a mouse is not a button. */
+      const grid = $('tileGrid');
+      const openFor = (el) => {
+        const host = el.closest('[data-metric]');
+        if (!host) return;
+        WTWMetricSheet.open(host.dataset.metric, {
+          daily: state.daily,
+          hourlyRaw: state.hourlyRaw,
+          detail: state.detail,
+          weather: state.weather,
+        });
+      };
+      if (grid) {
+        grid.addEventListener('click', (e) => openFor(e.target));
+        grid.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          if (!e.target.closest('[data-metric]')) return;
+          e.preventDefault();
+          openFor(e.target);
+        });
+      }
+    }
+
     if (window.WTWScene) {
       WTWScene.init();
       WTWScene.setEnabled(WTWStorage.getSettings().sceneAnimation !== false);

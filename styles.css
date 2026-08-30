@@ -521,6 +521,98 @@ body.loading { cursor: progress; }
   margin-top: 0.6rem;
 }
 
+/* ============================================================
+   The metric sheet
+   ============================================================ */
+
+.metric-sheet { width: min(620px, calc(100vw - 2rem)); }
+
+/* The date strip. Seven buttons, the open one marked — and marked by
+   more than colour, since colour alone is not a marker to everyone. */
+.sheet-dates {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.25rem;
+  margin: 0.7rem 0 0.4rem;
+}
+.sheet-date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.35rem 0.1rem;
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  color: var(--text-dim);
+  font: inherit;
+}
+.sheet-dow { font-size: 0.68rem; letter-spacing: 0.5px; }
+.sheet-dom {
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  width: 1.9em;
+  height: 1.9em;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+.sheet-date.picked { color: var(--text); font-weight: 700; }
+.sheet-date.picked .sheet-dom { background: var(--accent); color: var(--accent-contrast); }
+.sheet-date:hover .sheet-dom { outline: 1px solid var(--card-border); }
+.sheet-date:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.sheet-value {
+  font-size: clamp(2rem, 8vw, 2.8rem);
+  font-weight: 300;
+  letter-spacing: -1px;
+  margin: 0.5rem 0 0;
+}
+.sheet-sub { color: var(--text-dim); font-size: 0.85rem; margin: 0.1rem 0 0.2rem; }
+
+.sheet-legend { display: flex; gap: 0.9rem; margin: 0.3rem 0 0; font-size: 0.78rem; }
+.sheet-key { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--text-dim); }
+.sheet-key::before {
+  content: '';
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+}
+.sheet-key-main { color: var(--accent); }
+.sheet-key-alt { color: var(--accent-2); }
+
+.sheet-chart-wrap { position: relative; margin-top: 0.6rem; }
+.sheet-chart-wrap canvas { display: block; width: 100%; }
+.sheet-empty {
+  margin: 0;
+  padding: 2rem 0;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.88rem;
+}
+.sheet-summary {
+  margin: 0.8rem 0 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+/* Wind's three facts. */
+.wind-facts { margin: 0.2rem 0 0; font-size: 0.9rem; }
+.wind-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.12rem 0;
+}
+.wind-facts dt { color: var(--text-dim); }
+.wind-facts dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* A tile that opens something says so on hover and on focus. */
+.tile-action { cursor: pointer; }
+.tile-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 .wind-dial { margin: auto 0 0.1rem; align-self: center; width: 74px; }
 .wind-dial-svg { display: block; width: 100%; height: auto; }
 .wind-dial-ring { fill: none; stroke: currentColor; stroke-opacity: 0.35; stroke-width: 2; }

@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V24 — radar.js
+   Aither Weather V25 — radar.js
    Canvas radar scope with a real basemap underneath.
 
    Layers, bottom to top, all projected in EPSG:3857 so they align:

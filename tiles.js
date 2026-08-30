@@ -109,14 +109,6 @@ const WTWTiles = (() => {
     return `Next expected is ${amount} ${days === 1 ? name : 'on ' + name}.`;
   }
 
-  /* Gusts are the number that decides whether to put the parasol up,
-     and they are only worth saying when they are meaningfully above
-     the steady wind — otherwise it is the same fact twice. */
-  function gustNote(windMph, gustMph) {
-    if (gustMph == null) return '';
-    if (windMph != null && gustMph - windMph < 4) return '';
-    return `Gusts up to ${U() ? U().speed(gustMph) : gustMph}.`;
-  }
 
   /* ---------------- The drawings ---------------- */
 
@@ -547,8 +539,12 @@ const WTWTiles = (() => {
 
     setText('precipToday', U() ? U().precip(d.precipTodayIn) : '--');
     setText('precipNote', precipNote(d.nextPrecip, view && view.nowcastText));
-    setText('gustNote', gustNote(w.windMph, d.windGustMph != null
-      ? d.windGustMph : d.gustMaxTodayMph));
+    // The wind tile carries three facts now, as the reference does:
+    // the steady wind, the gust, and where it is coming from.
+    const gust = d.windGustMph != null ? d.windGustMph : d.gustMaxTodayMph;
+    setText('wxGusts', gust == null ? '--' : (U() ? U().speed(gust) : `${gust}`));
+    setText('wxWindDir', w.windDirDeg == null ? '--'
+      : `${Math.round(w.windDirDeg)}° ${compass(w.windDirDeg)}`);
     setText('visibilityNote', visibilityNote(d.visibilityMi));
 
     const summary = $('hourlySummary');
@@ -580,7 +576,7 @@ const WTWTiles = (() => {
   }
 
   return { render, renderHours, renderAqi, renderAverages, isDaylight,
-           hourlySummary, gustNote,
+           hourlySummary,
            feelsNote, uvBand, uvNote, windNote, visibilityNote,
            precipNote, compass, drawSunArc, drawPressureDial, drawMoon };
 })();
