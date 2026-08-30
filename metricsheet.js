@@ -160,6 +160,163 @@ const WTWMetricSheet = (() => {
     },
   };
 
+
+  /* ============================================================
+     Sheets with no curve
+
+     Not every tile has an hourly series. The sun's times, the moon's
+     phase, the air's pollutants and the climate average are facts
+     about a day, not a shape across one — so they open the same sheet
+     with a table instead of a chart. Same chrome, same date strip,
+     same close; only the middle differs.
+     ============================================================ */
+  const TABLES = {
+    sun: {
+      title: 'Sun',
+      icon: 'sunset',
+      rows(view, dateISO, offset) {
+        const day = ((view && view.daily) || [])[offset];
+        if (!day || !day.sunrise || !day.sunset) return null;
+        const sun = window.WTWAir ? WTWAir.sunSummary(day.sunrise, day.sunset) : null;
+        const time = (v) => (U() ? U().time(v) : '');
+        const out = [
+          ['Sunrise', time(day.sunrise)],
+          ['Sunset', time(day.sunset)],
+        ];
+        if (sun) {
+          out.push(['Daylight', U() ? U().duration(sun.daylightMinutes) : '']);
+          out.push(['Solar noon', time(sun.solarNoon)]);
+        }
+        return out;
+      },
+      headline(view, dateISO, offset) {
+        const day = ((view && view.daily) || [])[offset];
+        return day && day.sunset
+          ? { value: U() ? U().time(day.sunset) : '', sub: 'Sunset' } : null;
+      },
+      /* Day length against the day before is the fact people actually
+         want from a sun panel in spring and autumn, and it is exact
+         arithmetic on two figures already published. */
+      summary(view, dateISO, offset) {
+        const daily = (view && view.daily) || [];
+        const day = daily[offset];
+        /* The day before today is not daily[-1]: the forecast array
+           starts at today, and yesterday is carried separately. So on
+           the first day the comparison comes from there, and if that
+           is missing there is simply nothing to compare. */
+        const prev = offset > 0 ? daily[offset - 1] : (view && view.yesterday);
+        if (!day || !prev || !prev.sunrise || !prev.sunset || !window.WTWAir) return '';
+        const a = WTWAir.sunSummary(day.sunrise, day.sunset);
+        const b = WTWAir.sunSummary(prev.sunrise, prev.sunset);
+        if (!a || !b) return '';
+        const delta = Math.round(a.daylightMinutes - b.daylightMinutes);
+        if (delta === 0) return 'The same length of day as yesterday.';
+        const mins = Math.abs(delta);
+        return `${mins} minute${mins === 1 ? '' : 's'} ` +
+          `${delta > 0 ? 'more' : 'less'} daylight than the day before.`;
+      },
+    },
+
+    moon: {
+      title: 'Moon',
+      icon: 'moon',
+      rows(view, dateISO) {
+        if (!window.WTWAir) return null;
+        const moon = WTWAir.moonPhase(new Date(dateISO + 'T12:00:00'));
+        return [
+          ['Phase', moon.name],
+          ['Illumination', `${Math.round(moon.illumination * 100)}%`],
+          ['Moon age', `${Math.round(moon.ageDays)} days`],
+          ['Next full moon', moon.nextFullDays == null ? '--' : `${moon.nextFullDays} days`],
+        ];
+      },
+      headline(view, dateISO) {
+        if (!window.WTWAir) return null;
+        const moon = WTWAir.moonPhase(new Date(dateISO + 'T12:00:00'));
+        return { value: `${Math.round(moon.illumination * 100)}%`, sub: moon.name };
+      },
+      summary() {
+        /* Moonrise and moonset are not published by any of the free
+           sources this app uses, and computing them properly is real
+           astronomy. Saying so is better than a figure that looks
+           authoritative and is half an hour out. */
+        return 'Phase and illumination are computed from the lunar cycle. ' +
+          'Moonrise and moonset are not published by this app\'s sources.';
+      },
+    },
+
+    aqi: {
+      title: 'Air Quality',
+      icon: 'aqi',
+      rows(view) {
+        const air = view && view.air;
+        if (!air || air.aqi == null) return null;
+        const µ = (v) => (v == null ? '--' : `${Math.round(v)} µg/m³`);
+        const rows = [
+          ['PM2.5', µ(air.pm25)],
+          ['PM10', µ(air.pm10)],
+          ['Ozone', µ(air.ozone)],
+          ['Nitrogen dioxide', µ(air.no2)],
+        ];
+        const pollen = window.WTWAir ? WTWAir.pollenSummary(air.pollen) : null;
+        if (pollen) rows.push(['Pollen', `${pollen.level.label} · ${pollen.name}`]);
+        return rows;
+      },
+      headline(view) {
+        const air = view && view.air;
+        if (!air || air.aqi == null) return null;
+        const cat = window.WTWAir ? WTWAir.aqiCategory(air.aqi) : { label: '' };
+        return { value: String(Math.round(air.aqi)), sub: cat.label };
+      },
+      summary(view) {
+        const air = view && view.air;
+        if (!air || air.aqi == null) return '';
+        const cat = window.WTWAir ? WTWAir.aqiCategory(air.aqi) : { advice: '' };
+        return cat.advice;
+      },
+      // Air quality is a reading now, not a figure per day.
+      noDates: true,
+    },
+
+    averages: {
+      title: 'Averages',
+      icon: 'chart',
+      rows(view) {
+        const normal = view && view.normal;
+        const w = view && view.weather;
+        if (!normal || normal.highF == null || !w) return null;
+        const t = (v) => (U() ? U().temp(v) : `${Math.round(v)}°`);
+        const rows = [
+          ["Today's high", t(w.highF)],
+          ['Average high', t(normal.highF)],
+        ];
+        if (normal.lowF != null) {
+          rows.push(["Today's low", t(w.lowF)]);
+          rows.push(['Average low', t(normal.lowF)]);
+        }
+        rows.push(['Years averaged', `${normal.years} (${normal.firstYear}–${normal.lastYear})`]);
+        return rows;
+      },
+      headline(view) {
+        const normal = view && view.normal;
+        const w = view && view.weather;
+        if (!normal || normal.highF == null || !w || w.highF == null) return null;
+        const gap = w.highF - normal.highF;
+        const rounded = Math.round(gap);
+        const sign = rounded > 0 ? '+' : (rounded < 0 ? '−' : '');
+        const size = U() ? U().tempDelta(Math.abs(gap), { withUnit: false }) : `${Math.abs(rounded)}°`;
+        return { value: `${sign}${size}`,
+                 sub: rounded === 0 ? 'right on the average'
+                   : (rounded > 0 ? 'above the average high' : 'below the average high') };
+      },
+      summary() {
+        return 'Averaged from the Open-Meteo historical archive for this calendar ' +
+          'date. Not the 30-year WMO normal.';
+      },
+      noDates: true,
+    },
+  };
+
   /* ---------------- Pulling a day out of the series ---------------- */
 
   /* The raw arrays hold several days back to back. This takes the
@@ -435,9 +592,60 @@ const WTWMetricSheet = (() => {
     });
   }
 
+  function paintTable() {
+    const table = TABLES[current];
+    const dateISO = dateForOffset(dayOffset);
+    $('sheetTitle').innerHTML =
+      (window.WTWIcons ? WTWIcons.ui(table.icon, { size: 18 }) : '') +
+      `<span>${table.title}</span>`;
+    const at = new Date(dateISO + 'T12:00:00');
+    $('sheetDate').textContent = table.noDates ? 'Right now'
+      : at.toLocaleDateString([], { weekday: 'long', month: 'long',
+                                    day: 'numeric', year: 'numeric' });
+
+    const dates = $('sheetDates');
+    if (dates) {
+      // A reading that is not per-day gets no date strip: offering to
+      // change a day that changes nothing is a lie about the data.
+      dates.hidden = !!table.noDates;
+      if (!table.noDates) renderDateStrip();
+    }
+
+    const head = table.headline(view, dateISO, dayOffset);
+    $('sheetValue').textContent = head ? head.value : '--';
+    $('sheetSub').textContent = head ? head.sub : '';
+    const legend = $('sheetLegend');
+    if (legend) legend.hidden = true;
+
+    const rows = table.rows(view, dateISO, dayOffset);
+    const chart = $('sheetChart');
+    if (chart) chart.hidden = true;
+    const list = $('sheetRows');
+    if (list) {
+      list.innerHTML = '';
+      list.hidden = !rows;
+      (rows || []).forEach(([label, value]) => {
+        const row = document.createElement('div');
+        row.innerHTML = `<dt>${label}</dt><dd>${value}</dd>`;
+        list.appendChild(row);
+      });
+    }
+    const empty = $('sheetEmpty');
+    if (empty) {
+      empty.hidden = !!rows;
+      empty.textContent = rows ? '' : 'Nothing published for this day.';
+    }
+    $('sheetSummary').textContent = rows ? table.summary(view, dateISO, dayOffset) : '';
+  }
+
   function paint() {
+    if (TABLES[current]) { paintTable(); return; }
     const metric = METRICS[current];
     if (!metric) return;
+    const list = $('sheetRows');
+    if (list) list.hidden = true;
+    const dates = $('sheetDates');
+    if (dates) dates.hidden = false;
     const raw = view && view.hourlyRaw;
     const dateISO = dateForOffset(dayOffset);
 
@@ -497,7 +705,7 @@ const WTWMetricSheet = (() => {
   }
 
   function open(key, state) {
-    if (!METRICS[key]) return;
+    if (!METRICS[key] && !TABLES[key]) return;
     current = key;
     dayOffset = 0;
     view = state;
@@ -534,7 +742,7 @@ const WTWMetricSheet = (() => {
     window.addEventListener('resize', () => { if (isOpen()) paint(); });
   }
 
-  return { init, open, close, isOpen, METRICS,
+  return { init, open, close, isOpen, METRICS, TABLES,
            seriesForDay, statsOf, crossing, current: () => current };
 })();
 

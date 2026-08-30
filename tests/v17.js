@@ -137,8 +137,8 @@ function omBody() {
 
   console.log('\n=== Restoring it on a device that knows nothing ===');
   ({ ctx, page, errors } = await mk());
-  await check('a fresh device starts with the stock name and no favourites', async () =>
-    (await page.textContent('.brand-greeting strong')) === 'DJTheBest');
+  await check('a fresh device starts with no name and no favourites', async () =>
+    (await page.textContent('.brand-greeting strong')).trim() === '');
   await check('rubbish is refused without breaking anything', async () => {
     await page.click('#settingsBtn');
     await page.waitForTimeout(400);
@@ -146,7 +146,7 @@ function omBody() {
     await page.click('#transferRestoreBtn');
     await page.waitForTimeout(400);
     return /couldn.t be read/i.test(await page.textContent('#transferStatus')) &&
-           (await page.textContent('.brand-greeting strong')) === 'DJTheBest';
+           (await page.textContent('.brand-greeting strong')).trim() === '';
   });
   await check('a real code brings the account across', async () => {
     await page.fill('#transferInput', code);

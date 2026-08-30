@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V25 — local-ai.js
+   Aither Weather V26 — local-ai.js
    Local AI 3.0: a fully offline roast generator. No API key,
    no cloud, no network. It reacts to temperature, rain, snow,
    thunderstorms, wind, fog, extreme heat, cold and clear skies,
@@ -510,6 +510,22 @@ const LocalAI = (() => {
     const feelsN = U ? Math.round(U.tempValue(feelsF))    : Math.round(feelsF);
     const windN  = U ? U.speed(windMph, { withUnit: false }) : String(Math.round(windMph));
 
+    /* With no name set, the line has to read as though it never had
+       one. Substituting a stand-in ("friend") addresses somebody by a
+       name they did not choose; substituting nothing leaves ", ." and
+       double spaces behind. So the name is removed along with the
+       punctuation that was only there to attach it. */
+    if (!name) {
+      return tidyNameless(template)
+        .replaceAll('{city}', w.city || 'your town')
+        .replaceAll('{tempU}', tempU)
+        .replaceAll('{feelsU}', feelsU)
+        .replaceAll('{windU}', windU)
+        .replaceAll('{temp}', String(tempN))
+        .replaceAll('{feels}', String(feelsN))
+        .replaceAll('{wind}', String(windN));
+    }
+
     return template
       .replaceAll('{name}', name)
       .replaceAll('{city}', w.city || 'your town')
@@ -521,6 +537,32 @@ const LocalAI = (() => {
       .replaceAll('{wind}', String(windN));
   }
 
+
+  /* Take {name} out of a line and leave grammar behind it.
+
+     "Grab the umbrella, {name} — the clouds…" has to become "Grab the
+     umbrella — the clouds…", not "Grab the umbrella,  — the clouds…".
+     The cases that actually occur in the pools are: a trailing
+     ", {name}", a leading "{name}, ", and "{name}" mid-sentence
+     followed by punctuation. */
+  function tidyNameless(template) {
+    return template
+      // ", {name}!" / ", {name}." / ", {name}?" — keep the mark.
+      .replace(/,\s*\{name\}(?=\s*[!?.…])/g, '')
+      // ", {name} —" and ", {name} ," — drop the comma with the name.
+      .replace(/,\s*\{name\}/g, '')
+      // "{name}, " at the start of a sentence.
+      .replace(/\{name\},\s*/g, '')
+      // Anything left over.
+      .replace(/\s*\{name\}\s*/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/\s+([!?.,…])/g, '$1')
+      .trim()
+      // Removing "{name}, " from the front leaves a sentence starting
+      // in lower case. Put the capital back.
+      .replace(/^([a-z])/, (m) => m.toUpperCase());
+  }
+
   /* ------------------------------------------------------------
      Public API.
      weather = { tempF, feelsLikeF, windMph, weatherCode, city }
@@ -528,7 +570,7 @@ const LocalAI = (() => {
   function generate(weather, options = {}) {
     const settings = WTWStorage.getSettings();
     const personality = options.personality || settings.personality || 'sassy';
-    const name = options.username || settings.username || 'friend';
+    const name = (options.username || settings.username || '').trim();
     const safePersonality = POOLS[personality] ? personality : 'sassy';
 
     const category = detectCategory(weather || {});

@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V25 — auth.js
+   Aither Weather V26 — auth.js
    Sign in with Google, Microsoft or Apple, through each provider's
    own browser SDK. Both are optional and both are key-free: a public
    client ID is not a secret, and no server is involved.

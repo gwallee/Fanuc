@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V25 — icons.js
+   Aither Weather V26 — icons.js
    Weather icons drawn as SVG rather than typed as emoji.
 
    Why not emoji: they are somebody else's artwork, they differ on
@@ -209,6 +209,8 @@ const WTWIcons = (() => {
     play: '<path d="M8 5.5 18 12 8 18.5z"/>',
     pause: '<line x1="9.5" y1="5.5" x2="9.5" y2="18.5"/><line x1="14.5" y1="5.5" x2="14.5" y2="18.5"/>',
     stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="1.6"/>',
+    stepBack: '<path d="M16 5.5 8 12l8 6.5z"/><line x1="6" y1="5.5" x2="6" y2="18.5"/>',
+    stepFwd: '<path d="M8 5.5 16 12l-8 6.5z"/><line x1="18" y1="5.5" x2="18" y2="18.5"/>',
     plus: '<line x1="12" y1="5.5" x2="12" y2="18.5"/><line x1="5.5" y1="12" x2="18.5" y2="12"/>',
     minus: '<line x1="5.5" y1="12" x2="18.5" y2="12"/>',
     target: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.2"/>' +

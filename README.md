@@ -1,4 +1,4 @@
-# Aither Weather V25 ⚡🌩️
+# Aither Weather V26 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -158,6 +158,63 @@ Fullscreen button to come back.
 - Keyboard accessible: the scope is a focusable control, `Enter`/`Space`
   toggles it
 - Set `radar.fullscreenOnTap = false` in `config.js` to require the button
+
+### 🎛️ Five asks (V26)
+
+**The app no longer ships you a name.** It used to be "DJTheBest", which meant a
+first run greeted somebody who had never told it anything, and the bot addressed
+them by a name they had not chosen. The username starts empty, and empty means
+the greeting is *absent* — not rendered blank, and not filled with a stand-in.
+"Yo,  ⚡" and "Yo, friend ⚡" are both worse than nothing.
+
+The bot's lines had to follow. Roughly half its templates carry `{name}`, and
+dropping it leaves `"Grab the umbrella,  — the clouds…"`. So the name is removed
+*with the punctuation that was only there to attach it*, and a sentence that
+loses its opening name gets its capital back. The suite asks for a dozen roasts
+and rejects any with a doubled space, an orphaned comma, a stray `friend`, or a
+lower-case opening.
+
+**The bot is optional.** Settings → *Show the Wether Bot*. Off removes the panel
+entirely — not an empty box with a heading — hides the settings that only matter
+to it, and generates nothing at all: no roast on load, no history written.
+
+**Every icon opens something.** V25 gave charts to the seven tiles with an
+hourly series. The other four have facts about a day rather than a shape across
+one, so they open the same sheet with a **table** instead: sun times with the
+day-length change from the day before, moon phase and illumination, the air's
+pollutant breakdown, and the climate average with its year span. A reading that
+isn't per-day — air quality, averages — offers no date strip, because offering
+to change a day that changes nothing is a lie about the data.
+
+The moon sheet says plainly that **moonrise and moonset are not published** by
+any source this app uses. A figure that looks authoritative and is half an hour
+out is worse than saying so.
+
+**The radar got real controls:**
+
+- **Rain opacity** and **loop speed** sliders. Both were fixed numbers; heavy
+  rain over a dark basemap is unreadable at one opacity and washed out at
+  another.
+- **Cross-fade between frames.** Ten-minute frames switched instantly make rain
+  appear to teleport; fading one out under the next reads as movement, which is
+  what the rain is doing. Nothing is ever drawn brighter than a single frame.
+- **A wall-clock time on the frame you're looking at.** The timeline said "NOW"
+  or "+20 min", which is a relation, not a time.
+- **Step a frame at a time** — buttons, or arrow keys when the scope has focus.
+  The interesting moment is usually between two frames.
+
+**Gemini saves and tests in one action.** It was two buttons, and the difference
+between "saved" and "working" is the entire question — a key that saves and then
+fails is exactly the case you need to hear about. Pasting a key and pressing
+**Enter** now saves it, checks it against Google, reports what actually
+happened, and switches the bot over if it worked.
+
+> **A note on verifying that one.** This sandbox's egress proxy closes the
+> browser's tunnel to `generativelanguage.googleapis.com` mid-exchange, so the
+> Gemini path cannot be exercised from a real browser here. What *was* verified
+> against Google directly: the key works, the model answers, and CORS is
+> configured for both the `x-goog-api-key` header and a browser `Origin`. The
+> in-browser wiring is covered by stubs.
 
 ### 📊 Every tile opens (V25)
 
@@ -809,7 +866,7 @@ dependencies** — `package.json` exists only for the tests.
 ## Project structure
 
 ```
-AitherWeather-V25/
+AitherWeather-V26/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
@@ -938,7 +995,7 @@ on the **Build desktop apps** action) and GitHub builds all three platforms
 natively and attaches them to a release:
 
 ```bash
-git tag v25.0.0 && git push origin v25.0.0
+git tag v26.0.0 && git push origin v26.0.0
 ```
 
 | Platform | Files |

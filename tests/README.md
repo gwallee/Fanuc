@@ -47,6 +47,7 @@ project and no global state is touched.
 | `v23.js` | Rain amounts, gusts, the measured barometric trend, climate normals (including the cases that must produce no tile), the hourly sentence, and the place footer |
 | `v24.js` | The optional Gemini bot: that no key is committed, that it is off by default, that every failure falls back to the local bot, and that the key never leaves the browser or the transfer code |
 | `v25.js` | The per-metric day sheets: that each reads its own series on the chosen day, that the past is drawn differently from the future, that summaries follow the data, and that a day with no data says so |
+| `v26.js` | A blank name (and roast lines that read as though they never had one), the bot switched off entirely, the four table sheets, and the radar's opacity, speed and frame stepping |
 
 ## Environment
 

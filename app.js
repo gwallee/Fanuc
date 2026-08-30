@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V25 — app.js
+   Aither Weather V26 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -209,6 +209,11 @@
       highF: at(d.temperature_2m_max, todayIdx - 1),
       lowF: at(d.temperature_2m_min, todayIdx - 1),
       code: at(d.weather_code, todayIdx - 1),
+      // The sun sheet compares today's day length with the day
+      // before, and today's "day before" is here rather than in the
+      // forecast array, which starts at today.
+      sunrise: at(d.sunrise, todayIdx - 1),
+      sunset: at(d.sunset, todayIdx - 1),
     } : null;
 
     // The forecast row starts today; yesterday is held separately.
@@ -587,11 +592,39 @@
     renderRoastLog();
   }
 
+  /* No name, no greeting.
+
+     The app used to ship a name, so a first run greeted somebody who
+     had never told it anything. A blank name now means the greeting
+     is not rendered at all rather than rendered empty or with a
+     stand-in — "Yo, ⚡" and "Yo, friend ⚡" are both worse than
+     nothing. */
+  /* The bot is a whole panel, and off means gone — not an empty box
+     with a heading. The roast history goes with it, because a log of
+     something that is switched off is clutter. */
+  function applyRoastVisibility() {
+    const on = WTWStorage.getSettings().showRoast !== false;
+    document.querySelectorAll('.roast-inline').forEach((el) => { el.hidden = !on; });
+    const autoGroup = $('autoRoastGroup');
+    if (autoGroup) autoGroup.hidden = !on;
+    const brainGroup = $('botBrainSelect');
+    if (brainGroup && brainGroup.closest('.setting-group')) {
+      brainGroup.closest('.setting-group').hidden = !on;
+    }
+    const gem = $('geminiGroup');
+    if (gem && !on) gem.hidden = true;
+    return on;
+  }
+
   function renderUsernameEverywhere() {
-    const { username } = WTWStorage.getSettings();
-    document.querySelectorAll('[data-username]').forEach((el) => { el.textContent = username; });
+    const name = (WTWStorage.getSettings().username || '').trim();
+    document.querySelectorAll('[data-username]').forEach((el) => { el.textContent = name; });
+    document.querySelectorAll('[data-greeting]').forEach((el) => { el.hidden = !name; });
+    document.querySelectorAll('[data-greeting-welcome]').forEach((el) => {
+      el.textContent = name ? `Welcome, ${name}!` : 'Welcome!';
+    });
     const input = $('usernameInput');
-    if (input && document.activeElement !== input) input.value = username;
+    if (input && document.activeElement !== input) input.value = name;
   }
 
   /* ---------------- Alerts ---------------- */
@@ -737,13 +770,36 @@
     };
     reflect();
 
-    if (save) save.addEventListener('click', () => {
+    /* Saving and testing are one action.
+
+       They were two, and the difference between "saved" and "working"
+       is the whole question — a key that saves and then fails is
+       exactly the case somebody needs to know about, and asking them
+       to click a second button to find out is asking them not to. */
+    const saveAndTest = async () => {
       const value = input.value.trim();
       if (!value) { setGeminiStatus('Nothing to save — paste a key first.', 'warn'); return; }
       if (value.length < 20) { setGeminiStatus('That looks too short to be a key.', 'warn'); return; }
       WTWGemini.setKey(value);
       reflect();
-      setGeminiStatus('Saved in this browser. Try "Test the key".', 'ok');
+      setGeminiStatus('Saved. Checking it with Google…', '');
+      const result = await WTWGemini.testKey();
+      setGeminiStatus(result.ok
+        ? `Working — the bot is on Gemini now. It said: "${result.sample}"`
+        : `Saved, but it did not work: ${result.reason}`, result.ok ? 'ok' : 'warn');
+      if (result.ok) {
+        // A key that works is a key somebody wants used.
+        WTWStorage.saveSettings({ botBrain: 'gemini' });
+        const sel = $('botBrainSelect');
+        if (sel) sel.value = 'gemini';
+        if (state.weather) doRoast();
+      }
+    };
+
+    if (save) save.addEventListener('click', saveAndTest);
+    // Enter is what people press after pasting a key.
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); saveAndTest(); }
     });
 
     if (test) test.addEventListener('click', async () => {
@@ -1052,6 +1108,8 @@
       return;
     }
 
+    if (WTWStorage.getSettings().showRoast === false) return;
+
     const local = LocalAI.generate(state.weather);
     if (!brainIsGemini()) {
       showRoast(local, 'Right now');
@@ -1091,6 +1149,7 @@
       gemini: 'Gemini',
       local: 'Local · Gemini unreachable',
       badkey: 'Local · Gemini key rejected',
+      nokey: 'Local · add a Gemini key in Settings',
       offline: 'Local',
     }[kind] || '';
     el.textContent = text;
@@ -1548,10 +1607,14 @@
         WTWStorage.saveSettings({ botBrain: brainSel.value });
         showGeminiGroup();
         if (brainSel.value === 'gemini' && window.WTWGemini && !WTWGemini.hasKey()) {
-          setGeminiStatus('Add a key below and the bot will start using it.', 'warn');
+          setGeminiStatus('Paste your key below and press Enter.', 'warn');
+          const box = $('geminiKeyInput');
+          if (box) box.focus();
         } else {
           setGeminiStatus('', '');
         }
+        setBotBadge(brainSel.value === 'gemini'
+          ? (window.WTWGemini && WTWGemini.hasKey() ? 'gemini' : 'nokey') : '');
         toast(brainSel.value === 'gemini' ? 'Bot brain: Gemini' : 'Bot brain: built-in');
       });
     }
@@ -1588,6 +1651,42 @@
         toast(`${noun}: ${el.options[el.selectedIndex].text}`);
       });
     });
+
+    /* ---- The bot, on or off entirely ---- */
+
+    const showRoastT = $('showRoastToggle');
+    if (showRoastT) {
+      showRoastT.checked = s.showRoast !== false;
+      showRoastT.addEventListener('change', () => {
+        WTWStorage.saveSettings({ showRoast: showRoastT.checked });
+        applyRoastVisibility();
+        toast(showRoastT.checked ? 'Wether Bot on' : 'Wether Bot off');
+        if (showRoastT.checked && state.weather &&
+            WTWStorage.getSettings().autoRoast) doRoast();
+      });
+    }
+
+    /* ---- Radar: how it looks and how fast it runs ---- */
+
+    const bindRadarSlider = (id, key, outId, format) => {
+      const el = $(id);
+      const out = $(outId);
+      if (!el) return;
+      el.value = String(s[key]);
+      if (out) out.textContent = format(Number(el.value));
+      el.addEventListener('input', () => {
+        const value = Number(el.value);
+        if (out) out.textContent = format(value);
+        WTWStorage.saveSettings({ [key]: value });
+        // Repaint at once: a slider you have to wait for is a slider
+        // people assume is broken.
+        if (window.WTWRadar && WTWRadar.refresh) WTWRadar.redraw();
+      });
+    };
+    bindRadarSlider('radarOpacity', 'radarOpacity', 'radarOpacityOut',
+      (v) => `${Math.round(v * 100)}%`);
+    bindRadarSlider('radarSpeed', 'radarSpeed', 'radarSpeedOut',
+      (v) => `${v}×`);
 
     const sceneT = $('sceneToggle');
     if (sceneT) {
@@ -2278,6 +2377,22 @@
     });
     $('radarLocateBtn').addEventListener('click', handleGeolocate);
     $('radarZoomIn').addEventListener('click', () => WTWRadar.zoom('in'));
+    const stepBack = $('radarStepBack');
+    const stepFwd = $('radarStepFwd');
+    if (stepBack) stepBack.addEventListener('click', () => WTWRadar.step(-1));
+    if (stepFwd) stepFwd.addEventListener('click', () => WTWRadar.step(1));
+
+    /* Arrow keys step the loop, but only when the scope has focus —
+       otherwise they would fight the page's own scrolling and every
+       other arrow-key control on it. */
+    const scope = $('radarCanvas');
+    if (scope) {
+      scope.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        e.preventDefault();
+        WTWRadar.step(e.key === 'ArrowLeft' ? -1 : 1);
+      });
+    }
     $('radarZoomOut').addEventListener('click', () => WTWRadar.zoom('out'));
     $('radarRecenter').addEventListener('click', () => WTWRadar.recenter());
     $('radarFullscreenBtn').addEventListener('click', () => WTWRadar.toggleFullscreen());
@@ -2346,6 +2461,7 @@
   function init() {
     WTWThemes.init();
     applyLook();
+    applyRoastVisibility();
     if (window.WTWIcons && WTWIcons.paintUI) WTWIcons.paintUI(document);
     renderUsernameEverywhere();
     initSettingsUI();
@@ -2369,20 +2485,23 @@
          only answers a mouse is not a button. */
       const grid = $('tileGrid');
       const openFor = (el) => {
-        const host = el.closest('[data-metric]');
+        const host = el.closest('[data-metric], [data-sheet]');
         if (!host) return;
-        WTWMetricSheet.open(host.dataset.metric, {
+        WTWMetricSheet.open(host.dataset.metric || host.dataset.sheet, {
           daily: state.daily,
           hourlyRaw: state.hourlyRaw,
           detail: state.detail,
           weather: state.weather,
+          air: state.air,
+          normal: state.normal,
+          yesterday: state.yesterday,
         });
       };
       if (grid) {
         grid.addEventListener('click', (e) => openFor(e.target));
         grid.addEventListener('keydown', (e) => {
           if (e.key !== 'Enter' && e.key !== ' ') return;
-          if (!e.target.closest('[data-metric]')) return;
+          if (!e.target.closest('[data-metric], [data-sheet]')) return;
           e.preventDefault();
           openFor(e.target);
         });

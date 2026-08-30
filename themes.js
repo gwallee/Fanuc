@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V25 — themes.js
+   Aither Weather V26 — themes.js
    Theme switching via a data-theme attribute on <html>.
    All actual colors live in styles.css as CSS variables, so
    adding a theme = one CSS block + one entry in config.js.

@@ -198,12 +198,17 @@ function omBody() {
     await page.waitForTimeout(1500);
     return (await page.textContent('.brand-greeting strong')) === 'Rain Boy';
   });
-  await check('logging out hands the default name back', async () => {
+  await check('logging out takes the adopted name away with it', async () => {
     await page.click('#settingsBtn');
     await page.waitForTimeout(500);
     await page.click('#signOutBtn');
     await page.waitForTimeout(600);
-    return (await page.textContent('.brand-greeting strong')) === 'DJTheBest' &&
+    // There is no stock name to hand back any more: an app that has
+    // not been told a name shows no greeting at all rather than one
+    // addressed to somebody who never gave it one.
+    const name = (await page.textContent('.brand-greeting strong')).trim();
+    const greeting = await page.locator('[data-greeting]').first();
+    return name === '' && !(await greeting.isVisible()) &&
            await page.isVisible('#accountSignedOut');
   });
   await check('signing back in keeps the same device account', async () => {
@@ -245,8 +250,9 @@ function omBody() {
   await check('neither provider script is fetched when unconfigured', async () =>
     page.evaluate(() => !document.querySelector('script[src*="accounts.google.com"]') &&
                         !document.querySelector('script[src*="msauth.net"]')));
-  await check('the default username is untouched', async () =>
-    (await page.textContent('.brand-greeting strong')) === 'DJTheBest');
+  await check('no name is invented for somebody who has not set one', async () =>
+    (await page.textContent('.brand-greeting strong')).trim() === '' &&
+    !(await page.locator('[data-greeting]').first().isVisible()));
   await ctx.close();
 
   console.log('\n=== Both configured: two ways in ===');
@@ -320,7 +326,7 @@ function omBody() {
     await page.click('#signOutBtn');
     await page.waitForTimeout(700);
     return await page.isVisible('#accountSignedOut') &&
-           (await page.textContent('.brand-greeting strong')) === 'DJTheBest';
+           (await page.textContent('.brand-greeting strong')).trim() === '';
   });
   await check("logging out drops Microsoft's cached account", async () =>
     page.evaluate(() => window.__msalRemoved === true));

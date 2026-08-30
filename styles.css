@@ -402,6 +402,59 @@ body.loading { cursor: progress; }
 .tile-action:hover { border-color: var(--accent); }
 .tile-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* Sheets whose facts are a table rather than a curve. */
+.sheet-rows { margin: 0.4rem 0 0; font-size: 0.95rem; }
+.sheet-rows > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--card-border);
+}
+.sheet-rows > div:last-child { border-bottom: 0; }
+.sheet-rows dt { color: var(--text-dim); }
+.sheet-rows dd { margin: 0; font-weight: 600; text-align: right; }
+
+/* ---------------- Radar controls ---------------- */
+
+/* The wall-clock time of the frame on screen. The timeline label says
+   NOW or +20 min, which is a relation; this is the time. */
+.frame-clock {
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  letter-spacing: 0.4px;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+  white-space: nowrap;
+}
+.frame-clock[data-kind="forecast"] { color: var(--accent-2); border-color: var(--accent-2); }
+
+.radar-sliders {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+}
+.radar-slider {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 200px;
+  min-width: 0;
+  font-size: 0.76rem;
+  color: var(--text-dim);
+}
+.radar-slider > span { flex: 0 0 auto; white-space: nowrap; }
+.radar-slider input[type="range"] { flex: 1 1 auto; min-width: 0; }
+.radar-slider output {
+  flex: 0 0 3ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
 /* The UV bar: the published 0–11+ scale, with a dot at the reading. */
 .tile-scale {
   position: relative;

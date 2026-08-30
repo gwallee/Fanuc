@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0e17" />
-  <meta name="description" content="Aither Weather V25 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
-  <title>Aither Weather V25 ⚡🌩️</title>
+  <meta name="description" content="Aither Weather V26 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
+  <title>Aither Weather V26 ⚡🌩️</title>
   <link rel="icon" type="image/svg+xml" href="logo.svg" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="manifest" href="manifest.json" />
@@ -89,7 +89,7 @@
         <h1>Aither Weather <span class="version-badge" id="appVersion">V13</span></h1>
         <p class="brand-greeting">
           <img class="brand-avatar" id="brandAvatar" alt="" width="20" height="20" hidden />
-          Yo, <strong data-username>DJTheBest</strong> ⚡
+          <span class="greeting-body" data-greeting hidden>Yo, <strong data-username></strong> ⚡</span>
         </p>
       </div>
     </div>
@@ -126,7 +126,7 @@
   <!-- ================= Welcome (first run) ================= -->
   <section class="welcome-panel" id="welcomePanel" hidden>
     <img src="logo.svg" alt="" class="welcome-logo" />
-    <h2>Welcome, <span data-username>DJTheBest</span>!</h2>
+    <h2><span data-greeting-welcome>Welcome!</span></h2>
     <p>Search for a city or ZIP code, or use your location to get started.
        Fair warning: the forecast comes with attitude.</p>
     <div class="welcome-actions">
@@ -273,7 +273,7 @@
           <p class="tile-note">The dew point is <span id="wxDew">--</span> right now.</p>
         </article>
 
-        <article class="tile" data-tile="sun">
+        <article class="tile tile-action" data-tile="sun" data-sheet="sun" role="button" tabindex="0">
           <h3 class="tile-head"><span class="btn-ico" data-ui-icon="sunset" data-ui-size="15"></span>Sunset</h3>
           <p class="tile-value" id="wxSunset">--</p>
           <div class="sun-arc-wrap" aria-hidden="true">
@@ -282,7 +282,7 @@
           <p class="tile-note">Sunrise: <span id="wxSunrise">--</span></p>
         </article>
 
-        <article class="tile tile-wide" data-tile="moon" id="moonTile" hidden>
+        <article class="tile tile-wide tile-action" data-tile="moon" id="moonTile" data-sheet="moon" role="button" tabindex="0" hidden>
           <h3 class="tile-head"><span class="btn-ico" data-ui-icon="moon" data-ui-size="15"></span><span id="moonName">Moon</span></h3>
           <div class="moon-tile-body">
             <dl class="moon-facts">
@@ -294,7 +294,7 @@
           </div>
         </article>
 
-        <article class="tile tile-wide" data-tile="aqi" id="aqiTile" hidden>
+        <article class="tile tile-wide tile-action" data-tile="aqi" id="aqiTile" data-sheet="aqi" role="button" tabindex="0" hidden>
           <h3 class="tile-head"><span class="btn-ico" data-ui-icon="aqi" data-ui-size="15"></span>Air quality</h3>
           <p class="tile-value"><span id="aqiBadge" class="aqi-badge aqi-none">--</span></p>
           <p class="tile-word" id="aqiLabel">--</p>
@@ -304,7 +304,7 @@
           <p class="tile-note" id="aqiAdvice"></p>
         </article>
 
-        <article class="tile" data-tile="averages" id="averagesTile" hidden>
+        <article class="tile tile-action" data-tile="averages" id="averagesTile" data-sheet="averages" role="button" tabindex="0" hidden>
           <h3 class="tile-head"><span class="btn-ico" data-ui-icon="chart" data-ui-size="15"></span>Averages</h3>
           <p class="tile-value" id="avgDelta">--</p>
           <p class="tile-word" id="avgWord"></p>
@@ -373,7 +373,7 @@
             <span class="roast-brain" id="botBadge" hidden></span>
           </span>
         </div>
-        <p class="roast-text" id="roastText">Load some weather and I'll tell you what I really think, <span data-username>DJTheBest</span>.</p>
+        <p class="roast-text" id="roastText">Load some weather and I'll tell you what I really think.</p>
         <div class="roast-actions">
           <button type="button" id="roastBtn" class="btn btn-primary"><span class="btn-ico" data-ui-icon="flame"></span> Roast me again</button>
           <button type="button" id="shareRoastBtn" class="btn" title="Save or share this roast as an image"><span class="btn-ico" data-ui-icon="share"></span> Share</button>
@@ -417,10 +417,15 @@
         <input type="range" id="radarTimeline" min="0" max="60" value="60" step="1" aria-label="Radar timeline" />
         <span class="timeline-caption timeline-end" id="radarTimelineEnd">now</span>
         <span class="timeline-label" id="radarTimeLabel">NOW</span>
+        <span class="frame-clock" id="radarFrameClock" hidden></span>
       </div>
 
       <div class="radar-controls">
+        <button type="button" id="radarStepBack" class="btn btn-small"
+                title="Previous frame" aria-label="Previous frame"><span class="btn-ico" data-ui-icon="stepBack" data-ui-size="15"></span></button>
         <button type="button" id="radarPlayBtn" class="btn" aria-pressed="true"><span class="btn-ico" data-ui-icon="pause"></span> Pause</button>
+        <button type="button" id="radarStepFwd" class="btn btn-small"
+                title="Next frame" aria-label="Next frame"><span class="btn-ico" data-ui-icon="stepFwd" data-ui-size="15"></span></button>
         <button type="button" id="radarStopBtn" class="btn"><span class="btn-ico" data-ui-icon="stop"></span> Stop</button>
         <button type="button" id="radarRefreshBtn" class="btn"><span class="btn-ico" data-ui-icon="refresh"></span> Refresh</button>
         <button type="button" id="radarLocateBtn" class="btn"><span class="btn-ico" data-ui-icon="location"></span> My Location</button>
@@ -431,7 +436,19 @@
         <button type="button" id="radarZoomIn" class="btn btn-small" aria-label="Zoom in"><span class="btn-ico" data-ui-icon="plus" data-ui-size="15"></span></button>
         <button type="button" id="radarRecenter" class="btn btn-small"><span class="btn-ico" data-ui-icon="target" data-ui-size="15"></span> Recenter</button>
       </div>
-      <p class="radar-attribution">Tap the scope to toggle fullscreen · drag to pan. Basemap © OpenStreetMap contributors © CARTO.</p>
+      <div class="radar-sliders">
+        <label class="radar-slider" for="radarOpacity">
+          <span>Rain opacity</span>
+          <input type="range" id="radarOpacity" min="0.2" max="1" step="0.05" value="0.85" />
+          <output id="radarOpacityOut">85%</output>
+        </label>
+        <label class="radar-slider" for="radarSpeed">
+          <span>Loop speed</span>
+          <input type="range" id="radarSpeed" min="0.25" max="4" step="0.25" value="1" />
+          <output id="radarSpeedOut">1×</output>
+        </label>
+      </div>
+      <p class="radar-attribution">Arrow keys step a frame at a time. drag to pan. Basemap © OpenStreetMap contributors © CARTO.</p>
     </section>
 
     <!-- Air & sky -->
@@ -620,6 +637,15 @@
     </div>
 
     <div class="setting-group">
+      <label class="toggle-row" for="showRoastToggle">
+        <span>Show the Wether Bot</span>
+        <input type="checkbox" id="showRoastToggle" />
+      </label>
+      <p class="setting-hint">Off hides the bot entirely — no panel, no roasts, no
+        history. The weather is still the weather.</p>
+    </div>
+
+    <div class="setting-group" id="autoRoastGroup">
       <label class="toggle-row" for="autoRoastToggle">
         <span>Automatic weather roasts</span>
         <input type="checkbox" id="autoRoastToggle" />
@@ -786,7 +812,7 @@
       <label for="localNameInput">Create your account</label>
       <div class="setting-row">
         <input type="text" id="localNameInput" maxlength="24" autocomplete="nickname"
-               placeholder="Your name" />
+               placeholder="Type a name" />
         <button type="submit" id="localSignInBtn" class="btn btn-primary btn-small">Create</button>
       </div>
       <div class="avatar-picker" id="avatarPicker" role="radiogroup"
@@ -846,6 +872,9 @@
 
     <div class="sheet-chart-wrap">
       <canvas id="sheetChart" aria-label="Hour by hour for this day"></canvas>
+      <!-- Sheets whose facts are not a shape over the day use this
+           instead of the chart: sun times, moon phase, pollutants. -->
+      <dl class="sheet-rows" id="sheetRows" hidden></dl>
       <p class="sheet-empty" id="sheetEmpty" hidden></p>
     </div>
 

@@ -64,6 +64,7 @@ function omBody() {
 (async () => {
   const browser = await chromium.launch({ executablePath: BROWSER });
   let failures = 0;
+  const FAKE_KEY_RE = FAKE_KEY;
   const check = async (n, fn) => {
     try { const ok = await fn(); console.log((ok ? 'PASS' : 'FAIL') + ' - ' + n); if (!ok) failures++; }
     catch (e) { console.log('FAIL - ' + n + ' (' + e.message.split('\n')[0] + ')'); failures++; }
@@ -319,11 +320,26 @@ function omBody() {
     await page.waitForTimeout(300);
     return /too short/i.test(await page.textContent('#geminiStatus'));
   });
-  await check('a real-looking key saves', async () => {
+  await check('a real-looking key saves and is checked in one action', async () => {
+    // Saving and testing were two buttons. The difference between
+    // "saved" and "working" is the whole question, so saving now
+    // tests, and the status reports what actually happened.
     await page.fill('#geminiKeyInput', FAKE_KEY);
     await page.click('#geminiSaveBtn');
-    await page.waitForTimeout(400);
-    return /saved/i.test(await page.textContent('#geminiStatus'));
+    await page.waitForTimeout(2000);
+    const status = await page.textContent('#geminiStatus');
+    const stored = await page.evaluate(() => localStorage.getItem('aither.gemini.key'));
+    return stored === FAKE_KEY && /working/i.test(status);
+  });
+  await check('a key that works switches the bot over without a second step', async () =>
+    (await page.inputValue('#botBrainSelect')) === 'gemini');
+  await check('and pressing Enter in the field does the same thing', async () => {
+    await page.click('#geminiClearBtn');
+    await page.waitForTimeout(300);
+    await page.fill('#geminiKeyInput', FAKE_KEY);
+    await page.press('#geminiKeyInput', 'Enter');
+    await page.waitForTimeout(2000);
+    return /working/i.test(await page.textContent('#geminiStatus'));
   });
   await check('and is never shown back in full', async () => {
     const value = await page.inputValue('#geminiKeyInput');

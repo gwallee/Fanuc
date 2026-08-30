@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V25 — radar.js
+   Aither Weather V26 — radar.js
    Canvas radar scope with a real basemap underneath.
 
    Layers, bottom to top, all projected in EPSG:3857 so they align:
@@ -22,8 +22,25 @@ const WTWRadar = (() => {
   const mapCfg = () => (window.WTW_CONFIG && WTW_CONFIG.map) || {};
   const imgCfg = () => (window.WTW_CONFIG && WTW_CONFIG.radarImagery) || { enabled: false };
 
+  /* How strongly the imagery is painted, and how fast the loop runs.
+     Both were fixed numbers; both are the sort of thing people
+     genuinely want to change — heavy rain over a dark basemap is
+     unreadable at one opacity and washed out at another. */
+  function radarOpacity() {
+    const v = Number((window.WTWStorage && WTWStorage.getSettings().radarOpacity));
+    return isFinite(v) && v >= 0.2 && v <= 1 ? v : 0.85;
+  }
+
+  function radarSpeed() {
+    const v = Number((window.WTWStorage && WTWStorage.getSettings().radarSpeed));
+    return isFinite(v) && v >= 0.25 && v <= 4 ? v : 1;
+  }
+
   const state = {
     canvas: null, ctx: null, dpr: 1, width: 0, height: 0,
+    // How far between the previous frame and the current one the
+    // cross-fade has travelled, 0..1.
+    fade: 1, prevIndex: 0,
     playing: false, rafId: null, sweepAngle: 0, lastFrameTime: 0,
     timelineMinute: 60, scrubbing: false,
     cells: [], locationLabel: 'No location', weatherSeed: null,
@@ -268,9 +285,26 @@ const WTWRadar = (() => {
       const i = Math.min(state.frameIndex, state.frames.length - 1);
       const frame = state.frames[i];
       if (frame) {
+        const base = radarOpacity();
+        /* Cross-fade rather than cut.
+
+           Ten-minute frames switched instantly make rain appear to
+           teleport; fading the outgoing frame out under the incoming
+           one reads as movement, which is what the rain is actually
+           doing. The fade is only over the frame's own opacity, so
+           nothing is ever drawn brighter than a single frame would
+           be. */
+        const prev = state.frames[Math.min(state.prevIndex, state.frames.length - 1)];
+        if (prev && prev !== frame && state.fade < 1) {
+          ctx.globalAlpha = (prev.forecast ? base * 0.73 : base) * (1 - state.fade);
+          WTWMap.drawTiles(ctx, view, size, originX, originY,
+            (z, x, y) => WTWRadarSource.tileUrl(state.tileHost, prev.path, z, x, y),
+            () => draw(), { maxZoom: 10 });
+        }
         // A prediction is drawn a shade lighter than an observation, so
         // the difference is visible on the map and not only in the label.
-        ctx.globalAlpha = frame.forecast ? 0.62 : 0.85;
+        ctx.globalAlpha = (frame.forecast ? base * 0.73 : base) *
+          (prev && prev !== frame ? state.fade : 1);
         WTWMap.drawTiles(ctx, view, size, originX, originY,
           (z, x, y) => WTWRadarSource.tileUrl(state.tileHost, frame.path, z, x, y),
           () => draw(), { maxZoom: 10 });
@@ -280,7 +314,7 @@ const WTWRadar = (() => {
     } else if (state.source === 'nws' && state.frames.length) {
       const frame = state.frames[Math.min(state.frameIndex, state.frames.length - 1)];
       if (frame && frame.img) {
-        ctx.globalAlpha = 0.85;
+        ctx.globalAlpha = radarOpacity();
         ctx.drawImage(frame.img, originX, originY, size, size);
         ctx.globalAlpha = 1;
       }
@@ -505,10 +539,17 @@ const WTWRadar = (() => {
 
       if (hasTimestampedFrames() && state.frames.length > 1) {
         if (!state.scrubbing) {
+          const stepMs = (cfg().framePlaybackMs || 750) / radarSpeed();
           state.frameAccum += dt * 1000;
-          const stepMs = cfg().framePlaybackMs || 750;
+          // The fade runs over the first third of each frame's time,
+          // so a slow playback speed does not leave two frames blended
+          // together for a second and a half.
+          const fadeMs = Math.min(260, stepMs * 0.34);
+          state.fade = fadeMs > 0 ? Math.min(1, state.frameAccum / fadeMs) : 1;
           if (state.frameAccum >= stepMs) {
             state.frameAccum = 0;
+            state.fade = 0;
+            state.prevIndex = state.frameIndex;
             state.frameIndex = (state.frameIndex + 1) % state.frames.length;
             updateSourceBadge();
             syncTimelineUI();
@@ -671,6 +712,39 @@ const WTWRadar = (() => {
     return back <= 0 ? 'NOW' : `-${back} min`;
   }
 
+  /* The wall-clock time of the frame being shown, always visible.
+
+     The timeline label says "NOW" or "+20 min", which is a relation
+     rather than a time. On a loop that runs while you watch it, the
+     question "what am I actually looking at" needs an answer in
+     hours and minutes. */
+  function syncFrameClock() {
+    const el = document.getElementById('radarFrameClock');
+    if (!el) return;
+    if (!hasTimestampedFrames()) { el.hidden = true; el.textContent = ''; return; }
+    const frame = state.frames[Math.min(state.frameIndex, state.frames.length - 1)];
+    if (!frame || !frame.time) { el.hidden = true; return; }
+    el.hidden = false;
+    el.textContent = clockText(frame.time);
+    el.dataset.kind = frame.forecast ? 'forecast' : 'observed';
+  }
+
+  /* Stepping one frame at a time. A loop you can only watch is worse
+     than one you can walk through — the interesting moment is usually
+     between two frames. */
+  function step(delta) {
+    if (!state.frames.length) return;
+    stop();
+    state.prevIndex = state.frameIndex;
+    state.fade = 1;
+    const n = state.frames.length;
+    state.frameIndex = ((state.frameIndex + delta) % n + n) % n;
+    state.frameAccum = 0;
+    updateSourceBadge();
+    syncTimelineUI();
+    draw();
+  }
+
   function configureTimeline() {
     const slider = document.getElementById('radarTimeline');
     const caption = document.querySelector('.timeline-caption');
@@ -716,6 +790,7 @@ const WTWRadar = (() => {
   }
 
   function syncTimelineUI() {
+    syncFrameClock();
     const slider = document.getElementById('radarTimeline');
     const label = document.getElementById('radarTimeLabel');
     if (slider && !state.scrubbing) {
@@ -1006,7 +1081,10 @@ const WTWRadar = (() => {
   }
 
   return {
-    init, play, stop, toggle, refresh, setLocation, setAlerts, zoom, recenter,
+    init, play, stop, toggle, refresh, setLocation, setAlerts, zoom, recenter, step,
+    // Repaint without refetching: the opacity slider changes how the
+    // frames are drawn, not which frames they are.
+    redraw: () => draw(),
     onThemeChange, onUnitsChange, enterFullscreen, exitFullscreen, toggleFullscreen,
     isFullscreen: () => state.fullscreen,
     isAnimating: () => state.rafId !== null,
@@ -1020,6 +1098,9 @@ const WTWRadar = (() => {
       rangeKm: state.rangeKm,
       source: state.source,
       frameCount: state.frames.length,
+      frameIndex: state.frameIndex,
+      opacity: radarOpacity(),
+      speed: radarSpeed(),
       lastRefreshAt: state.lastRefreshAt,
     }),
   };

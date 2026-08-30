@@ -1,21 +1,29 @@
 /* ============================================================
-   Aither Weather V25 — config.js
+   Aither Weather V26 — config.js
    Central configuration. No API keys required, ever.
    ============================================================ */
 
 const WTW_CONFIG = {
   app: {
     name: 'Aither Weather',
-    version: 'V25',
+    version: 'V26',
     tagline: 'Weather with an attitude problem.',
   },
 
   // Default settings applied on first run (user changes are
   // persisted by storage.js and win over these).
   defaults: {
-    username: 'DJTheBest',
+    /* Blank on purpose. The app used to ship a name, which meant
+       every first-run screen greeted somebody who had never told it
+       anything — and the bot addressed them by a name they had not
+       chosen. Until a name is entered the greeting simply is not
+       shown, and the bot writes lines that do not need one. */
+    username: '',
     personality: 'sassy',        // friendly | sassy | rude | brutal
     botBrain: 'local',           // local | gemini — local needs no key
+    showRoast: true,             // the Wether Bot panel at all
+    radarOpacity: 0.85,          // how strongly rain is painted
+    radarSpeed: 1,               // loop playback multiplier
     autoRoast: true,             // roast automatically after each weather load
     theme: 'neon-dark',          // neon-dark | midnight | light
     units: 'imperial',           // imperial | metric

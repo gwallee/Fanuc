@@ -62,8 +62,11 @@ const BROWSER = process.env.PLAYWRIGHT_CHROMIUM || undefined;
   };
 
   await check('welcome panel visible on first run', () => page.isVisible('#welcomePanel'));
-  await check('username default rendered', async () =>
-    (await page.textContent('.brand-greeting strong')) === 'DJTheBest');
+  await check('no greeting until a name is given', async () =>
+    // The app shipped a name until V26, which meant a first run
+    // greeted somebody who had never told it anything.
+    (await page.textContent('.brand-greeting strong')).trim() === '' &&
+    !(await page.locator('[data-greeting]').first().isVisible()));
   await check('radar status SCANNING (autoplay)', async () =>
     (await page.textContent('#radarStatusText')) === 'SCANNING');
 
