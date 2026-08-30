@@ -1,4 +1,4 @@
-# Aither Weather V27 ⚡🌩️
+# Aither Weather V28 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -158,6 +158,58 @@ Fullscreen button to come back.
 - Keyboard accessible: the scope is a focusable control, `Enter`/`Space`
   toggles it
 - Set `radar.fullscreenOnTap = false` in `config.js` to require the button
+
+### 🖥️ A quieter radar, and a desktop app that is actually ahead (V28)
+
+**The radar stopped narrating itself.** It printed STANDBY, SCANNING, SIMULATED
+or LIVE RADAR across the top of a weather map, and said the same moment in time
+four ways underneath. Those are facts about the app, not about the weather.
+
+Now: the state is a coloured dot, and the words stay in the DOM for a screen
+reader, which cannot see a dot. The source badge appears **only when there is
+something to say** — a prediction, stale imagery, or a simulation. A live radar
+says nothing, because a live radar is the expected case.
+
+**The legend names its bands**, not just its ends. "Light … Heavy" tells you the
+bar goes up; naming the middle tells you what the green you are looking at
+actually is. It moved off a hover `title` — which a touch device never shows —
+onto the legend itself.
+
+**The pin shows the weather**, not just a number: temperature *and* the
+condition, in the same words the hero uses. The radar was building that string
+from the icon set's internal name and saying "Rain light"; the app owns the
+wording now.
+
+**The desktop app updates itself from GitHub.** `electron-updater` reads the
+`latest*.yml` feed that electron-builder attaches to each release. It checks on
+launch, tells you the version and what changed, and **downloads nothing until
+you say so** — a weather app quietly pulling ninety megabytes over a tethered
+connection is not a courtesy.
+
+**And the desktop build is ahead of the browser**, with four things a tab cannot
+do:
+
+| | Browser | Desktop |
+| --- | --- | --- |
+| Replace its own version | reload only | downloads and installs from GitHub |
+| Temperature in the system tray | — | beside the clock, window closed |
+| Severe-alert notifications | only while a tab is open, after a permission prompt | native, window closed |
+| Launch at login · always on top · close to tray | — | yes |
+
+The security posture does not move for any of it: `contextIsolation` on,
+`nodeIntegration` off, `sandbox` on, and a preload that exposes a small **named**
+surface rather than `ipcRenderer`. Nothing on that surface takes a path, a URL or
+a command from the page.
+
+In a browser, `desktop-extras.js` **removes** the desktop settings section
+rather than leaving a panel of switches that do nothing, and every one of its
+helpers is a no-op. The suite asserts both — including that calling them with no
+bridge present throws nothing.
+
+> **Not verified here.** This sandbox has no display and cannot run Electron, so
+> the desktop code is covered by unit-level assertions on the configuration and
+> by a stand-in bridge in the browser tests. The update flow itself has not been
+> exercised against a real GitHub release.
 
 ### 🗺️ A map, and the frames back (V27)
 
@@ -910,7 +962,7 @@ dependencies** — `package.json` exists only for the tests.
 ## Project structure
 
 ```
-AitherWeather-V27/
+AitherWeather-V28/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
@@ -938,6 +990,7 @@ AitherWeather-V27/
 ├── normals.js      # Climate normals from the key-less Open-Meteo archive
 ├── gemini.js       # Optional: the bot with your own Google Gemini key
 ├── metricsheet.js  # The per-metric day sheet and its chart engine
+├── desktop-extras.js # Desktop-only powers; inert in a browser
 ├── icons/          # PWA icons (192, 512, maskable)
 ├── config.js       # Central configuration + defaults
 ├── storage.js      # Safe localStorage wrapper
@@ -1039,7 +1092,7 @@ on the **Build desktop apps** action) and GitHub builds all three platforms
 natively and attaches them to a release:
 
 ```bash
-git tag v27.0.0 && git push origin v27.0.0
+git tag v28.0.0 && git push origin v28.0.0
 ```
 
 | Platform | Files |

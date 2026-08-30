@@ -48,6 +48,7 @@ project and no global state is touched.
 | `v24.js` | The optional Gemini bot: that no key is committed, that it is off by default, that every failure falls back to the local bot, and that the key never leaves the browser or the transfer code |
 | `v25.js` | The per-metric day sheets: that each reads its own series on the chosen day, that the past is drawn differently from the future, that summaries follow the data, and that a day with no data says so |
 | `v26.js` | A blank name (and roast lines that read as though they never had one), the bot switched off entirely, the four table sheets, and the radar's opacity, speed and frame stepping |
+| `v28.js` | The radar saying only what is worth saying, and the desktop build: GitHub updates that ask first, tray weather, desktop preferences, and a browser left exactly as it was |
 
 ## Environment
 

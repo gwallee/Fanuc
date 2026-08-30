@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag (e.g. v27.0.0)'
+        description: 'Release tag (e.g. v28.0.0)'
         required: true
-        default: 'v27.0.0'
+        default: 'v28.0.0'
       prerelease:
         description: 'Mark as a pre-release'
         type: boolean
@@ -36,12 +36,16 @@ jobs:
             target: --win
             artifacts: |
               desktop/dist/*.exe
+              desktop/dist/*.blockmap
+              desktop/dist/latest.yml
           - os: macos-latest
             name: macOS (.dmg)
             target: --mac
             artifacts: |
               desktop/dist/*.dmg
               desktop/dist/*.zip
+              desktop/dist/*.blockmap
+              desktop/dist/latest-mac.yml
           - os: ubuntu-latest
             name: Linux (AppImage, deb, rpm)
             target: --linux
@@ -50,6 +54,7 @@ jobs:
               desktop/dist/*.deb
               desktop/dist/*.rpm
               desktop/dist/*.tar.gz
+              desktop/dist/latest-linux.yml
 
     steps:
       - uses: actions/checkout@v4
@@ -74,6 +79,10 @@ jobs:
         env:
           # Unsigned builds: no certificates are stored in this repo.
           CSC_IDENTITY_AUTO_DISCOVERY: false
+        # --publish never still writes latest*.yml when a publish
+        # provider is configured, which is what the in-app updater
+        # reads from the release. The release job below does the
+        # actual uploading.
         run: npx electron-builder ${{ matrix.target }} --publish never
 
       - uses: actions/upload-artifact@v4
@@ -108,18 +117,23 @@ jobs:
           # Use the tag that triggered this run, or the one supplied to
           # the manual dispatch (the action creates it if it is new).
           tag_name: ${{ github.event.inputs.version || github.ref_name }}
-          name: What the Wether ${{ github.event.inputs.version || github.ref_name }}
+          name: Aither Weather ${{ github.event.inputs.version || github.ref_name }}
           prerelease: ${{ github.event.inputs.prerelease == 'true' }}
           files: artifacts/**/*
           generate_release_notes: true
           body: |
-            Desktop builds of What the Wether.
+            Desktop builds of Aither Weather.
 
             | Platform | File |
             | --- | --- |
-            | Windows | `WhatTheWether-Setup-*.exe` (installer) or `WhatTheWether-Portable-*.exe` |
-            | macOS | `WhatTheWether-*.dmg` |
-            | Linux | `WhatTheWether-*.AppImage`, `.deb`, or `.rpm` |
+            | Windows | `AitherWeather-Setup-*.exe` (installer) or `AitherWeather-Portable-*.exe` |
+            | macOS | `AitherWeather-*.dmg` |
+            | Linux | `AitherWeather-*.AppImage`, `.deb`, or `.rpm` |
+
+            Installed copies update themselves from these releases: the app
+            checks on launch, tells you what is new, and downloads only when
+            you say so. The `latest*.yml` files are that update feed — leave
+            them attached.
 
             These builds are **unsigned**, so Windows SmartScreen and macOS
             Gatekeeper will warn on first launch. See the README for how to

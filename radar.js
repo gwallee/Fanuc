@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V27 — radar.js
+   Aither Weather V28 — radar.js
    Canvas radar scope with a real basemap underneath.
 
    Layers, bottom to top, all projected in EPSG:3857 so they align:
@@ -549,15 +549,26 @@ const WTWRadar = (() => {
     const p = WTWMap.project(state.coords.lat, state.coords.lon, view, size, originX, originY);
     if (p.x < -40 || p.y < -40 || p.x > state.width + 40 || p.y > state.height + 40) return false;
 
+    /* The pill carries the weather, not just a number.
+
+       A temperature on a rain map answers half the question. The
+       condition beside it — the same words the hero uses — answers
+       the other half, and it comes from the same reading, so the map
+       cannot contradict the page above it. */
     const w = state.weatherSeed || {};
-    const label = (w.tempF != null && window.WTWUnits)
-      ? WTWUnits.temp(w.tempF) : (state.locationLabel || '');
+    const temp = (w.tempF != null && window.WTWUnits) ? WTWUnits.temp(w.tempF) : '';
+    // The wording is resolved by the app, which owns the descriptions.
+    const condition = w.conditionText || '';
+    const label = temp || state.locationLabel || '';
     if (!label) return false;
 
     ctx.font = '700 15px system-ui, -apple-system, sans-serif';
     const textW = ctx.measureText(label).width;
-    const padX = 11, h = 28;
-    const boxW = textW + padX * 2;
+    ctx.font = '500 11px system-ui, -apple-system, sans-serif';
+    const condW = condition ? ctx.measureText(condition).width : 0;
+    ctx.font = '700 15px system-ui, -apple-system, sans-serif';
+    const padX = 11, h = condition ? 40 : 28;
+    const boxW = Math.max(textW, condW) + padX * 2;
     const x = p.x - boxW / 2;
     const y = p.y - h - 10;
 
@@ -587,10 +598,17 @@ const WTWRadar = (() => {
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(label, p.x, y + h / 2 + 0.5);
+    if (condition) {
+      ctx.fillText(label, p.x, y + 14);
+      ctx.font = '500 11px system-ui, -apple-system, sans-serif';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.fillText(condition, p.x, y + 29);
+    } else {
+      ctx.fillText(label, p.x, y + h / 2 + 0.5);
+    }
     ctx.textAlign = 'start';
     ctx.textBaseline = 'alphabetic';
-    return label;
+    return condition ? `${label} · ${condition}` : label;
   }
 
   function drawMarker(ctx, view, size, originX, originY, accent, t) {
@@ -755,13 +773,36 @@ const WTWRadar = (() => {
     if (!mapStyle) {
       boxW = boxH = size;
     } else if (state.fullscreen) {
-      /* Measure the window, not the parent.
+      /* Measure the window for the width, and the card's own chrome
+         for the height.
 
-         The card is mid-transition into fullscreen when this runs, so
-         its rect is still the small one — taking the width from it
-         left the map its normal size on a fullscreen page. */
+         The card is mid-transition when this runs, so its rect is
+         still the small one — taking the width from it left the map
+         its normal size on a fullscreen page. But a fixed guess at
+         the chrome height is worse: a rectangular map is as wide as
+         the window, so nothing limits it the way a square scope was
+         limited by its width, and 250px of assumed chrome against a
+         legend, a timeline, two rows of buttons, two sliders and an
+         attribution pushed the card's own header — and its exit
+         button — off the top of the screen at y = -34.
+
+         So ask the card how tall everything except the canvas is. */
+      /* Take a share of the viewport, and let the card scroll.
+
+         Three attempts to compute the exact chrome height all failed
+         for different reasons — the canvas's own previous size leaks
+         into scrollHeight, a fixed inset:0 card reports the viewport
+         as its scrollHeight, and the siblings measure short while the
+         canvas is still large. The failure mode was the card's header
+         landing at y = -34, which put the exit button off the screen.
+
+         So do not compute it. Take a fixed share that always leaves
+         room, and make the fullscreen card scroll, so nothing in it
+         can ever be unreachable however tall the controls get. */
       boxW = Math.max(240, window.innerWidth - 24);
-      boxH = Math.max(240, window.innerHeight - (window.innerWidth < 640 ? 300 : 250));
+      boxH = Math.max(200, Math.round(Math.min(
+        window.innerHeight * 0.6,
+        boxW * 0.62)));
     } else {
       boxW = Math.max(200, rect.width || size);
       boxH = Math.round(Math.min(boxW * 0.72, 420));
@@ -821,6 +862,15 @@ const WTWRadar = (() => {
     badge.textContent = text;
     badge.classList.toggle('live-source', live);
     badge.title = title;
+    /* Say something only when there is something to say.
+
+       Live radar is the expected case, and stamping "LIVE RADAR"
+       across the top of a live radar is noise. A prediction, stale
+       imagery or a simulation are all things somebody needs to know,
+       so those are the ones that show. The text stays in the DOM
+       either way, so a screen reader still hears what it is looking
+       at. */
+    badge.hidden = live;
   }
 
   function showingForecast() {
@@ -869,6 +919,16 @@ const WTWRadar = (() => {
     el.hidden = false;
     el.textContent = clockText(frame.time);
     el.dataset.kind = frame.forecast ? 'forecast' : 'observed';
+
+    /* The slider's own bounds, in real terms. "-60 min" was a
+       constant that stopped being true the moment the frame set came
+       from a published index rather than a fixed hour. */
+    const startCap = document.getElementById('radarTimelineStart');
+    if (startCap && state.frames.length) {
+      const oldest = state.frames[0].time;
+      const mins = Math.round((Date.now() - oldest.getTime()) / 60000);
+      startCap.textContent = mins > 0 ? `-${mins} min` : clockText(oldest);
+    }
   }
 
   /* Stepping one frame at a time. A loop you can only watch is worse

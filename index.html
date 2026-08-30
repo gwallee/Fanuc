@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0e17" />
-  <meta name="description" content="Aither Weather V27 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
-  <title>Aither Weather V27 ⚡🌩️</title>
+  <meta name="description" content="Aither Weather V28 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
+  <title>Aither Weather V28 ⚡🌩️</title>
   <link rel="icon" type="image/svg+xml" href="logo.svg" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="manifest" href="manifest.json" />
@@ -391,9 +391,13 @@
       <div class="card-head">
         <h2><span class="btn-ico" data-ui-icon="radar" data-ui-size="20"></span> Live Radar</h2>
         <div class="radar-status">
-          <span class="status-dot" id="radarStatusDot"></span>
-          <span id="radarStatusText">STANDBY</span>
-          <span class="radar-source" id="radarSource" title="Radar data source">SIMULATED</span>
+          <!-- The dot carries the state; the words are for a screen
+               reader, which cannot see a green dot. Printing STANDBY
+               and SIMULATED across the top of a weather map is telling
+               people about the machinery instead of the weather. -->
+          <span class="status-dot" id="radarStatusDot" title="Radar state"></span>
+          <span id="radarStatusText" class="sr-only">STANDBY</span>
+          <span class="radar-source" id="radarSource" title="Radar data source" hidden>SIMULATED</span>
           <button type="button" id="radarFullscreenBtn" class="btn btn-small radar-fs-btn"
                   aria-pressed="false"><span class="btn-ico" data-ui-icon="expand" data-ui-size="15"></span> Fullscreen</button>
         </div>
@@ -406,14 +410,23 @@
         <div class="radar-location" id="radarLocationLabel">No location</div>
       </div>
 
-      <div class="radar-legend" id="radarLegend" title="Radar colours run from light precipitation to heavy">
-        <span class="legend-label">Light</span>
+      <!-- The legend, with the bands named rather than just its ends.
+           "Light … Heavy" tells you the bar goes up; naming the middle
+           tells you what the green you are actually looking at is. -->
+      <div class="radar-legend" id="radarLegend"
+           aria-label="Precipitation intensity scale">
         <span class="legend-bar" aria-hidden="true"></span>
-        <span class="legend-label">Heavy</span>
+        <div class="legend-stops" aria-hidden="true">
+          <span>Light</span><span>Moderate</span><span>Heavy</span><span>Intense</span>
+        </div>
       </div>
 
+      <!-- One clock, not three. The slider had a caption at each end,
+           a relation label ("NOW", "+20 min") and a wall-clock chip —
+           four pieces of text for one number. The captions stay as the
+           slider's own bounds; the relation and the time are one chip. -->
       <div class="radar-timeline">
-        <span class="timeline-caption">-60 min</span>
+        <span class="timeline-caption" id="radarTimelineStart">-60 min</span>
         <input type="range" id="radarTimeline" min="0" max="60" value="60" step="1" aria-label="Radar timeline" />
         <span class="timeline-caption timeline-end" id="radarTimelineEnd">now</span>
         <span class="timeline-label" id="radarTimeLabel">NOW</span>
@@ -448,7 +461,8 @@
           <output id="radarSpeedOut">1×</output>
         </label>
       </div>
-      <p class="radar-attribution">Arrow keys step a frame at a time. drag to pan. Basemap © OpenStreetMap contributors © CARTO.</p>
+      <p class="radar-attribution">Drag to pan · arrow keys step a frame · tap for fullscreen.
+        <span class="radar-credit">Basemap © OpenStreetMap contributors © CARTO. Precipitation © RainViewer.</span></p>
     </section>
 
     <!-- Air & sky -->
@@ -650,6 +664,46 @@
         <span>Automatic weather roasts</span>
         <input type="checkbox" id="autoRoastToggle" />
       </label>
+    </div>
+
+    <!-- Desktop only. Removed entirely in a browser: a panel of
+         switches that do nothing is worse than no panel. -->
+    <div class="setting-group desktop-panel" id="desktopPanel" hidden>
+      <h3 class="setting-subhead">Desktop app
+        <span class="desktop-version">v<span id="desktopVersion">—</span></span></h3>
+
+      <div class="desktop-update">
+        <div id="desktopUpdate">
+          <p class="setting-status" id="desktopUpdateStatus"></p>
+          <div class="update-bar" id="desktopUpdateBar" hidden><span></span></div>
+        </div>
+        <button type="button" id="desktopUpdateBtn" class="btn btn-small">Check for updates</button>
+      </div>
+      <p class="setting-hint">Updates come from this project's GitHub releases.
+        Nothing downloads until you say so.</p>
+
+      <label class="toggle-row" for="deskAutoUpdate">
+        <span>Check for updates on launch</span>
+        <input type="checkbox" id="deskAutoUpdate" />
+      </label>
+      <label class="toggle-row" for="deskTrayWeather">
+        <span>Show the temperature in the tray</span>
+        <input type="checkbox" id="deskTrayWeather" />
+      </label>
+      <label class="toggle-row" for="deskLaunchAtLogin">
+        <span>Launch at login</span>
+        <input type="checkbox" id="deskLaunchAtLogin" />
+      </label>
+      <label class="toggle-row" for="deskAlwaysOnTop">
+        <span>Keep the window on top</span>
+        <input type="checkbox" id="deskAlwaysOnTop" />
+      </label>
+      <label class="toggle-row" for="deskMinimiseToTray">
+        <span>Close to the tray instead of quitting</span>
+        <input type="checkbox" id="deskMinimiseToTray" />
+      </label>
+      <p class="setting-hint">Severe weather alerts arrive as system notifications,
+        whether or not the window is open.</p>
     </div>
 
     <div class="setting-group">
@@ -925,6 +979,7 @@
   <script src="normals.js"></script>
   <script src="gemini.js"></script>
   <script src="metricsheet.js"></script>
+  <script src="desktop-extras.js"></script>
   <script src="storage.js"></script>
   <script src="themes.js"></script>
   <script src="units.js"></script>

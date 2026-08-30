@@ -279,7 +279,54 @@ function omBody() {
   await check('and it agrees with the temperature on the page', async () => {
     const pin = await page.evaluate(() => WTWRadar.getView().pin);
     const hero = (await page.textContent('#wxTemp')).trim();
-    return hero.startsWith(pin.trim());
+    return pin.startsWith(hero);
+  });
+  await check('the pill names the weather, in the same words as the hero', async () => {
+    const pin = await page.evaluate(() => WTWRadar.getView().pin);
+    const condition = (await page.textContent('#wxCondition')).trim();
+    // The radar used to build this from the icon set's internal name
+    // and said "Rain light"; the app owns the wording now.
+    return pin.includes(condition) && !/^[a-z]/.test(condition);
+  });
+  await check('the card does not announce the machinery', async () => {
+    /* STANDBY, SCANNING and LIVE RADAR across the top of a live radar
+       are facts about the app, not about the weather. They stay in the
+       DOM for a screen reader; they are not printed on the face.
+
+       "Not printed" has to be measured as painted area, not
+       offsetParent: a screen-reader-only element is clipped to a
+       single pixel and still reports a parent. And the card's own
+       "Live Radar" heading is the title, not a status. */
+    /* Pin the frame first. The loop runs into the nowcast frames, and
+       a prediction is exactly the case that SHOULD speak up — so
+       reading the badge mid-loop measures where the animation happened
+       to be, not whether the card is quiet when it has nothing to say. */
+    await page.click('#radarStopBtn');
+    await page.click('#radarRefreshBtn');
+    await page.waitForTimeout(1600);
+    const seen = await page.evaluate(() => {
+      const out = [];
+      document.querySelectorAll('#radarStatusText, #radarSource').forEach((el) => {
+        const r = el.getBoundingClientRect();
+        const painted = !el.hidden && r.width > 4 && r.height > 4;
+        if (painted) out.push(el.id + ':' + el.textContent.trim());
+      });
+      return out;
+    });
+    if (seen.length) console.log('  [diag] painted: ' + JSON.stringify(seen));
+    return seen.length === 0;
+  });
+  await check('but a source worth knowing about still speaks up', async () =>
+    // The badge is hidden only while it is live; the text is always
+    // there for anything else to reveal.
+    page.evaluate(() => {
+      const badge = document.getElementById('radarSource');
+      return badge && badge.textContent.trim().length > 0;
+    }));
+  await check('the legend names its bands, not just its ends', async () => {
+    const stops = await page.locator('.legend-stops > span').allTextContents();
+    return stops.length >= 4 && /moderate/i.test(stops.join(' ')) &&
+           /heavy/i.test(stops.join(' '));
   });
   await check('no transport button hogs the row', async () =>
     // Each was forced to at least half the row, so six buttons became

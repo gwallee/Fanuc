@@ -181,13 +181,17 @@ function omBody({ pastDays = 1, yesterdayHigh = 62 } = {}) {
 
   console.log('\n=== Radar legend ===');
   ({ ctx, page, errors } = await mk());
-  await check('the legend is shown with both ends labelled', async () => {
+  await check('the legend is shown with its bands labelled', async () => {
     const text = await page.textContent('#radarLegend');
     return await page.isVisible('#radarLegend') &&
            /Light/.test(text) && /Heavy/.test(text);
   });
   await check('it says what it is describing', async () =>
-    /radar colours/i.test(await page.getAttribute('#radarLegend', 'title')));
+    // V28 named the middle of the scale as well as its ends, so the
+    // label moved from a hover title — which a touch device never
+    // shows — onto the legend itself and into an aria-label.
+    /precipitation/i.test(await page.getAttribute('#radarLegend', 'aria-label')) &&
+    /moderate/i.test(await page.textContent('#radarLegend')));
   await check('the timeline does not say NOW twice over', async () =>
     !(await page.isVisible('#radarTimelineEnd')));
   await check('no horizontal overflow at desktop width', async () =>

@@ -1,7 +1,7 @@
 {
   "name": "aither-weather",
   "productName": "Aither Weather",
-  "version": "27.0.0",
+  "version": "28.0.0",
   "description": "Neon weather with a real-map radar, 48-hour outlook, and a local AI that roasts the forecast. No API keys.",
   "author": {
     "name": "gwallee",
@@ -14,7 +14,8 @@
     "dist": "electron-builder --publish never",
     "dist:win": "electron-builder --win --publish never",
     "dist:linux": "electron-builder --linux --publish never",
-    "dist:mac": "electron-builder --mac --publish never"
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:publish": "electron-builder --publish always"
   },
   "devDependencies": {
     "electron": "^31.7.7",
@@ -30,6 +31,7 @@
     },
     "files": [
       "main.js",
+      "preload.js",
       "package.json"
     ],
     "extraResources": [
@@ -76,7 +78,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Aither Weather",
       "artifactName": "AitherWeather-Setup-${version}.${ext}",
-      "uninstallDisplayName": "Aither Weather ${version}"
+      "uninstallDisplayName": "Aither Weather ${version}",
+      "differentialPackage": true
     },
     "portable": {
       "artifactName": "AitherWeather-Portable-${version}.${ext}"
@@ -157,11 +160,23 @@
     },
     "dmg": {
       "artifactName": "AitherWeather-${version}-${arch}.${ext}"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "gwallee",
+        "repo": "What-The-Weather",
+        "releaseType": "release"
+      }
+    ]
   },
   "homepage": "https://github.com/gwallee/What-The-Weather",
   "repository": {
     "type": "git",
     "url": "https://github.com/gwallee/What-The-Weather.git"
+  },
+  "dependencies": {
+    "electron-log": "^5.4.4",
+    "electron-updater": "^6.8.9"
   }
 }

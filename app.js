@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V27 — app.js
+   Aither Weather V28 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -75,6 +75,19 @@
     root.dataset.density = s.density || 'comfortable';
     root.dataset.radar = s.radarStyle === 'scope' ? 'scope' : 'map';
     if (window.WTWScene) WTWScene.setBackground(s.background || 'animated');
+  }
+
+  /* The radar's pill shows the weather, and it has to be the same
+     weather in the same words as the hero. describeCode lives here,
+     so the sentence is resolved here rather than the radar guessing
+     from an icon's internal name — which is how it came to say
+     "Rain light" instead of "Light rain". */
+  function withCondition(weather) {
+    if (!weather) return weather;
+    const [label] = describeCode(weather.weatherCode);
+    return Object.assign({}, weather, {
+      conditionText: weather.conditionText || label,
+    });
   }
 
   function iconFor(code, size, isDay) {
@@ -458,6 +471,9 @@
 
     renderDetail();
     renderTiles();
+    if (window.WTWDesktop) {
+      WTWDesktop.pushWeather(w, state.location ? state.location.name : '');
+    }
     $('currentCard').classList.remove('empty');
     $('welcomePanel').hidden = true;
     $('weatherPanels').hidden = false;
@@ -665,6 +681,9 @@
       state.alerts = [];
     }
     renderAlerts();
+    // The desktop app can raise these with the window shut; a browser
+    // tab cannot. Deduplicated by event and expiry inside.
+    if (window.WTWDesktop) WTWDesktop.pushAlerts(state.alerts);
     WTWRadar.setAlerts(state.alerts);
     notifyNewAlerts();
   }
@@ -1362,7 +1381,7 @@
     renderAir();
     WTWHourly.setHours(state.hours);
     if (state.location) {
-      WTWRadar.setLocation(state.location.name, state.weather, {
+      WTWRadar.setLocation(state.location.name, withCondition(state.weather), {
         lat: state.location.lat, lon: state.location.lon,
       });
     }
@@ -1399,7 +1418,7 @@
       renderYesterday();
       renderForecast();
       WTWHourly.setHours(state.hours);
-      WTWRadar.setLocation(location.name, result.weather, {
+      WTWRadar.setLocation(location.name, withCondition(result.weather), {
         lat: location.lat, lon: location.lon,
       });
       loadRain(location, result);
@@ -2490,6 +2509,8 @@
     WTWRadar.init('radarCanvas');
     WTWHourly.init('hourlyCanvas');
     WTWTempChart.init('tempChartCanvas');
+    if (window.WTWDesktop) WTWDesktop.init();
+
     if (window.WTWMetricSheet) {
       WTWMetricSheet.init();
       /* One listener on the grid rather than one per tile: the tiles
