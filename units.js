@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V22 — units.js
+   Aither Weather V23 — units.js
    One place that turns canonical values into display strings.
 
    Everything inside the app stays in a single canonical set —
@@ -94,6 +94,36 @@ const WTWUnits = (() => {
     return blank(value) ? '--' : `${Math.round(value)}%`;
   }
 
+  /* Precipitation depth, held internally in inches like every other
+     canonical figure here.
+
+     Rounding matters more than it looks. A quarter of an inch is
+     0.25 and a trace is 0.01, so a whole-number rounding turns most
+     real rain into "0 in" — which reads as "none" rather than "not
+     much". Two decimals below an inch, one above; and an amount too
+     small to round to anything is called a trace rather than zero,
+     because zero is a claim that nothing fell. */
+  function precip(valueIn, { withUnit = true } = {}) {
+    if (blank(valueIn)) return '--';
+    // Exactly none is "0", not "0.00" — the decimals are there to keep
+    // small amounts from rounding away, and nothing is not a small
+    // amount.
+    if (valueIn === 0) return withUnit ? (isMetric() ? '0 mm' : '0"') : '0';
+    if (isMetric()) {
+      const mm = valueIn * 25.4;
+      if (mm > 0 && mm < 0.1) return withUnit ? 'trace' : '0';
+      const text = mm < 10 ? mm.toFixed(1) : String(Math.round(mm));
+      return withUnit ? `${text} mm` : text;
+    }
+    if (valueIn > 0 && valueIn < 0.005) return withUnit ? 'trace' : '0';
+    const text = valueIn < 1 ? valueIn.toFixed(2) : valueIn.toFixed(1);
+    return withUnit ? `${text}"` : text;
+  }
+
+  function precipUnit() {
+    return isMetric() ? 'mm' : 'in';
+  }
+
   /* ---------------- Time ---------------- */
 
   function time(value) {
@@ -152,7 +182,7 @@ const WTWUnits = (() => {
     temp, tempUnit, tempValue, tempDelta,
     speed, speedUnit,
     distance, distanceFromKm,
-    pressure, percent, range, rangeValue, rangeUnit,
+    pressure, percent, precip, precipUnit, range, rangeValue, rangeUnit,
     time, hourLabel, dateTime, duration,
   };
 })();

@@ -1,4 +1,4 @@
-# Aither Weather V22 ⚡🌩️
+# Aither Weather V23 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -158,6 +158,57 @@ Fullscreen button to come back.
 - Keyboard accessible: the scope is a focusable control, `Enter`/`Space`
   toggles it
 - Set `radar.fullscreenOnTap = false` in `config.js` to require the button
+
+### 📐 Numbers you can act on (V23)
+
+Every feature in this version replaces a figure people cannot do anything with
+by one they can.
+
+**Rain as an amount.** The precipitation tile led with a probability, which
+tells you nothing about whether to move the barbecue. It now leads with how
+much has actually fallen today and names the next wet day with its amount —
+"Next expected is 0.15" on Thursday." The probability is still there, one line
+down, where it belongs. Nothing today reads `0"`, not `0.00"`; an amount too
+small to round is called a **trace**, because zero is a claim that nothing fell.
+
+**Gusts.** The wind tile shows the gust that actually knocks the parasol over —
+but only when it is meaningfully above the steady wind, since otherwise it is
+the same fact printed twice.
+
+**A barometer that has to have moved to say it moved.** A single reading cannot
+be rising or falling, so the trend is measured against the reading three hours
+ago from the hourly series, with a 0.02 inHg deadband. Below that the honest
+answer is "steady", not a direction picked out of noise. The dial draws an
+arrow; the tile also *says* it in words, because the dial is `aria-hidden` and
+a fact only available to people who can see it is not available.
+
+**An Averages tile, with real history behind it.** V21 deliberately left this
+out — Apple's version compares today against a climate normal, and this app had
+no history to average. It does now: Open-Meteo publishes a free, key-less
+archive, and `normals.js` fetches the same calendar date across the last ten
+years and averages the daily maximum. That is a genuine climate normal for that
+date, not an average of the week or the month.
+
+It is careful about the ways this goes wrong:
+
+- Fewer than five usable years and there is **no tile** rather than a confident
+  wrong number.
+- 29 February borrows the 28th — three years in four it does not exist, so its
+  sample is a quarter the size of every other date's.
+- The wording says "Average of 10 years, 2015–2024", never "normal": the
+  published WMO normal is a 30-year window and this is not one.
+- One request per place per day, cached, and the rest of the page never waits
+  on it.
+
+**A sentence over the hour row** — "Clear conditions expected around 5PM. Wind
+gusts are up to 22 mph." — read off the series rather than written in advance,
+so it cannot describe weather that is not in the forecast. When nothing changes
+it says so instead of inventing an event.
+
+**Where the forecast is actually for.** A city name is not a place: two towns
+share one, and a geolocated fix lands on coordinates rather than an address. The
+detail card now ends with the place, its coordinates, and an **Open in Maps**
+link (OpenStreetMap — no key, no account).
 
 ### 🧭 Reading order, and an hour row (V22)
 
@@ -661,7 +712,7 @@ dependencies** — `package.json` exists only for the tests.
 ## Project structure
 
 ```
-AitherWeather-V22/
+AitherWeather-V23/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
@@ -686,6 +737,7 @@ AitherWeather-V22/
 ├── icons.js        # Weather + interface icons (drawn, not emoji)
 ├── weatheranim.js  # The sky: full-page backdrop + the strip under the hero
 ├── tiles.js        # The detail tiles and their small drawings
+├── normals.js      # Climate normals from the key-less Open-Meteo archive
 ├── icons/          # PWA icons (192, 512, maskable)
 ├── config.js       # Central configuration + defaults
 ├── storage.js      # Safe localStorage wrapper
@@ -787,7 +839,7 @@ on the **Build desktop apps** action) and GitHub builds all three platforms
 natively and attaches them to a release:
 
 ```bash
-git tag v22.0.0 && git push origin v22.0.0
+git tag v23.0.0 && git push origin v23.0.0
 ```
 
 | Platform | Files |

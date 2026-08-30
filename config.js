@@ -1,12 +1,12 @@
 /* ============================================================
-   Aither Weather V22 — config.js
+   Aither Weather V23 — config.js
    Central configuration. No API keys required, ever.
    ============================================================ */
 
 const WTW_CONFIG = {
   app: {
     name: 'Aither Weather',
-    version: 'V22',
+    version: 'V23',
     tagline: 'Weather with an attitude problem.',
   },
 
@@ -41,6 +41,9 @@ const WTW_CONFIG = {
     zip: 'https://api.zippopotam.us/us/',
     // National Weather Service: free, no key, US coverage only.
     nws: 'https://api.weather.gov',
+    // Open-Meteo historical archive: free, no key. Used for the
+    // climate normal behind the Averages tile.
+    archive: 'https://archive-api.open-meteo.com/v1/archive',
     // Open-Meteo air quality + pollen: free, no key.
     airQuality: 'https://air-quality-api.open-meteo.com/v1/air-quality',
     // MET Norway (yr.no) forecast: free, no key, worldwide.
@@ -220,6 +223,7 @@ const WTW_CONFIG = {
     forecastHours: 48,     // hourly strip length
     temperatureUnit: 'fahrenheit',
     windSpeedUnit: 'mph',
+    precipitationUnit: 'inch',   // canonical internally, converted at display
   },
 
   // Basemap under the radar. Carto's tiles are free and key-less;

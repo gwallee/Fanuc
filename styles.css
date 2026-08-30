@@ -430,6 +430,53 @@ body.loading { cursor: progress; }
   margin: 0;
 }
 
+/* A second, quieter line under a tile's sentence: the chance under an
+   amount, the gusts under the steady wind. Secondary by design — if
+   it were the headline it would be the value. */
+.tile-sub {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin: 0.15rem 0 0;
+  opacity: 0.85;
+}
+
+.avg-facts { margin: auto 0 0.2rem; font-size: 0.85rem; }
+.avg-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.15rem 0;
+}
+.avg-facts dt { color: var(--text-dim); }
+.avg-facts dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* The sentence over the hour row. */
+.hourly-summary {
+  margin: 0 0 0.8rem;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+/* Where the forecast is actually for. */
+.place-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--card-border);
+}
+.place-lines { display: flex; flex-direction: column; min-width: 0; }
+.place-lines strong { font-size: 0.95rem; }
+.place-coords {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+#openInMaps { text-decoration: none; flex: 0 0 auto; }
+
 .wind-dial { margin: auto 0 0.1rem; align-self: center; width: 74px; }
 .wind-dial-svg { display: block; width: 100%; height: auto; }
 .wind-dial-ring { fill: none; stroke: currentColor; stroke-opacity: 0.35; stroke-width: 2; }

@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V22 — compare.js
+   Aither Weather V23 — compare.js
    Side-by-side view of every saved location.
 
    Uses Open-Meteo for all rows regardless of country: one compact

@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V22 — app.js
+   Aither Weather V23 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -143,14 +143,18 @@
       latitude: String(location.lat),
       longitude: String(location.lon),
       current: ['temperature_2m', 'apparent_temperature', 'relative_humidity_2m', 'weather_code',
-                'wind_speed_10m', 'wind_direction_10m', 'is_day', 'pressure_msl',
-                'dew_point_2m'].join(','),
-      hourly: ['temperature_2m', 'precipitation_probability', 'weather_code',
-               'wind_speed_10m', 'visibility'].join(','),
+                'wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m', 'is_day',
+                'pressure_msl', 'dew_point_2m', 'precipitation'].join(','),
+      // pressure_msl hourly is what makes a real barometric trend
+      // possible: one reading cannot be rising or falling.
+      hourly: ['temperature_2m', 'precipitation_probability', 'precipitation', 'weather_code',
+               'wind_speed_10m', 'wind_gusts_10m', 'visibility', 'pressure_msl'].join(','),
       minutely_15: ['precipitation', 'precipitation_probability'].join(','),
       daily: ['weather_code', 'temperature_2m_max', 'temperature_2m_min',
-              'precipitation_probability_max', 'sunrise', 'sunset', 'uv_index_max'].join(','),
+              'precipitation_probability_max', 'precipitation_sum', 'wind_gusts_10m_max',
+              'sunrise', 'sunset', 'uv_index_max'].join(','),
       temperature_unit: WTW_CONFIG.weather.temperatureUnit,
+      precipitation_unit: WTW_CONFIG.weather.precipitationUnit,
       wind_speed_unit: WTW_CONFIG.weather.windSpeedUnit,
       timezone: 'auto',
       forecast_days: String(chosenForecastDays()),
@@ -230,13 +234,63 @@
       if (metres != null) visibilityMi = metres * 0.000621371;
     }
 
+    /* Barometric trend, measured rather than asserted.
+
+       A single reading cannot be rising or falling, so this compares
+       now against three hours ago from the hourly series — which is
+       there because past_days=1 is already being asked for. The
+       0.02 inHg deadband is roughly the resolution people can act on;
+       below it the honest answer is "steady", not a direction picked
+       from noise. */
+    const pressureTrend = (() => {
+      const series = h.pressure_msl;
+      const times = h.time;
+      if (!Array.isArray(series) || !Array.isArray(times)) return null;
+      const now = Date.now();
+      const near = (target) => {
+        let best = -1, gap = Infinity;
+        for (let i = 0; i < times.length; i++) {
+          const dt = Math.abs(new Date(times[i]).getTime() - target);
+          if (dt < gap && series[i] != null) { gap = dt; best = i; }
+        }
+        // More than 90 minutes off the mark is not the hour asked for.
+        return gap <= 90 * 60000 ? series[best] : null;
+      };
+      const nowMb = near(now);
+      const thenMb = near(now - 3 * 3600000);
+      if (nowMb == null || thenMb == null) return null;
+      const deltaInHg = (nowMb - thenMb) * 0.0295300;
+      if (Math.abs(deltaInHg) < 0.02) return 'steady';
+      return deltaInHg > 0 ? 'rising' : 'falling';
+    })();
+
+    /* The next wet day, and how much. "80% chance" says nothing about
+       whether to move the barbecue; "0.15 inches on Thursday" does.
+       Only days from tomorrow on: today already has its own figure. */
+    const nextPrecip = (() => {
+      const sums = d.precipitation_sum;
+      if (!Array.isArray(sums)) return null;
+      for (let i = todayIdx + 1; i < times.length; i++) {
+        const amount = sums[i];
+        if (amount != null && amount >= 0.01) {
+          return { dateISO: at(times, i), amountIn: amount };
+        }
+      }
+      return null;
+    })();
+
     const detail = {
       sunrise: at(d.sunrise, todayIdx),
       sunset: at(d.sunset, todayIdx),
       uvIndex: at(d.uv_index_max, todayIdx),
       dewPointF: c.dew_point_2m ?? null,
       pressureInHg: c.pressure_msl != null ? c.pressure_msl * 0.0295300 : null,
+      pressureTrend,
       visibilityMi,
+      precipTodayIn: at(d.precipitation_sum, todayIdx),
+      nextPrecip,
+      windGustMph: c.wind_gusts_10m ?? null,
+      gustMaxTodayMph: at(d.wind_gusts_10m_max, todayIdx),
     };
 
     const hours = WTWHourly.fromOpenMeteo(data, chosenHourlyHours());
@@ -417,6 +471,7 @@
       daily: state.daily,
       hours: state.hours,
       air: state.air,
+      normal: state.normal,
       nowcastText: state.nowcastText || '',
     });
   }
@@ -603,6 +658,45 @@
       state.air = null;
     }
     renderAir();
+  }
+
+  /* The climate normal is the slowest thing on the page and the least
+     important, so it is fetched on its own and the tile appears when
+     it arrives. A location with too little history, or an archive
+     that is down, simply leaves the tile hidden — the rest of the app
+     never waits on it and never shows a placeholder in its place. */
+  async function loadNormals(location) {
+    state.normal = null;
+    if (!window.WTWNormals) return;
+    try {
+      state.normal = await WTWNormals.fetchNormal(location, new Date());
+    } catch (err) {
+      console.warn('[app] climate normal unavailable', err);
+      state.normal = null;
+    }
+    renderTiles();
+  }
+
+  /* Where this forecast is actually for. A city name is not a place —
+     two towns share one, and a geolocated fix lands on coordinates
+     rather than an address — so the coordinates are shown and a map
+     link offered for anybody who wants to check. */
+  function renderPlace(location) {
+    const footer = $('placeFooter');
+    if (!footer || !location) return;
+    const lat = Number(location.lat), lon = Number(location.lon);
+    if (!isFinite(lat) || !isFinite(lon)) { footer.hidden = true; return; }
+    footer.hidden = false;
+    $('placeName').textContent = location.name || '—';
+    $('placeCoords').textContent =
+      `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? 'N' : 'S'}, ` +
+      `${Math.abs(lon).toFixed(4)}° ${lon >= 0 ? 'E' : 'W'}`;
+    const link = $('openInMaps');
+    if (link) {
+      // OpenStreetMap rather than a vendor's map: no key, no account,
+      // and it opens in whatever the device already uses for the web.
+      link.href = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=11/${lat}/${lon}`;
+    }
   }
 
   /* ------------------------------------------------------------
@@ -1128,6 +1222,8 @@
       updateSaveButton();
       loadAlerts(location).then(saveSnapshot);
       loadAir(location);
+      loadNormals(location);
+      renderPlace(location);
       renderCompare({ refresh: true });
       saveSnapshot();
 

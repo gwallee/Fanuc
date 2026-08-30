@@ -88,16 +88,34 @@ const WTWTiles = (() => {
     return 'Very poor visibility.';
   }
 
-  /* The number above this is a probability, so the sentence must not
-     imply an amount. Where the nowcast knows the next wet spell, that
-     is far more useful than either. */
-  function precipNote(prob, nowcastText) {
+  /* The tile leads with how much has fallen today, so the sentence
+     underneath is about what comes next. An amount and a day beat a
+     probability: "80% chance" says nothing about whether to move the
+     barbecue, "0.15 inches on Thursday" does.
+
+     Where the nowcast knows the next wet spell within two hours, that
+     is more useful still and wins. */
+  function precipNote(next, nowcastText) {
     if (nowcastText) return nowcastText;
-    if (prob == null) return '';
-    if (prob >= 70) return 'Rain is likely — take something waterproof.';
-    if (prob >= 40) return 'Rain is a real possibility today.';
-    if (prob >= 15) return 'A small chance of rain today.';
-    return 'No rain expected today.';
+    if (!next || next.amountIn == null) return 'None expected this week.';
+    const when = new Date(next.dateISO + 'T12:00:00');
+    if (isNaN(when)) return '';
+    const today = new Date();
+    const days = Math.round((when - new Date(today.getFullYear(), today.getMonth(),
+      today.getDate(), 12)) / 86400000);
+    const name = days === 1 ? 'tomorrow'
+      : when.toLocaleDateString([], { weekday: 'long' });
+    const amount = U() ? U().precip(next.amountIn) : `${next.amountIn}`;
+    return `Next expected is ${amount} ${days === 1 ? name : 'on ' + name}.`;
+  }
+
+  /* Gusts are the number that decides whether to put the parasol up,
+     and they are only worth saying when they are meaningfully above
+     the steady wind — otherwise it is the same fact twice. */
+  function gustNote(windMph, gustMph) {
+    if (gustMph == null) return '';
+    if (windMph != null && gustMph - windMph < 4) return '';
+    return `Gusts up to ${U() ? U().speed(gustMph) : gustMph}.`;
   }
 
   /* ---------------- The drawings ---------------- */
@@ -211,11 +229,32 @@ const WTWTiles = (() => {
     ctx.lineTo(cx + Math.cos(a) * r * 1.02, cy + Math.sin(a) * r * 1.02);
     ctx.stroke();
 
+    /* The trend arrow, drawn rather than typed: a glyph would take
+       whatever arrow the platform's font happens to have, at whatever
+       weight, which is the problem the icon set exists to solve. */
     if (!trend) return;
-    ctx.fillStyle = ink('--text', '#fff');
-    ctx.font = '600 13px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(trend === 'rising' ? '↑' : (trend === 'falling' ? '↓' : '→'), cx, cy - r * 0.35);
+    const ay = cy - r * 0.42;
+    const len = r * 0.34;
+    ctx.strokeStyle = ink('--text', '#fff');
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    if (trend === 'steady') {
+      ctx.moveTo(cx - len, ay);
+      ctx.lineTo(cx + len, ay);
+      ctx.moveTo(cx + len - 5, ay - 5);
+      ctx.lineTo(cx + len, ay);
+      ctx.lineTo(cx + len - 5, ay + 5);
+    } else {
+      const dir = trend === 'rising' ? -1 : 1;   // up is a rising glass
+      ctx.moveTo(cx, ay - len * dir);
+      ctx.lineTo(cx, ay + len * dir);
+      ctx.moveTo(cx - 5, ay + len * dir - 5 * dir);
+      ctx.lineTo(cx, ay + len * dir);
+      ctx.lineTo(cx + 5, ay + len * dir - 5 * dir);
+    }
+    ctx.stroke();
   }
 
   /* The lit fraction of the disc.
@@ -393,6 +432,91 @@ const WTWTiles = (() => {
     }
   }
 
+
+  /* What the dial's arrow means, in words. Three hours is the span
+     the trend is measured over, and saying so stops it reading as a
+     forecast. */
+  const TREND_WORDS = {
+    rising: 'Rising over the last 3 hours.',
+    falling: 'Falling over the last 3 hours.',
+    steady: 'Steady over the last 3 hours.',
+  };
+
+  /* ---------------- Averages ---------------- */
+
+  /* Today's high against the average high for this date. The wording
+     is deliberately "recent years" and names the span: this is ten
+     years of archive, not the 30-year WMO normal, and calling it a
+     normal would be claiming a thing it is not. */
+  function renderAverages(todayHighF, normal) {
+    const tile = $('averagesTile');
+    if (!tile) return;
+    if (!normal || normal.highF == null || todayHighF == null) {
+      tile.hidden = true;
+      return;
+    }
+    tile.hidden = false;
+    const gap = todayHighF - normal.highF;
+    const rounded = Math.round(gap);
+    const sign = rounded > 0 ? '+' : (rounded < 0 ? '−' : '');
+    // tempDelta already carries the degree sign; appending another
+    // gave "+3°°". It also converts a difference correctly, which is
+    // not the same conversion a temperature gets.
+    const size = U() ? U().tempDelta(Math.abs(gap), { withUnit: false })
+                     : `${Math.abs(rounded)}°`;
+    setText('avgDelta', `${sign}${size}`);
+    setText('avgWord', rounded === 0 ? 'right on the average daily high'
+      : (rounded > 0 ? 'above average daily high' : 'below average daily high'));
+    setText('avgToday', `H:${U() ? U().temp(todayHighF) : todayHighF}`);
+    setText('avgNormal', `H:${U() ? U().temp(normal.highF) : normal.highF}`);
+    setText('avgNote', `Average of ${normal.years} years, ` +
+      `${normal.firstYear}–${normal.lastYear}.`);
+  }
+
+  /* ---------------- The hourly summary ---------------- */
+
+  /* One sentence over the hour row, in the shape people actually want
+     it: what changes, when, and the one number worth acting on.
+
+     Everything here is read off the series rather than written in
+     advance, so it cannot describe weather that is not in the
+     forecast. When nothing changes it says so instead of inventing an
+     event. */
+  const CONDITION_WORDS = {
+    'clear': 'Clear', 'mostly-clear': 'Mostly clear', 'partly-cloudy': 'Partly cloudy',
+    'overcast': 'Cloudy', 'fog': 'Foggy', 'drizzle': 'Drizzly', 'showers': 'Showery',
+    'rain-light': 'Light rain', 'rain': 'Rainy', 'rain-heavy': 'Heavy rain',
+    'sleet': 'Sleety', 'snow-light': 'Light snow', 'snow': 'Snowy',
+    'snow-heavy': 'Heavy snow', 'thunder': 'Stormy',
+  };
+
+  function hourlySummary(hours, gustMaxMph) {
+    if (!Array.isArray(hours) || hours.length < 3) return '';
+    const nameFor = (code) => (window.WTWIcons ? WTWIcons.nameFor(code) : null);
+    const ahead = hours.slice(0, 12);
+    const startName = nameFor(ahead[0].code);
+
+    let changeAt = null;
+    for (let i = 1; i < ahead.length; i++) {
+      if (nameFor(ahead[i].code) !== startName) { changeAt = ahead[i]; break; }
+    }
+
+    const parts = [];
+    if (changeAt) {
+      const to = CONDITION_WORDS[nameFor(changeAt.code)];
+      if (to) parts.push(`${to} conditions expected around ${U() ? U().time(changeAt.time) : ''}.`);
+    } else {
+      const now = CONDITION_WORDS[startName];
+      if (now) parts.push(`${now} conditions for the next ${ahead.length} hours.`);
+    }
+
+    // Only worth a clause when it is actually breezy.
+    if (gustMaxMph != null && gustMaxMph >= 15) {
+      parts.push(`Wind gusts are up to ${U() ? U().speed(gustMaxMph) : gustMaxMph}.`);
+    }
+    return parts.join(' ');
+  }
+
   /* ---------------- Putting it together ---------------- */
 
   function render(view) {
@@ -421,11 +545,23 @@ const WTWTiles = (() => {
       arrow.setAttribute('transform', `rotate(${(w.windDirDeg + 180) % 360} 50 50)`);
     }
 
-    setText('precipNote', precipNote(w.precipProb, view && view.nowcastText));
+    setText('precipToday', U() ? U().precip(d.precipTodayIn) : '--');
+    setText('precipNote', precipNote(d.nextPrecip, view && view.nowcastText));
+    setText('gustNote', gustNote(w.windMph, d.windGustMph != null
+      ? d.windGustMph : d.gustMaxTodayMph));
     setText('visibilityNote', visibilityNote(d.visibilityMi));
 
+    const summary = $('hourlySummary');
+    if (summary) {
+      summary.textContent = hourlySummary(view && view.hours, d.gustMaxTodayMph);
+      summary.hidden = !summary.textContent;
+    }
+
+    renderAverages(w.highF, view && view.normal);
+
     drawSunArc(d.sunrise, d.sunset);
-    drawPressureDial(d.pressureInHg, view && view.pressureTrend);
+    drawPressureDial(d.pressureInHg, d.pressureTrend);
+    setText('pressureTrend', TREND_WORDS[d.pressureTrend] || '');
 
     renderHours(view && view.hours, view && view.daily);
     renderAqi(view && view.air);
@@ -443,7 +579,8 @@ const WTWTiles = (() => {
     }
   }
 
-  return { render, renderHours, renderAqi, isDaylight,
+  return { render, renderHours, renderAqi, renderAverages, isDaylight,
+           hourlySummary, gustNote,
            feelsNote, uvBand, uvNote, windNote, visibilityNote,
            precipNote, compass, drawSunArc, drawPressureDial, drawMoon };
 })();

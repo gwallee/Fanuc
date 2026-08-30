@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V22 — sw.js
+   Aither Weather V23 — sw.js
    Service worker: precaches the app shell so the app opens
    instantly and works offline, and keeps a runtime cache of the
    last successful weather responses to fall back on.
@@ -8,7 +8,7 @@
    is deleted on activate.
    ============================================================ */
 
-const CACHE_VERSION = 'wtw-v22-1';
+const CACHE_VERSION = 'wtw-v23-1';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 
@@ -20,6 +20,7 @@ const SHELL = [
   './icons.js',
   './weatheranim.js',
   './tiles.js',
+  './normals.js',
   './storage.js',
   './themes.js',
   './nws.js',

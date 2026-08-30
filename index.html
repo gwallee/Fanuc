@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0e17" />
-  <meta name="description" content="Aither Weather V22 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
-  <title>Aither Weather V22 ⚡🌩️</title>
+  <meta name="description" content="Aither Weather V23 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
+  <title>Aither Weather V23 ⚡🌩️</title>
   <link rel="icon" type="image/svg+xml" href="logo.svg" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="manifest" href="manifest.json" />
@@ -187,6 +187,7 @@
            next few hours at a glance, with sunrise and sunset dropped
            in at the hour they happen. The chart underneath is for the
            shape of the whole period, which a row cannot show. -->
+      <p class="hourly-summary" id="hourlySummary"></p>
       <div class="hour-strip-wrap">
         <ol class="hour-strip" id="hourStrip" aria-label="Hour by hour"></ol>
       </div>
@@ -246,12 +247,15 @@
             </svg>
           </div>
           <p class="tile-note" id="windNote"></p>
+          <p class="tile-sub" id="gustNote"></p>
         </article>
 
         <article class="tile" data-tile="precip">
           <h3 class="tile-head"><span class="btn-ico" data-ui-icon="droplet" data-ui-size="15"></span>Precipitation</h3>
-          <p class="tile-value" id="wxRain">--%</p>
+          <p class="tile-value" id="precipToday">--</p>
+          <p class="tile-word">Today</p>
           <p class="tile-note" id="precipNote"></p>
+          <p class="tile-sub">Chance today: <span id="wxRain">--%</span></p>
         </article>
 
         <article class="tile" data-tile="visibility">
@@ -297,6 +301,17 @@
           <p class="tile-note" id="aqiAdvice"></p>
         </article>
 
+        <article class="tile" data-tile="averages" id="averagesTile" hidden>
+          <h3 class="tile-head"><span class="btn-ico" data-ui-icon="chart" data-ui-size="15"></span>Averages</h3>
+          <p class="tile-value" id="avgDelta">--</p>
+          <p class="tile-word" id="avgWord"></p>
+          <dl class="avg-facts">
+            <div><dt>Today</dt><dd id="avgToday">--</dd></div>
+            <div><dt>Average</dt><dd id="avgNormal">--</dd></div>
+          </dl>
+          <p class="tile-note" id="avgNote"></p>
+        </article>
+
         <article class="tile tile-action" data-tile="hilo" id="wxHiLoStat"
                  role="button" tabindex="0"
                  title="Tap for the temperature trend"
@@ -312,6 +327,10 @@
             <canvas id="pressureDial"></canvas>
           </div>
           <p class="tile-value tile-value-dial" id="wxPressure">--</p>
+          <!-- The dial is a picture and aria-hidden, so the trend it
+               draws has to exist as words too or it is only available
+               to people who can see it. -->
+          <p class="tile-sub" id="pressureTrend"></p>
           <p class="tile-scale-ends" aria-hidden="true"><span>Low</span><span>High</span></p>
         </article>
 
@@ -326,6 +345,20 @@
       </div>
 
       <div class="wx-updated" id="wxUpdated"></div>
+
+      <!-- Where this forecast is actually for. A city name is not a
+           place: two towns share one, and a geolocated fix lands on
+           coordinates rather than an address. Saying the coordinates
+           and offering a map is how somebody checks. -->
+      <div class="place-footer" id="placeFooter" hidden>
+        <div class="place-lines">
+          <strong id="placeName">—</strong>
+          <span class="place-coords" id="placeCoords"></span>
+        </div>
+        <a class="btn btn-small" id="openInMaps" target="_blank" rel="noopener noreferrer" href="#">
+          <span class="btn-ico" data-ui-icon="map" data-ui-size="15"></span> Open in Maps
+        </a>
+      </div>
 
       <!-- Built-in roast: part of the weather card, not a separate panel -->
       <div class="roast-inline">
@@ -779,6 +812,7 @@
   <script src="icons.js"></script>
   <script src="weatheranim.js"></script>
   <script src="tiles.js"></script>
+  <script src="normals.js"></script>
   <script src="storage.js"></script>
   <script src="themes.js"></script>
   <script src="units.js"></script>
