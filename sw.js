@@ -8,7 +8,7 @@
    is deleted on activate.
    ============================================================ */
 
-const CACHE_VERSION = 'wtw-v28-1';
+const CACHE_VERSION = 'wtw-v28-2';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 
@@ -47,6 +47,8 @@ const SHELL = [
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  // Listed in the manifest, so an offline install needs it too.
+  './icons/maskable-512.png',
 ];
 
 self.addEventListener('install', (event) => {
