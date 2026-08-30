@@ -1,4 +1,4 @@
-# Aither Weather V23 ⚡🌩️
+# Aither Weather V24 ⚡🌩️
 
 A dark/neon weather web app with a **real radar over a real map**, a 48-hour
 outlook, 7-day forecasts, favorites, themes, offline support, and a built-in
@@ -158,6 +158,59 @@ Fullscreen button to come back.
 - Keyboard accessible: the scope is a focusable control, `Enter`/`Space`
   toggles it
 - Set `radar.fullscreenOnTap = false` in `config.js` to require the button
+
+### 🤖 The bot, optionally with a real model behind it (V24)
+
+The Wether Bot writes its lines from template pools. That is why the app works
+with no key, no account and no network beyond the weather itself, and **that
+does not change** — the built-in bot is still the default and is still the
+fallback for everything.
+
+What V24 adds is a choice: **Settings → Wether Bot brain → Google Gemini**, plus
+your own API key, and the bot writes rather than assembles.
+
+**Where the key lives.** In your browser's `localStorage`, put there by you. It
+is never in this repository, never in `config.js`, and sent nowhere except
+Google's own endpoint. It travels in an `x-goog-api-key` header rather than a
+query string, because a URL ends up in history, logs and referrers.
+
+Be clear about the trade, because the app is:
+
+- A key in a browser is readable by **anyone who can open devtools on that
+  browser**.
+- It is **not** shared with other visitors — `localStorage` is per-browser, so
+  publishing this site does not publish your key. Each person brings their own
+  or uses the built-in bot.
+- It is stored outside the app's own storage namespace and outside settings, so
+  the account transfer code — which exports settings wholesale — **cannot**
+  carry it. There is a test for that.
+- The key is never shown back to you in full, only as `AIza…1234`.
+
+For a personal key on a personal machine that is a reasonable place for it. For
+a key that matters, put it behind a server you control and call that instead.
+The settings panel says so where you enter it.
+
+**Failure is not an error state.** No key, no network, a rejected key, a quota
+that has run out, a blocked response, a retired model, a slow reply — every one
+falls back to the built-in bot, and you get a roast. The local line goes up
+*immediately* and Gemini replaces it if and when it arrives, so nobody watches a
+spinner where a joke should be. The badge beside the bot's name says which brain
+wrote the line, because "the model said it" and "a template said it" are
+different claims.
+
+**Two bugs that only a real API call could find.** The stubs were green and
+both of these were still wrong:
+
+1. `gemini-2.0-flash` — the obvious default — **has been retired**. Google
+   answers 404 and tells you to move on. Hence a model picker, and an error that
+   says "that model has been retired, pick another one".
+2. The reasoning models spend the output budget *thinking*. A live call to
+   `gemini-3.6-flash` burned **886 tokens of thinking to produce a 31-token
+   joke**, so the original 120-token cap returned the words "It's a" and
+   stopped. The budget is 2048 now, and the default is `gemini-3.5-flash-lite`,
+   which wrote a better line in 28 tokens with no thinking at all.
+
+Both are in the test suite now, as fixtures shaped like the real responses.
 
 ### 📐 Numbers you can act on (V23)
 
@@ -712,7 +765,7 @@ dependencies** — `package.json` exists only for the tests.
 ## Project structure
 
 ```
-AitherWeather-V23/
+AitherWeather-V24/
 ├── index.html      # App shell / markup
 ├── styles.css      # All styling + the three themes (CSS variables)
 ├── app.js          # Main app: search, weather, favorites, settings
@@ -738,6 +791,7 @@ AitherWeather-V23/
 ├── weatheranim.js  # The sky: full-page backdrop + the strip under the hero
 ├── tiles.js        # The detail tiles and their small drawings
 ├── normals.js      # Climate normals from the key-less Open-Meteo archive
+├── gemini.js       # Optional: the bot with your own Google Gemini key
 ├── icons/          # PWA icons (192, 512, maskable)
 ├── config.js       # Central configuration + defaults
 ├── storage.js      # Safe localStorage wrapper
@@ -839,7 +893,7 @@ on the **Build desktop apps** action) and GitHub builds all three platforms
 natively and attaches them to a release:
 
 ```bash
-git tag v23.0.0 && git push origin v23.0.0
+git tag v24.0.0 && git push origin v24.0.0
 ```
 
 | Platform | Files |

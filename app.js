@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V23 — app.js
+   Aither Weather V24 — app.js
    Search, weather (NWS primary + Open-Meteo companion), hourly
    outlook, alerts, radar wiring, favorites, settings, roasts,
    offline snapshot, and PWA registration.
@@ -12,6 +12,10 @@
   const state = {
     location: null,
     weather: null,
+    // Counts roasts started, so a slow Gemini reply cannot overwrite a
+    // newer line that was asked for while it was in flight.
+    roastToken: 0,
+    normal: null,
     daily: [],
     hours: [],
     detail: {},
@@ -699,6 +703,64 @@
     }
   }
 
+  function setGeminiStatus(text, kind) {
+    const el = $('geminiStatus');
+    if (!el) return;
+    el.textContent = text || '';
+    el.dataset.kind = kind || '';
+    el.hidden = !text;
+  }
+
+  /* The key field never shows the key. It shows that a key is there,
+     masked — enough to recognise which one, not enough to use. Typing
+     into it replaces it; leaving it alone keeps what is saved. */
+  function initGeminiKey() {
+    const input = $('geminiKeyInput');
+    const save = $('geminiSaveBtn');
+    const test = $('geminiTestBtn');
+    const clear = $('geminiClearBtn');
+    if (!input || !window.WTWGemini) return;
+
+    const reflect = () => {
+      if (WTWGemini.hasKey()) {
+        input.value = '';
+        input.placeholder = `Saved: ${WTWGemini.maskedKey()}`;
+      } else {
+        input.value = '';
+        input.placeholder = 'Paste your key';
+      }
+    };
+    reflect();
+
+    if (save) save.addEventListener('click', () => {
+      const value = input.value.trim();
+      if (!value) { setGeminiStatus('Nothing to save — paste a key first.', 'warn'); return; }
+      if (value.length < 20) { setGeminiStatus('That looks too short to be a key.', 'warn'); return; }
+      WTWGemini.setKey(value);
+      reflect();
+      setGeminiStatus('Saved in this browser. Try "Test the key".', 'ok');
+    });
+
+    if (test) test.addEventListener('click', async () => {
+      setGeminiStatus('Asking Google…', '');
+      test.disabled = true;
+      try {
+        const result = await WTWGemini.testKey();
+        setGeminiStatus(result.ok
+          ? `Working. It said: "${result.sample}"`
+          : result.reason, result.ok ? 'ok' : 'warn');
+      } finally {
+        test.disabled = false;
+      }
+    });
+
+    if (clear) clear.addEventListener('click', () => {
+      WTWGemini.setKey('');
+      reflect();
+      setGeminiStatus('Forgotten. The built-in bot is writing the lines again.', 'ok');
+    });
+  }
+
   /* ------------------------------------------------------------
      Browser notifications for severe alerts.
      Opt-in, deduplicated by event + expiry so a refresh doesn't
@@ -944,7 +1006,7 @@
 
   /* ---------------- Roasts (Local AI 3.0) ---------------- */
 
-  function showRoast(text, context) {
+  function showRoast(text, context, { source = 'local' } = {}) {
     const el = $('roastText');
     el.classList.remove('pop');
     void el.offsetWidth;
@@ -959,17 +1021,76 @@
     WTWStorage.addRoastLog({
       text, context: context || 'Right now',
       personality: p, city: state.location ? state.location.name : '',
-      at: Date.now(),
+      source, at: Date.now(),
     });
     renderRoastLog();
   }
 
-  function doRoast() {
+  /* Which brain writes the line.
+
+     Gemini only when it is switched on AND a key is saved AND the
+     browser thinks it is online — all three, checked before a request
+     rather than discovered by one failing. Anything else, and any
+     failure at all, is the local bot. */
+  function brainIsGemini() {
+    return WTWStorage.getSettings().botBrain === 'gemini' &&
+      window.WTWGemini && WTWGemini.hasKey() && navigator.onLine !== false;
+  }
+
+  /* A roast nobody waits for is not a roast, so the local line goes up
+     first and Gemini replaces it when it arrives. Nobody watches a
+     spinner where a joke should be, and if the request fails the line
+     already on screen is the right one. */
+  async function doRoast() {
     if (!state.weather) {
       $('roastText').textContent = "Load some weather first — I can't roast a blank sky.";
       return;
     }
-    showRoast(LocalAI.generate(state.weather), 'Right now');
+
+    const local = LocalAI.generate(state.weather);
+    if (!brainIsGemini()) {
+      showRoast(local, 'Right now');
+      return;
+    }
+
+    showRoast(local, 'Right now');
+    const token = ++state.roastToken;
+    setBotBadge('thinking');
+    try {
+      const settings = WTWStorage.getSettings();
+      const line = await WTWGemini.ask(state.weather, {
+        personality: settings.personality,
+        username: settings.username,
+        context: 'the weather right now',
+      });
+      // A newer roast started while this one was in flight; that one
+      // owns the panel.
+      if (token !== state.roastToken) return;
+      if (line) showRoast(line, 'Right now', { source: 'gemini' });
+      setBotBadge('gemini');
+    } catch (err) {
+      if (token !== state.roastToken) return;
+      console.warn('[app] Gemini roast unavailable, keeping the local one', err.message);
+      setBotBadge(err.message === 'bad-key' ? 'badkey' : 'local');
+    }
+  }
+
+  /* The bot says which brain wrote the line, because "the AI said it"
+     and "a template said it" are different claims and the user is
+     entitled to know which one they are reading. */
+  function setBotBadge(kind) {
+    const el = $('botBadge');
+    if (!el) return;
+    const text = {
+      thinking: 'Gemini · thinking…',
+      gemini: 'Gemini',
+      local: 'Local · Gemini unreachable',
+      badkey: 'Local · Gemini key rejected',
+      offline: 'Local',
+    }[kind] || '';
+    el.textContent = text;
+    el.hidden = !text;
+    el.dataset.brain = kind;
   }
 
   /* ------------------------------------------------------------
@@ -1407,6 +1528,37 @@
       });
       el.value = String(value);
     };
+
+    /* ---- The bot's brain ---- */
+
+    const brainSel = $('botBrainSelect');
+    const geminiGroup = $('geminiGroup');
+    const showGeminiGroup = () => {
+      if (geminiGroup) geminiGroup.hidden = !brainSel || brainSel.value !== 'gemini';
+    };
+    if (brainSel) {
+      fillSelect(brainSel, WTW_CONFIG.botBrains || [], s.botBrain);
+      showGeminiGroup();
+      brainSel.addEventListener('change', () => {
+        WTWStorage.saveSettings({ botBrain: brainSel.value });
+        showGeminiGroup();
+        if (brainSel.value === 'gemini' && window.WTWGemini && !WTWGemini.hasKey()) {
+          setGeminiStatus('Add a key below and the bot will start using it.', 'warn');
+        } else {
+          setGeminiStatus('', '');
+        }
+        toast(brainSel.value === 'gemini' ? 'Bot brain: Gemini' : 'Bot brain: built-in');
+      });
+    }
+    const modelSel = $('geminiModelSelect');
+    if (modelSel && window.WTWGemini) {
+      fillSelect(modelSel, WTW_CONFIG.geminiModels || [], WTWGemini.chosenModel());
+      modelSel.addEventListener('change', () => {
+        WTWStorage.saveSettings({ geminiModel: modelSel.value });
+        setGeminiStatus(`Model set to ${modelSel.options[modelSel.selectedIndex].text}.`, 'ok');
+      });
+    }
+    initGeminiKey();
 
     /* ---- Look: background, cards, corners, spacing ---- */
 

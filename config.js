@@ -1,12 +1,12 @@
 /* ============================================================
-   Aither Weather V23 — config.js
+   Aither Weather V24 — config.js
    Central configuration. No API keys required, ever.
    ============================================================ */
 
 const WTW_CONFIG = {
   app: {
     name: 'Aither Weather',
-    version: 'V23',
+    version: 'V24',
     tagline: 'Weather with an attitude problem.',
   },
 
@@ -15,6 +15,7 @@ const WTW_CONFIG = {
   defaults: {
     username: 'DJTheBest',
     personality: 'sassy',        // friendly | sassy | rude | brutal
+    botBrain: 'local',           // local | gemini — local needs no key
     autoRoast: true,             // roast automatically after each weather load
     theme: 'neon-dark',          // neon-dark | midnight | light
     units: 'imperial',           // imperial | metric
@@ -29,6 +30,7 @@ const WTW_CONFIG = {
     cardStyle: 'glass',          // glass | solid | outline
     corners: 'round',            // round | soft | square
     density: 'comfortable',      // compact | comfortable | airy
+    geminiModel: '',             // '' means whatever gemini.model is
   },
 
   // Free, key-less public services.
@@ -73,6 +75,37 @@ const WTW_CONFIG = {
     { id: 'amber',  label: 'Amber',      accent: '#fbbf24', accent2: '#fb7185' },
     { id: 'rose',   label: 'Rose',       accent: '#fb7185', accent2: '#a78bfa' },
     { id: 'mint',   label: 'Mint',       accent: '#34d399', accent2: '#22d3ee' },
+  ],
+
+  // The Wether Bot's brain. Built-in is the default and the fallback:
+  // this app works with no key, and that does not change.
+  botBrains: [
+    { id: 'local',  label: 'Built-in (no key needed)' },
+    { id: 'gemini', label: 'Google Gemini (your key)' },
+  ],
+
+  // Which Gemini model the bot asks. The key is NOT here and never
+  // will be — it lives in the user's own browser, entered in Settings.
+  gemini: {
+    /* Chosen by measuring, not by picking the newest name.
+
+       A live call showed the reasoning models spend most of their
+       output budget thinking — 886 tokens of it to write a 31-token
+       joke — which is slow, costs the user's quota, and produced a
+       worse line than the lite model did in 28 tokens with no
+       thinking at all. For a one-liner, lite is simply the right
+       tool.
+
+       Models get retired: gemini-2.0-flash was the default here until
+       Google started answering 404 for it. Hence the list, and hence
+       the error that tells you to pick another. */
+    model: 'gemini-3.5-flash-lite',
+  },
+
+  geminiModels: [
+    { id: 'gemini-3.5-flash-lite', label: 'Flash Lite 3.5 — fastest, cheapest' },
+    { id: 'gemini-3.6-flash',      label: 'Flash 3.6 — slower, thinks first' },
+    { id: 'gemini-2.5-flash',      label: 'Flash 2.5 — older' },
   ],
 
   iconStyles: [

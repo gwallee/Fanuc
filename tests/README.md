@@ -45,6 +45,7 @@ project and no global state is touched.
 | `v21.js` | The weather-driven sky, the detail tiles and their sentences, contrast over the sky, and the four look settings |
 | `v22.js` | Reading order on screen (not in the DOM), the hero off its card, the hour row with its sun events, and the air-quality tile |
 | `v23.js` | Rain amounts, gusts, the measured barometric trend, climate normals (including the cases that must produce no tile), the hourly sentence, and the place footer |
+| `v24.js` | The optional Gemini bot: that no key is committed, that it is off by default, that every failure falls back to the local bot, and that the key never leaves the browser or the transfer code |
 
 ## Environment
 

@@ -254,6 +254,7 @@ body.loading { cursor: progress; }
    the sky. They take the same glass as everything else, and keep
    their own borders so they still read as separate things. */
 [data-sky]:not([data-sky="none"]) input[type="text"],
+[data-sky]:not([data-sky="none"]) input[type="password"],
 [data-sky]:not([data-sky="none"]) input[type="search"],
 [data-sky]:not([data-sky="none"]) select,
 [data-sky]:not([data-sky="none"]) .nowcast-panel,
@@ -263,6 +264,7 @@ body.loading { cursor: progress; }
   color: var(--text);
 }
 [data-theme="light"][data-sky]:not([data-sky="none"]) input[type="text"],
+[data-theme="light"][data-sky]:not([data-sky="none"]) input[type="password"],
 [data-theme="light"][data-sky]:not([data-sky="none"]) input[type="search"],
 [data-theme="light"][data-sky]:not([data-sky="none"]) select,
 [data-theme="light"][data-sky]:not([data-sky="none"]) .nowcast-panel,
@@ -476,6 +478,48 @@ body.loading { cursor: progress; }
   font-variant-numeric: tabular-nums;
 }
 #openInMaps { text-decoration: none; flex: 0 0 auto; }
+
+/* Which brain wrote the line. It matters that this is visible: "the
+   model said it" and "a template said it" are different claims. */
+.roast-brain {
+  font-size: 0.68rem;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.roast-brain[data-brain="gemini"] { color: var(--accent); border-color: var(--accent); }
+.roast-brain[data-brain="thinking"] { opacity: 0.7; }
+.roast-brain[data-brain="badkey"] { color: var(--danger); border-color: var(--danger); }
+
+/* Settings rows that pair a field with a button. */
+.setting-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 0.35rem;
+}
+.setting-row input { flex: 1 1 12rem; min-width: 0; }
+
+.setting-status {
+  font-size: 0.82rem;
+  margin: 0.5rem 0 0;
+  line-height: 1.4;
+}
+.setting-status[data-kind="ok"] { color: var(--accent); }
+.setting-status[data-kind="warn"] { color: var(--danger); }
+
+/* The part about where the key lives. Worth reading, so it is not the
+   same grey as every other hint. */
+.setting-warn {
+  border-left: 2px solid var(--danger);
+  padding-left: 0.6rem;
+  margin-top: 0.6rem;
+}
 
 .wind-dial { margin: auto 0 0.1rem; align-self: center; width: 74px; }
 .wind-dial-svg { display: block; width: 100%; height: auto; }
@@ -2062,6 +2106,7 @@ body.radar-fullscreen { overflow: hidden; }
 .setting-hint { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.35rem; }
 
 .setting-group input[type="text"],
+.setting-group input[type="password"],
 .setting-group select {
   width: 100%;
   background: var(--input-bg);

@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0e17" />
-  <meta name="description" content="Aither Weather V23 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
-  <title>Aither Weather V23 ⚡🌩️</title>
+  <meta name="description" content="Aither Weather V24 — a neon weather app with a fullscreen animated radar over a real map, a 48-hour outlook, 7-day forecasts, alerts, favorites, themes, offline support, and a built-in local AI that roasts the weather. No API keys required." />
+  <title>Aither Weather V24 ⚡🌩️</title>
   <link rel="icon" type="image/svg+xml" href="logo.svg" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="manifest" href="manifest.json" />
@@ -367,6 +367,7 @@
           <span class="roast-meta">
             <span class="roast-context" id="roastContext">Right now</span>
             <span class="roast-personality" id="roastPersonality"></span>
+            <span class="roast-brain" id="botBadge" hidden></span>
           </span>
         </div>
         <p class="roast-text" id="roastText">Load some weather and I'll tell you what I really think, <span data-username>DJTheBest</span>.</p>
@@ -573,6 +574,46 @@
       <label for="personalitySelect">AI personality</label>
       <select id="personalitySelect"></select>
       <p class="setting-hint">Friendly → Brutal. Choose your pain level.</p>
+    </div>
+
+    <div class="setting-group">
+      <label for="botBrainSelect">Wether Bot brain</label>
+      <select id="botBrainSelect"></select>
+      <p class="setting-hint">Built-in works with no key, no account and no network.
+        Gemini writes its lines with Google's model, using a key you provide.</p>
+    </div>
+
+    <div class="setting-group" id="geminiGroup" hidden>
+      <label for="geminiKeyInput">Google Gemini API key</label>
+      <div class="setting-row">
+        <input type="password" id="geminiKeyInput" autocomplete="off"
+               spellcheck="false" placeholder="Paste your key" />
+        <button type="button" id="geminiSaveBtn" class="btn btn-small">Save</button>
+      </div>
+      <div class="setting-row">
+        <button type="button" id="geminiTestBtn" class="btn btn-small">Test the key</button>
+        <button type="button" id="geminiClearBtn" class="btn btn-small">Forget it</button>
+      </div>
+      <p class="setting-status" id="geminiStatus" role="status"></p>
+
+      <label for="geminiModelSelect">Model</label>
+      <select id="geminiModelSelect"></select>
+      <p class="setting-hint">Flash Lite writes a one-liner in a couple of dozen
+        tokens. The thinking models spend hundreds of tokens of your quota
+        reasoning about a joke first, and are slower for it.</p>
+
+      <!-- Said here rather than left to be discovered. A key in a
+           browser is readable by anyone who can open devtools on that
+           browser; what it is not is shared with other visitors. -->
+      <p class="setting-hint setting-warn">
+        The key is kept in <strong>this browser only</strong> and sent nowhere
+        except Google. It is never part of the app's code, so publishing this
+        site does not publish your key — but anyone who can open developer
+        tools on this browser can read it. Use a key you are willing to rotate,
+        and <a href="https://aistudio.google.com/apikey" target="_blank"
+        rel="noopener noreferrer">revoke it</a> if you ever paste it somewhere
+        public. Google bills this key for what the bot uses.
+      </p>
     </div>
 
     <div class="setting-group">
@@ -813,6 +854,7 @@
   <script src="weatheranim.js"></script>
   <script src="tiles.js"></script>
   <script src="normals.js"></script>
+  <script src="gemini.js"></script>
   <script src="storage.js"></script>
   <script src="themes.js"></script>
   <script src="units.js"></script>

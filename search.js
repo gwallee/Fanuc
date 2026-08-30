@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V23 — search.js
+   Aither Weather V24 — search.js
    Place search with real choices.
 
    Through V12 the search box took the single first geocoding hit,

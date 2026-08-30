@@ -1,5 +1,5 @@
 /* ============================================================
-   Aither Weather V23 — nws.js
+   Aither Weather V24 — nws.js
    National Weather Service (api.weather.gov) client.
 
    Free, no API key, CORS-enabled. US + territories only, so
