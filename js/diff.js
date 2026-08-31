@@ -10,11 +10,18 @@
    * against a backup taken with it off. This strips just that field: the one
    * immediately after the index, and only when a comment follows it, so a
    * real comment — including one that happens to end in "ON" — is untouched. */
-  var IO_STATE_RE = /(\[\s*\d+\s*):(?:ON|OFF)\s*:/g;
+  var IO_STATE_RE = /(\[\s*\d+\s*):\s*(?:ON|OFF)\s*(:|\])/g;
+  var EMPTY_CMT_RE = /(\[\s*\d+\s*):\]/g;
 
   function stripIoState(text) {
     IO_STATE_RE.lastIndex = 0;
-    return text.replace(IO_STATE_RE, '$1:');
+    var out = text.replace(IO_STATE_RE, function (_, head, tail) {
+      // "DO[65:OFF:Vac-1 ON]" -> "DO[65:Vac-1 ON]"   (state, then a comment)
+      // "DO[65:OFF]"          -> "DO[65]"            (state, no comment)
+      return tail === ']' ? head + ']' : head + ':';
+    });
+    EMPTY_CMT_RE.lastIndex = 0;
+    return out.replace(EMPTY_CMT_RE, '$1]');   // "DO[65:OFF:]" -> "DO[65]"
   }
 
   function keyer(opts) { return (opts && opts.ignoreIoState) ? stripIoState : null; }
