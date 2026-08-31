@@ -2021,9 +2021,11 @@
   }
 
   function renderCompare(pane) {
-    // -- two-program compare (Notepad++ Compare-plugin style) --
+    /* Tab-level toolbar: the I/O-state option governs both sections below, so
+     * it lives out here rather than inside one of them, where collapsing that
+     * section would hide a control still affecting the other. */
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
-      h('span', { class: 'title', text: 'Compare two programs' }),
+      h('span', { class: 'title', text: 'Compare' }),
       h('span', { style: 'flex:1' }),
       (function () {
         var cb = h('input', { type: 'checkbox' });
@@ -2044,42 +2046,62 @@
         return lab;
       })()
     ]));
-    var names = Object.keys(state.programs).sort();
-    if (names.length >= 1) {
-      if (!state.pair) state.pair = { a: state.selected || names[0], b: state.split || state.selected || names[0] };
-      var row = h('div', { class: 'search-bar' });
-      row.appendChild(progSelect(state.pair.a, function (v) { state.pair.a = v; render(); }));
-      row.appendChild(h('span', { class: 'muted', text: 'vs' }));
-      row.appendChild(progSelect(state.pair.b, function (v) { state.pair.b = v; render(); }));
-      row.appendChild(h('button', { class: 'btn subtle', text: '⇄ swap', onclick: function () { state.pair = { a: state.pair.b, b: state.pair.a }; render(); } }));
-      pane.appendChild(row);
-      var pa = state.programs[state.pair.a], pb = state.programs[state.pair.b];
-      if (pa && pb) {
-        if (state.pair.a === state.pair.b) {
-          pane.appendChild(h('p', { class: 'muted', text: 'Same program on both sides — pick two different programs (or two revisions imported under different names).' }));
-        } else {
-          pane.appendChild(renderDiffBody(pa.source, pb.source, true, state.pair.a, state.pair.b));
-        }
-      }
-    } else {
-      pane.appendChild(h('p', { class: 'muted', text: 'Import programs first.' }));
-    }
 
-    pane.appendChild(h('div', { class: 'code-toolbar', style: 'margin-top:18px' }, [
-      h('span', { class: 'title', text: 'Compare against a backup' }),
-      h('span', { class: 'muted', text: 'see everything that changed on the robot since a backup was taken' })
-    ]));
+    // -- two-program compare (Notepad++ Compare-plugin style) --
+    var pairLabel = 'Compare two programs';
+    if (state.pair && state.pair.a && state.pair.b && state.pair.a !== state.pair.b) {
+      pairLabel += ' — ' + state.pair.a + ' vs ' + state.pair.b;
+    }
+    var secPair = secHead(pairLabel, 'cmp-pair');
+    pane.appendChild(secPair.el);
+    if (secPair.open) renderComparePair(pane);
+
+    // -- library vs a loaded baseline --
+    var baseLabel = 'Compare against a backup';
+    if (state.compare) {
+      var ch = state.compare.results.changed.length;
+      baseLabel += ' — ' + (ch ? ch + ' changed' : 'no code changes') + ' vs ' + state.compare.label;
+    }
+    var secBase = secHead(baseLabel, 'cmp-baseline');
+    pane.appendChild(secBase.el);
+    if (secBase.open) renderCompareBaseline(pane);
+  }
+
+  function renderComparePair(pane) {
+    var names = Object.keys(state.programs).sort();
+    if (!names.length) {
+      pane.appendChild(h('p', { class: 'muted', text: 'Import programs first.' }));
+      return;
+    }
+    if (!state.pair) state.pair = { a: state.selected || names[0], b: state.split || state.selected || names[0] };
+    var row = h('div', { class: 'search-bar' });
+    row.appendChild(progSelect(state.pair.a, function (v) { state.pair.a = v; render(); }));
+    row.appendChild(h('span', { class: 'muted', text: 'vs' }));
+    row.appendChild(progSelect(state.pair.b, function (v) { state.pair.b = v; render(); }));
+    row.appendChild(h('button', { class: 'btn subtle', text: '\u21c4 swap', onclick: function () { state.pair = { a: state.pair.b, b: state.pair.a }; render(); } }));
+    pane.appendChild(row);
+    var pa = state.programs[state.pair.a], pb = state.programs[state.pair.b];
+    if (!pa || !pb) return;
+    if (state.pair.a === state.pair.b) {
+      pane.appendChild(h('p', { class: 'muted', text: 'Same program on both sides \u2014 pick two different programs (or two revisions imported under different names).' }));
+      return;
+    }
+    pane.appendChild(renderDiffBody(pa.source, pb.source, true, state.pair.a, state.pair.b));
+  }
+
+  function renderCompareBaseline(pane) {
+    pane.appendChild(h('p', { class: 'muted', text: 'see everything that changed on the robot since a backup was taken' }));
 
     var src = h('div', { class: 'search-bar', style: 'flex-wrap:wrap' });
     src.appendChild(h('button', {
-      class: 'btn', text: 'Pick backup .LS files…',
+      class: 'btn', text: 'Pick backup .LS files\u2026',
       onclick: function () { document.getElementById('compare-input').click(); }
     }));
     /* Native folder picker — reads the folder on whichever machine the browser
      * is running on, so it needs no bridge. The path box below is the other
      * case: browsing the *bridge PC's* disk from somewhere else. */
     src.appendChild(h('button', {
-      class: 'btn', text: 'Browse for a backup folder…',
+      class: 'btn', text: 'Browse for a backup folder\u2026',
       title: 'Opens your file manager\u2019s folder picker and loads every .LS inside',
       onclick: function () { document.getElementById('compare-dir-input').click(); }
     }));
@@ -2109,7 +2131,7 @@
     pane.appendChild(src);
 
     if (!state.compare) {
-      pane.appendChild(h('p', { class: 'muted', text: 'Load a baseline — the .LS files from an old backup — and it is compared program-by-program against your current library' + (state.server ? ' (import the robot’s current programs from the Robot tab first to diff robot vs backup)' : '') + '. Header-only differences (dates, sizes) are separated from real code changes.' }));
+      pane.appendChild(h('p', { class: 'muted', text: 'Load a baseline \u2014 the .LS files from an old backup \u2014 and it is compared program-by-program against your current library' + (state.server ? ' (import the robot\u2019s current programs from the Robot tab first to diff robot vs backup)' : '') + '. Header-only differences (dates, sizes) are separated from real code changes.' }));
       return;
     }
 
@@ -2141,22 +2163,22 @@
     }
 
     if (r.changed.length) {
-      pane.appendChild(h('h3', { text: 'Changed programs — click to see the diff' }));
+      pane.appendChild(h('h3', { text: 'Changed programs \u2014 click to see the diff' }));
       r.changed.forEach(function (ch) {
         var isOpen = c.open === ch.name;
         pane.appendChild(h('div', { class: 'diff-head' + (isOpen ? ' open' : ''), onclick: function () { c.open = isOpen ? null : ch.name; render(); } }, [
-          h('span', { class: 'mono', text: (isOpen ? '▾ ' : '▸ ') + ch.name }),
+          h('span', { class: 'mono', text: (isOpen ? '\u25be ' : '\u25b8 ') + ch.name }),
           h('span', { class: 'diff-adds', text: '+' + ch.adds }),
-          h('span', { class: 'diff-dels', text: '−' + ch.dels })
+          h('span', { class: 'diff-dels', text: '\u2212' + ch.dels })
         ]));
-        if (isOpen) pane.appendChild(renderDiffBody(c.programs[ch.name], state.programs[ch.name].source, false, ch.name + ' — backup', ch.name + ' — current'));
+        if (isOpen) pane.appendChild(renderDiffBody(c.programs[ch.name], state.programs[ch.name].source, false, ch.name + ' \u2014 backup', ch.name + ' \u2014 current'));
       });
     }
     progList('New since the baseline', r.added, 'added');
     progList('In the baseline but missing now', r.removed, 'removed');
     progList(state.ignoreIoState
       ? 'No code changes (header dates / sizes, or inline I/O state only)'
-      : 'Header-only changes (dates / sizes — code identical)', r.headerOnly, 'header');
+      : 'Header-only changes (dates / sizes \u2014 code identical)', r.headerOnly, 'header');
   }
 
   /* Side-by-side diff: baseline/A on the left, current/B on the right. */
