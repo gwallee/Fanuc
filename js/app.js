@@ -19,6 +19,8 @@
     robot: { ip: '', ftpUser: '', ftpPass: '', files: [], registers: null, rawIO: null, ioComments: null, error: null, loadedAt: null, backup: null },
     knownRobots: [],       // saved robots, served by the bridge (never a password)
     robotProbe: {},        // ip -> 'checking' | 'up' | 'down'
+    scan: null,            // subnet sweep in progress / its last result
+    subnets: null,         // the bridge PC's own networks, for the default CIDR
     dirExtern: null,       // register/IO label data found in an opened folder
     dirStatus: null,
     compare: null,         // { label, programs: {NAME: source}, results, open: name|null }
@@ -264,7 +266,7 @@
       .then(function (b) {
         state.server = !!(b && b.ok);
         renderConnect();
-        if (state.server) loadKnownRobots();
+        if (state.server) { loadKnownRobots(); loadSubnets(); }
       })
       .catch(function () { state.server = false; renderConnect(); });
   }
@@ -274,6 +276,108 @@
     if (state.robot.ftpUser) s += '&user=' + encodeURIComponent(state.robot.ftpUser);
     if (state.robot.ftpPass) s += '&pass=' + encodeURIComponent(state.robot.ftpPass);
     return s;
+  }
+
+  /* ---- subnet scan ----
+   * The bridge streams NDJSON so progress shows while the sweep runs and
+   * aborting the request really does stop it. Events are written straight
+   * into the panel's own elements — a full re-render mid-scan would take the
+   * CIDR box's focus away and throw the caret out. */
+  var scanAbort = null;
+  var scanUI = null;
+
+  function readNdjson(r, onLine) {
+    var feed = function (text) {
+      text.split('\n').forEach(function (l) {
+        if (!l.trim()) return;
+        try { onLine(JSON.parse(l)); } catch (e) { /* a torn line — the next read completes it */ }
+      });
+    };
+    if (!(r.body && r.body.getReader && window.TextDecoder)) {
+      return r.text().then(feed);   // older browser: take it all at the end
+    }
+    var reader = r.body.getReader();
+    var dec = new TextDecoder();
+    var buf = '';
+    function pump() {
+      return reader.read().then(function (res) {
+        if (res.done) { feed(buf); return; }
+        buf += dec.decode(res.value, { stream: true });
+        var parts = buf.split('\n');
+        buf = parts.pop();
+        feed(parts.join('\n'));
+        return pump();
+      });
+    }
+    return pump();
+  }
+
+  function loadSubnets() {
+    api('/api/net').then(function (b) {
+      state.subnets = b.subnets || [];
+      if (state.tab === 'robot' && !(state.scan && state.scan.running)) render();
+    }).catch(function () { state.subnets = []; });
+  }
+
+  function startScan(cidr) {
+    cancelScan();
+    scanAbort = new AbortController();
+    state.scan = { running: true, cidr: cidr, total: 0, done: 0, found: [], others: [], error: null, ms: 0 };
+    render();
+    fetch('/api/robots/scan?cidr=' + encodeURIComponent(cidr), { signal: scanAbort.signal })
+      .then(function (r) {
+        if (!r.ok) return r.json().then(function (b) { throw new Error(b.error || ('HTTP ' + r.status)); });
+        return readNdjson(r, onScanEvent);
+      })
+      .then(function () { endScan(); })
+      .catch(function (e) {
+        if (e.name === 'AbortError') return;   // cancelled on purpose
+        if (state.scan) state.scan.error = e.message;
+        endScan();
+      });
+  }
+
+  function cancelScan() {
+    if (scanAbort) { scanAbort.abort(); scanAbort = null; }
+    if (state.scan) state.scan.running = false;
+  }
+
+  function endScan() {
+    scanAbort = null;
+    if (state.scan) state.scan.running = false;
+    scanUI = null;
+    loadKnownRobots();   // the bridge already saved whatever it confirmed
+    render();
+  }
+
+  function onScanEvent(ev) {
+    var sc = state.scan;
+    if (!sc) return;
+    if (ev.type === 'start') { sc.total = ev.total; sc.cidr = ev.cidr; }
+    else if (ev.type === 'progress') sc.done = ev.done;
+    else if (ev.type === 'hit') sc.found.push({ ip: ev.ip, name: ev.name });
+    else if (ev.type === 'other') sc.others.push(ev.ip);
+    else if (ev.type === 'done') { sc.ms = ev.ms; sc.done = ev.scanned; }
+    paintScan();
+  }
+
+  function paintScan() {
+    var sc = state.scan;
+    if (!sc || !scanUI || !scanUI.progress || !scanUI.progress.isConnected) return;
+    scanUI.progress.textContent = scanProgressText(sc);
+    if (scanUI.bar) scanUI.bar.style.width = (sc.total ? Math.round(100 * sc.done / sc.total) : 0) + '%';
+  }
+
+  function scanProgressText(sc) {
+    if (sc.error) return sc.error;
+    if (sc.running) {
+      return 'Scanning ' + sc.cidr + ' — ' + sc.done + ' of ' + (sc.total || '?') + ' addresses' +
+        (sc.found.length ? ', ' + sc.found.length + ' found' : '') + '…';
+    }
+    var bits = [sc.found.length + (sc.found.length === 1 ? ' controller' : ' controllers') + ' found'];
+    if (sc.others.length) bits.push(sc.others.length + ' other device' + (sc.others.length === 1 ? '' : 's') + ' answered on port 80');
+    if (sc.ms) bits.push('swept ' + sc.done + ' addresses in ' + (sc.ms / 1000).toFixed(1) + 's');
+    return bits.join(' · ');
   }
 
   /* ---- saved robots (bridge-side, shared by every device) ---- */
@@ -2299,6 +2403,57 @@
 
   /* ---- robot tab ---- */
 
+  /* Find controllers on the network. Deliberately a button and never
+   * automatic: a subnet sweep looks like a port scan to an IDS, and that is
+   * not something an app should start on a plant network by itself. */
+  function scanPanel() {
+    var wrap = h('div', { class: 'scan-panel' });
+    var sc = state.scan;
+    var suggested = (state.subnets && state.subnets.length) ? state.subnets[0].cidr : '';
+    var cidrIn = h('input', {
+      type: 'text', class: 'scan-cidr',
+      placeholder: suggested || '192.168.0.0/24',
+      title: 'Address range to sweep, up to 1024 addresses (a /22)'
+    });
+    cidrIn.value = (sc && sc.cidr) || suggested;
+
+    var row = h('div', { class: 'search-bar', style: 'margin-bottom:4px' });
+    row.appendChild(cidrIn);
+    if (sc && sc.running) {
+      row.appendChild(h('button', { class: 'btn', text: 'Cancel', onclick: function () { cancelScan(); render(); } }));
+    } else {
+      row.appendChild(h('button', {
+        class: 'btn', text: 'Scan for robots',
+        title: 'Try port 80 on every address in the range, then confirm which are FANUC controllers',
+        onclick: function () {
+          var c = cidrIn.value.trim();
+          if (c) startScan(c);
+        }
+      }));
+    }
+    if (state.subnets && state.subnets.length > 1) {
+      state.subnets.slice(0, 4).forEach(function (n) {
+        row.appendChild(h('button', {
+          class: 'btn subtle opt', text: n.cidr,
+          title: n.iface + ' — ' + n.address,
+          onclick: function () { cidrIn.value = n.cidr; }
+        }));
+      });
+    }
+    wrap.appendChild(row);
+
+    var bar = h('div', { class: 'scan-bar' }, [h('div', { class: 'scan-bar-fill' })]);
+    var progress = h('span', { class: 'muted', text: sc ? scanProgressText(sc) : 'Sweeps the range for controllers and adds every one it finds to the list below. Only devices actually serving the robot MD: device are saved — a printer answering on port 80 is listed but never added.' });
+    if (sc && sc.running) wrap.appendChild(bar);
+    wrap.appendChild(h('div', {}, [progress]));
+    scanUI = { progress: progress, bar: bar.firstChild };
+
+    if (sc && !sc.running && sc.others.length) {
+      wrap.appendChild(h('p', { class: 'muted', text: 'Answered on port 80 but not FANUC controllers (not saved): ' + sc.others.join(', ') }));
+    }
+    return wrap;
+  }
+
   /* Robots this bridge has connected to before: click one to connect, with a
    * live dot from the short probe. The username comes back with the entry;
    * the password never does, so it is typed (or left blank) each time. */
@@ -2400,6 +2555,7 @@
     form.appendChild(passIn);
     form.appendChild(h('button', { class: 'btn primary', text: state.robot.ip ? 'Reconnect' : 'Connect', onclick: function () { state.robot.ftpUser = userIn.value.trim(); state.robot.ftpPass = passIn.value; if (ipIn.value.trim()) connectRobot(ipIn.value.trim()); } }));
     pane.appendChild(form);
+    pane.appendChild(scanPanel());
     pane.appendChild(savedRobots(ipIn, userIn));
     var banner = uploadBanner();
     if (banner) pane.appendChild(banner);

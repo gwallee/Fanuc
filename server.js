@@ -19,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 const net = require('net');
+const os = require('os');
 const { Ftp } = require('./lib/ftp.js');
 const { unwrapMd } = require('./js/parser.js');
 
@@ -33,6 +34,13 @@ const PROBE_TIMEOUT_MS = 1500;
 const MAX_BODY = 5 * 1024 * 1024;
 const ROBOTS_FILE = path.join(ROOT, 'robots.json');
 const MAX_ROBOTS = 64;
+/* Subnet sweep. A connect attempt that finds nothing is one SYN and one RST,
+ * so the whole cost of a /24 is well under 100 KB — the clock is set by how
+ * many run at once, not by bandwidth. Capped at a /22 so a mistyped prefix
+ * cannot turn into a 65k-address sweep of a plant network. */
+const SCAN_TIMEOUT_MS = 500;
+const SCAN_CONCURRENCY = 48;
+const SCAN_MAX_HOSTS = 1024;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -66,10 +74,11 @@ process.on('unhandledRejection', (e) => console.error('[bridge] unhandled reject
 
 /* Fetch a file from the robot's MD: device over HTTP.
  * Deliberately plain http.request with no proxy: robots live on the LAN. */
-function robotGet(host, filePath) {
+function robotGet(host, filePath, timeoutMs) {
+  const limit = timeoutMs || ROBOT_TIMEOUT_MS;
   return new Promise((resolve, reject) => {
     const req = http.request(
-      { host, port: 80, path: filePath, method: 'GET', timeout: ROBOT_TIMEOUT_MS },
+      { host, port: 80, path: filePath, method: 'GET', timeout: limit },
       (r) => {
         if (r.statusCode !== 200) {
           r.resume();
@@ -85,7 +94,7 @@ function robotGet(host, filePath) {
         r.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
       }
     );
-    req.on('timeout', () => { req.destroy(new Error('robot did not answer within ' + ROBOT_TIMEOUT_MS / 1000 + 's — check the IP and that HTTP is enabled on the controller')); });
+    req.on('timeout', () => { req.destroy(new Error('robot did not answer within ' + limit / 1000 + 's — check the IP and that HTTP is enabled on the controller')); });
     req.on('error', reject);
     req.end();
   });
@@ -140,6 +149,67 @@ async function handleApi(req, res, u) {
     if (!ip) return fail(res, 400, 'missing ip');
     writeRobots(readRobots().filter((r) => r.ip !== String(ip)));
     return json(res, 200, { robots: readRobots() });
+  }
+
+  if (u.pathname === '/api/net') {
+    return json(res, 200, { subnets: localSubnets() });
+  }
+
+  /* Streams NDJSON so the UI can show progress and the caller can give up
+   * mid-sweep by aborting the request. */
+  if (u.pathname === '/api/robots/scan') {
+    const parsed = cidrHosts(q.get('cidr'));
+    if (parsed.error) return fail(res, 400, parsed.error);
+    const hosts = parsed.hosts;
+    let aborted = false;
+    req.on('close', () => { aborted = true; });
+    res.writeHead(200, { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-store' });
+    const send = (o) => { if (!aborted) res.write(JSON.stringify(o) + '\n'); };
+    const started = Date.now();
+    send({ type: 'start', cidr: parsed.cidr, total: hosts.length });
+
+    const open = [];
+    let done = 0;
+    await pool(hosts, SCAN_CONCURRENCY, async (ip) => {
+      if (aborted) return;
+      const r = await probePort(ip, 80, SCAN_TIMEOUT_MS);
+      if (r.ok) open.push(ip);
+      done++;
+      if (done % 16 === 0 || done === hosts.length) send({ type: 'progress', done: done, total: hosts.length });
+    });
+
+    // only the handful that answered get the (slower) identity check
+    const found = [];
+    const others = [];
+    await pool(open, 8, async (ip) => {
+      if (aborted) return;
+      const id = await identifyRobot(ip);
+      if (id.robot) {
+        found.push({ ip: ip, name: id.name });
+        send({ type: 'hit', ip: ip, name: id.name });
+      } else {
+        others.push(ip);
+        send({ type: 'other', ip: ip });
+      }
+    });
+
+    if (!aborted && found.length) {
+      const list = readRobots();
+      for (const f of found) {
+        const keep = list.findIndex((r) => r.ip === f.ip);
+        const prev = keep === -1 ? null : list[keep];
+        if (keep !== -1) list.splice(keep, 1);
+        list.unshift({
+          ip: f.ip,
+          name: f.name || (prev && prev.name) || null,
+          ftpUser: prev ? prev.ftpUser : null,
+          lastSeen: new Date().toISOString()
+        });
+      }
+      writeRobots(list);
+    }
+    send({ type: 'done', found: found.length, others: others.length, scanned: done, ms: Date.now() - started });
+    return res.end();
   }
 
   if (u.pathname === '/api/robots/probe') {
@@ -383,22 +453,124 @@ async function robotName(host) {
 
 /* Is anything listening on the controller's web port? A plain TCP connect —
  * no HTTP semantics to misread across controller generations. */
-function probeRobot(t) {
+function probePort(host, port, timeoutMs) {
   return new Promise((resolve) => {
     const started = Date.now();
-    const sock = net.connect({ host: t.host, port: 80 });
-    let done = false;
+    const sock = net.connect({ host: host, port: port });
+    let settled = false;
     const finish = (ok, error) => {
-      if (done) return;
-      done = true;
+      if (settled) return;
+      settled = true;
       sock.destroy();
-      resolve({ ip: t.ip, ok: ok, ms: Date.now() - started, error: error || null });
+      resolve({ ok: ok, ms: Date.now() - started, error: error || null });
     };
-    sock.setTimeout(PROBE_TIMEOUT_MS);
+    sock.setTimeout(timeoutMs);
     sock.on('connect', () => finish(true));
-    sock.on('timeout', () => finish(false, 'no answer within ' + PROBE_TIMEOUT_MS + 'ms'));
+    sock.on('timeout', () => finish(false, 'no answer within ' + timeoutMs + 'ms'));
     sock.on('error', (e) => finish(false, e.message));
   });
+}
+
+function probeRobot(t) {
+  return probePort(t.host, 80, PROBE_TIMEOUT_MS).then((r) => ({ ip: t.ip, ok: r.ok, ms: r.ms, error: r.error }));
+}
+
+/* ---- subnet scan ---- */
+
+function ipToInt(ip) {
+  const p = ip.split('.');
+  if (p.length !== 4) return null;
+  let n = 0;
+  for (const part of p) {
+    const v = Number(part);
+    if (!/^\d{1,3}$/.test(part) || v > 255) return null;
+    n = (n * 256) + v;
+  }
+  return n;
+}
+
+function intToIp(n) {
+  return [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.');
+}
+
+/* CIDR -> the host addresses inside it. Network and broadcast are skipped for
+ * anything roomier than a /31, where they are not usable hosts. */
+function cidrHosts(text) {
+  const m = String(text || '').trim().match(/^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/);
+  if (!m) return { error: 'expected something like 192.168.0.0/24' };
+  const bits = Number(m[2]);
+  const base = ipToInt(m[1]);
+  if (base === null || bits < 8 || bits > 32) return { error: 'not a valid CIDR range' };
+  const size = Math.pow(2, 32 - bits);
+  if (size > SCAN_MAX_HOSTS + 2) {
+    return { error: '/' + bits + ' is ' + size + ' addresses — ' + SCAN_MAX_HOSTS + ' is the limit, use /22 or smaller' };
+  }
+  const net = size === 4294967296 ? 0 : Math.floor(base / size) * size;
+  const first = bits >= 31 ? net : net + 1;
+  const last = bits >= 31 ? net + size - 1 : net + size - 2;
+  const hosts = [];
+  for (let n = first; n <= last; n++) hosts.push(intToIp(n));
+  return { hosts: hosts, cidr: intToIp(net) + '/' + bits };
+}
+
+/* The subnets this bridge is actually attached to — the sensible default for
+ * a scan, since a robot has to be reachable from here to be usable. */
+function localSubnets() {
+  const out = [];
+  const ifs = os.networkInterfaces();
+  for (const name of Object.keys(ifs)) {
+    for (const a of ifs[name] || []) {
+      if (a.family !== 'IPv4' && a.family !== 4) continue;
+      if (a.internal) continue;
+      const mask = ipToInt(a.netmask);
+      if (mask === null) continue;
+      let bits = 0;
+      for (let i = 31; i >= 0; i--) { if ((mask >>> i) & 1) bits++; else break; }
+      const size = Math.pow(2, 32 - bits);
+      const net = Math.floor(ipToInt(a.address) / size) * size;
+      out.push({ iface: name, address: a.address, cidr: intToIp(net) + '/' + bits, hosts: Math.max(0, size - 2) });
+    }
+  }
+  return out;
+}
+
+/* Run `work` over `items`, at most `limit` in flight. */
+async function pool(items, limit, work) {
+  let i = 0;
+  const runners = [];
+  for (let k = 0; k < Math.min(limit, items.length); k++) {
+    runners.push((async () => {
+      while (i < items.length) {
+        const idx = i++;
+        await work(items[idx], idx);
+      }
+    })());
+  }
+  await Promise.all(runners);
+}
+
+/* An open port 80 is not a robot — a printer or a switch answers too, and a
+ * web UI that returns 200 for every path would pass a mere "did it fetch"
+ * test. So the body has to actually look like a controller: either SUMMARY.DG
+ * carrying FANUC identity fields, or an MD: listing with real robot files on
+ * it. Anything else is reported as "answered, not a controller" and is never
+ * saved — a wrong entry in the list is worse than a missing one. */
+const FANUC_SIG = /(?:Robot\s*Name|Host\s*name|\$HOSTNAME|F-?No\.?|F-?Number|Software\s*Version|FANUC|Controller\s*Type|R-30i)/i;
+const IDENTIFY_TIMEOUT_MS = 2500;
+
+async function identifyRobot(ip) {
+  try {
+    const dg = await robotGet(ip, '/MD/SUMMARY.DG', IDENTIFY_TIMEOUT_MS);
+    if (FANUC_SIG.test(dg)) {
+      const m = dg.match(/(?:Host\s*name|Hostname|Robot\s*Name|\$HOSTNAME)\s*[:=]?\s*([A-Za-z0-9_-]{2,32})/i);
+      return { robot: true, name: m ? m[1] : null };
+    }
+  } catch (e) { /* no SUMMARY.DG — fall through to the directory check */ }
+  try {
+    const md = await robotGet(ip, '/MD/', IDENTIFY_TIMEOUT_MS);
+    if (scrapeFileNames(md).length) return { robot: true, name: null };
+  } catch (e) { /* not serving MD: either */ }
+  return { robot: false, name: null };
 }
 
 function parseTarget(ipField) {

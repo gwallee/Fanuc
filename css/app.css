@@ -657,6 +657,19 @@ tr:last-child td { border-bottom: none; }
   font-size: 12px;
 }
 
+/* ---------- robot tab: network scan ---------- */
+.scan-panel { margin: 4px 0 10px; max-width: 70ch; }
+.scan-panel .scan-cidr { max-width: 200px; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }
+.scan-bar {
+  height: 3px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 0 0 4px;
+}
+.scan-bar-fill { height: 100%; width: 0; background: var(--accent); transition: width 0.15s linear; }
+@media (prefers-reduced-motion: reduce) { .scan-bar-fill { transition: none; } }
+
 /* ---------- robot tab: saved robots ---------- */
 .saved-robots { margin: 2px 0 10px; max-width: 70ch; }
 .sr-head { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; }
