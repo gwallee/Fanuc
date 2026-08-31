@@ -2448,9 +2448,6 @@
     wrap.appendChild(h('div', {}, [progress]));
     scanUI = { progress: progress, bar: bar.firstChild };
 
-    if (sc && !sc.running && sc.others.length) {
-      wrap.appendChild(h('p', { class: 'muted', text: 'Answered on port 80 but not FANUC controllers (not saved): ' + sc.others.join(', ') }));
-    }
     return wrap;
   }
 
