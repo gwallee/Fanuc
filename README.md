@@ -55,7 +55,7 @@ Want a double-click desktop install later? Wrap this same code in Electron/Tauri
 
 ### Compare (diff)
 - **Two programs**: pick any two library programs and get a green/red unified diff (Notepad++ Compare-plugin style)
-- **Against a backup**: load a baseline (backup folder path via the bridge, or pick `.LS` files anywhere) and see everything that changed: changed / new / missing / header-only / identical, with per-program line diffs
+- **Against a backup**: load a baseline — **Browse for a backup folder…** (your file manager's folder picker, no bridge needed), pick individual `.LS` files, or type a folder path on the bridge PC — and see everything that changed: changed / new / missing / header-only / identical, with per-program line diffs
 - Header-only differences (dates, sizes the controller rewrites on every touch) are classified separately so real code changes stand out
 - **Ignore inline I/O state** (on by default): with the controller's I/O-status display enabled, a listing reads `DO[65:OFF:Vac-1 ON]` where the file itself says `DO[65:Vac-1 ON]`. That injected field is live machine state, not program content, so it is skipped when comparing — otherwise every such line reads as changed against a backup taken with the display off. Only the field immediately after the index is dropped, and only when a comment follows it, so a real comment (even one ending in `ON`) is never touched. Both sides still *display* exactly what they contain
 

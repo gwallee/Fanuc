@@ -2075,8 +2075,16 @@
       class: 'btn', text: 'Pick backup .LS files…',
       onclick: function () { document.getElementById('compare-input').click(); }
     }));
+    /* Native folder picker — reads the folder on whichever machine the browser
+     * is running on, so it needs no bridge. The path box below is the other
+     * case: browsing the *bridge PC's* disk from somewhere else. */
+    src.appendChild(h('button', {
+      class: 'btn', text: 'Browse for a backup folder…',
+      title: 'Opens your file manager\u2019s folder picker and loads every .LS inside',
+      onclick: function () { document.getElementById('compare-dir-input').click(); }
+    }));
     if (state.server) {
-      var dirIn = h('input', { type: 'text', placeholder: 'or backup folder path on this PC' });
+      var dirIn = h('input', { type: 'text', placeholder: 'or backup folder path on the bridge PC' });
       src.appendChild(dirIn);
       src.appendChild(h('button', {
         class: 'btn', text: 'Load folder',
@@ -2594,19 +2602,41 @@
       importFiles(ev.target.files);
       ev.target.value = '';
     });
-    document.getElementById('compare-input').addEventListener('change', function (ev) {
-      var files = Array.prototype.slice.call(ev.target.files).filter(function (f) { return /\.ls$/i.test(f.name); });
-      ev.target.value = '';
-      if (!files.length) return;
+    /* Both baseline pickers land here: a multi-file selection, and a folder
+     * selection (which arrives as every file under it, hence the .LS filter
+     * and the folder name taken off the first relative path). */
+    function loadBaselineFiles(fileList, labelFor) {
+      var files = Array.prototype.slice.call(fileList).filter(function (f) { return /\.ls$/i.test(f.name); });
+      if (!files.length) {
+        toast('No .LS files there.');
+        return;
+      }
       var set = {}, pending = files.length;
       files.forEach(function (f) {
         var reader = new FileReader();
         reader.onload = function () {
           var src = String(reader.result);
           set[P.parseLS(src, f.name).name] = src;
-          if (--pending === 0) setBaseline('backup files (' + files.length + ')', set);
+          if (--pending === 0) setBaseline(labelFor(files), set);
         };
         reader.readAsText(f);
+      });
+    }
+
+    document.getElementById('compare-input').addEventListener('change', function (ev) {
+      // snapshot before clearing: input.value = '' empties the live FileList
+      var fl = Array.prototype.slice.call(ev.target.files);
+      ev.target.value = '';
+      loadBaselineFiles(fl, function (files) { return 'backup files (' + files.length + ')'; });
+    });
+
+    document.getElementById('compare-dir-input').addEventListener('change', function (ev) {
+      var fl = Array.prototype.slice.call(ev.target.files);
+      ev.target.value = '';
+      loadBaselineFiles(fl, function (files) {
+        var rel = files[0].webkitRelativePath || '';
+        var folder = rel.split('/')[0] || 'selected folder';
+        return 'backup folder ' + folder + ' (' + files.length + ' .LS)';
       });
     });
 
