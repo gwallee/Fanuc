@@ -739,19 +739,25 @@
     renderPane();
   }
 
+  /* Library filter: whitespace-separated words are ANDed, each matched as a
+   * substring of "NAME comment", in any order — so "set task" finds both
+   * _SET_TASK and _TASK_SETUP, and "pick pallet" finds PICK whether "pallet"
+   * is in the name or only in its comment. */
+  function libMatch(name, terms) {
+    var hay = (name + ' ' + (state.programs[name].parsed.attrs.COMMENT || '')).toLowerCase();
+    return terms.every(function (t) { return hay.indexOf(t) !== -1; });
+  }
+
   function renderSidebar() {
     var list = document.getElementById('prog-list');
     list.innerHTML = '';
     var all = Object.keys(state.programs).sort();
-    var q = (document.getElementById('lib-filter').value || '').trim().toLowerCase();
-    var names = !q ? all : all.filter(function (n) {
-      var p = state.programs[n];
-      return n.toLowerCase().indexOf(q) !== -1 ||
-        (p.parsed.attrs.COMMENT || '').toLowerCase().indexOf(q) !== -1;
-    });
+    var q = (document.getElementById('lib-filter').value || '').trim();
+    var terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+    var names = !terms.length ? all : all.filter(function (n) { return libMatch(n, terms); });
     document.getElementById('lib-count').textContent =
       !all.length ? '' :
-      q ? names.length + ' of ' + all.length :
+      terms.length ? names.length + ' of ' + all.length :
       all.length + ' program' + (all.length > 1 ? 's' : '');
     if (!all.length) {
       list.appendChild(h('div', { class: 'empty', text: 'No programs yet. Import .LS files or load the sample cell.' }));
