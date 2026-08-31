@@ -74,6 +74,7 @@ The Checks tab count updates live as you edit.
   - *Call order*: the sequence programs actually run in (`1 → 1.1 → 1.2 → 1.2.1 …`), with call-site line numbers, loop annotations, recursion and missing-program flags
 - **Cross-reference** — every `R[]`, `PR[]`, I/O point, and `TIMER[]` across the library with clickable read/write references
 - **Robot tab** — live register values with search/filter (matched against where each register is used in code), filterable I/O configuration
+- **Saved robots** — every controller you connect to is remembered (name read from `SUMMARY.DG`, address, when it was last seen). Click one to reconnect; a short TCP probe of port 80 shows a live dot for which are answering right now, and ✕ forgets one. The list lives on the bridge in `robots.json`, so every device pointed at that bridge sees the same robots. **FTP passwords are never stored** — the username comes back with the entry, the password is typed each time
 
 ## Repository layout
 
@@ -92,6 +93,7 @@ js/explain.js     instruction → plain-English rules (unit-tested; not wired
                   into the UI since the per-line Explain toggle was removed)
 js/vaparse.js     NUMREG.VA / DIOCFGSV.IO parsing
 js/app.js         UI
+robots.json       saved robots, written by the bridge (gitignored)
 samples/          demo cell: MAIN, PICK, PLACE, GRIPPER, PALLET
 test/run-tests.js      unit tests:         node test/run-tests.js
 test/server-tests.js   bridge integration: node test/server-tests.js

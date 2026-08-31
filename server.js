@@ -18,6 +18,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
+const net = require('net');
 const { Ftp } = require('./lib/ftp.js');
 const { unwrapMd } = require('./js/parser.js');
 
@@ -25,7 +26,13 @@ const ROOT = __dirname;
 const SNAPSHOT_DIR = path.join(ROOT, 'backups', 'pre-upload');
 const PORT = parseInt(process.argv[2], 10) || 8642;
 const ROBOT_TIMEOUT_MS = 6000;
+/* Liveness check for a saved robot: short, because the answer people want is
+ * "is it there right now", and a dead address on the LAN fails far quicker
+ * than this anyway. Only a silently-dropping firewall runs it to the end. */
+const PROBE_TIMEOUT_MS = 1500;
 const MAX_BODY = 5 * 1024 * 1024;
+const ROBOTS_FILE = path.join(ROOT, 'robots.json');
+const MAX_ROBOTS = 64;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -102,6 +109,43 @@ async function handleApi(req, res, u) {
 
   if (u.pathname === '/api/ping') {
     return json(res, 200, { ok: true, app: 'fanuc-tp-studio-bridge', version: 2 });
+  }
+
+  if (u.pathname === '/api/robots' && req.method === 'GET') {
+    return json(res, 200, { robots: readRobots() });
+  }
+
+  if (u.pathname === '/api/robots/remember' && req.method === 'POST') {
+    let payload;
+    try { payload = JSON.parse(await readBody(req)); } catch (e) { return fail(res, 400, 'invalid JSON body'); }
+    const ip = payload && payload.ip;
+    if (!ip || !ROBOT_HOST.test(String(ip).split(':')[0])) return fail(res, 400, 'missing or invalid ip');
+    const t = parseTarget(ip);
+    const name = cleanLabel(payload.name, 32) || await robotName(t.host);
+    const list = readRobots().filter((r) => r.ip !== t.ip);
+    list.unshift({
+      ip: t.ip,
+      name: name,
+      ftpUser: cleanLabel(payload.ftpUser, 32),   // never the password
+      lastSeen: new Date().toISOString()
+    });
+    writeRobots(list);
+    return json(res, 200, { robots: readRobots() });
+  }
+
+  if (u.pathname === '/api/robots/forget' && req.method === 'POST') {
+    let payload;
+    try { payload = JSON.parse(await readBody(req)); } catch (e) { return fail(res, 400, 'invalid JSON body'); }
+    const ip = payload && payload.ip;
+    if (!ip) return fail(res, 400, 'missing ip');
+    writeRobots(readRobots().filter((r) => r.ip !== String(ip)));
+    return json(res, 200, { robots: readRobots() });
+  }
+
+  if (u.pathname === '/api/robots/probe') {
+    const t = target(q);
+    if (!t) return fail(res, 400, 'missing or invalid ip');
+    return json(res, 200, await probeRobot(t));
   }
 
   if (u.pathname === '/api/dir/list') {
@@ -293,6 +337,68 @@ async function handleApi(req, res, u) {
   }
 
   return fail(res, 404, 'unknown API route');
+}
+
+/* ---- saved robots ----
+ * Kept on the bridge rather than in a browser, so every device pointed at
+ * this bridge sees the same list — and because the bridge is the thing that
+ * can actually reach the robots. Passwords are deliberately never stored. */
+function readRobots() {
+  try {
+    const list = JSON.parse(fs.readFileSync(ROBOTS_FILE, 'utf8'));
+    if (!Array.isArray(list)) return [];
+    return list.filter((r) => r && typeof r.ip === 'string' && ROBOT_HOST.test(r.ip.split(':')[0]));
+  } catch (e) {
+    return [];   // missing or corrupt — an empty list is the right answer
+  }
+}
+
+function writeRobots(list) {
+  try {
+    fs.writeFileSync(ROBOTS_FILE, JSON.stringify(list.slice(0, MAX_ROBOTS), null, 2));
+    return true;
+  } catch (e) {
+    console.error('[bridge] could not save ' + ROBOTS_FILE + ': ' + e.message);
+    return false;
+  }
+}
+
+function cleanLabel(v, max) {
+  if (typeof v !== 'string') return null;
+  const t = v.replace(/[^A-Za-z0-9_. @-]/g, '').trim().slice(0, max);
+  return t || null;
+}
+
+/* Ask the controller its name. Best-effort and short: a robot that does not
+ * answer still gets remembered, just under its address. */
+async function robotName(host) {
+  try {
+    const dg = await robotGet(host, '/MD/SUMMARY.DG');
+    const m = dg.match(/(?:Host\s*name|Hostname|Robot\s*Name|\$HOSTNAME)\s*[:=]?\s*([A-Za-z0-9_-]{2,32})/i);
+    return m ? m[1] : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/* Is anything listening on the controller's web port? A plain TCP connect —
+ * no HTTP semantics to misread across controller generations. */
+function probeRobot(t) {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const sock = net.connect({ host: t.host, port: 80 });
+    let done = false;
+    const finish = (ok, error) => {
+      if (done) return;
+      done = true;
+      sock.destroy();
+      resolve({ ip: t.ip, ok: ok, ms: Date.now() - started, error: error || null });
+    };
+    sock.setTimeout(PROBE_TIMEOUT_MS);
+    sock.on('connect', () => finish(true));
+    sock.on('timeout', () => finish(false, 'no answer within ' + PROBE_TIMEOUT_MS + 'ms'));
+    sock.on('error', (e) => finish(false, e.message));
+  });
 }
 
 function parseTarget(ipField) {

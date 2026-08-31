@@ -17,6 +17,8 @@
     findings: [],
     server: false,         // bridge server reachable?
     robot: { ip: '', ftpUser: '', ftpPass: '', files: [], registers: null, rawIO: null, ioComments: null, error: null, loadedAt: null, backup: null },
+    knownRobots: [],       // saved robots, served by the bridge (never a password)
+    robotProbe: {},        // ip -> 'checking' | 'up' | 'down'
     dirExtern: null,       // register/IO label data found in an opened folder
     dirStatus: null,
     compare: null,         // { label, programs: {NAME: source}, results, open: name|null }
@@ -241,10 +243,29 @@
     });
   }
 
+  function postJSON(pathname, body) {
+    return fetch(pathname, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      return r.json().then(function (b) {
+        if (!r.ok) throw new Error(b.error || ('HTTP ' + r.status));
+        return b;
+      });
+    }, function () {
+      throw new Error('The bridge did not answer.');
+    });
+  }
+
   function detectServer() {
     if (location.protocol === 'file:') { state.server = false; renderConnect(); return; }
     fetch('/api/ping').then(function (r) { return r.json(); })
-      .then(function (b) { state.server = !!(b && b.ok); renderConnect(); })
+      .then(function (b) {
+        state.server = !!(b && b.ok);
+        renderConnect();
+        if (state.server) loadKnownRobots();
+      })
       .catch(function () { state.server = false; renderConnect(); });
   }
 
@@ -255,6 +276,51 @@
     return s;
   }
 
+  /* ---- saved robots (bridge-side, shared by every device) ---- */
+
+  function loadKnownRobots(thenProbe) {
+    if (!state.server) return;
+    api('/api/robots').then(function (b) {
+      state.knownRobots = b.robots || [];
+      if (state.tab === 'robot') render();
+      if (thenProbe !== false) probeKnownRobots();
+    }).catch(function () { /* bridge without the endpoint — list just stays empty */ });
+  }
+
+  function rememberRobot(ip, name) {
+    if (!state.server) return;
+    postJSON('/api/robots/remember', { ip: ip, name: name || null, ftpUser: state.robot.ftpUser || null })
+      .then(function (b) {
+        state.knownRobots = b.robots || state.knownRobots;
+        state.robotProbe[ip] = 'up';
+        if (state.tab === 'robot') render();
+      }).catch(function () { /* remembering is a convenience — never block on it */ });
+  }
+
+  function forgetRobot(ip) {
+    postJSON('/api/robots/forget', { ip: ip }).then(function (b) {
+      state.knownRobots = b.robots || [];
+      delete state.robotProbe[ip];
+      render();
+    }).catch(function (e) { toast('Could not forget ' + ip + ': ' + e.message); });
+  }
+
+  /* One short TCP probe per saved robot, all in flight together — a handful
+   * of connects, and the row says which are actually reachable right now. */
+  function probeKnownRobots() {
+    state.knownRobots.forEach(function (r) {
+      state.robotProbe[r.ip] = 'checking';
+      api('/api/robots/probe?ip=' + encodeURIComponent(r.ip)).then(function (b) {
+        state.robotProbe[r.ip] = b.ok ? 'up' : 'down';
+      }).catch(function () {
+        state.robotProbe[r.ip] = 'down';
+      }).then(function () {
+        if (state.tab === 'robot') render();
+      });
+    });
+    if (state.knownRobots.length && state.tab === 'robot') render();
+  }
+
   function connectRobot(ip) {
     state.robot = { ip: ip, ftpUser: state.robot.ftpUser, ftpPass: state.robot.ftpPass, files: [], registers: null, posregs: null, rawIO: null, ioState: null, ioComments: null, errors: undefined, error: null, loadedAt: null, backup: null };
     state.tab = 'robot';
@@ -263,6 +329,7 @@
       state.robot.files = b.files;
       state.robot.loadedAt = new Date();
       render();
+      rememberRobot(ip);   // only ever remember one that actually answered
       loadRobotRegisters();
       loadRobotPosregs();
     }).catch(function (e) {
@@ -2232,6 +2299,67 @@
 
   /* ---- robot tab ---- */
 
+  /* Robots this bridge has connected to before: click one to connect, with a
+   * live dot from the short probe. The username comes back with the entry;
+   * the password never does, so it is typed (or left blank) each time. */
+  function savedRobots(ipIn, userIn) {
+    var wrap = h('div', { class: 'saved-robots' });
+    if (!state.knownRobots.length) {
+      wrap.appendChild(h('p', { class: 'muted', text: 'Robots you connect to are saved here — this bridge remembers them for every device pointed at it (never the password).' }));
+      return wrap;
+    }
+    var head = h('div', { class: 'sr-head' }, [
+      h('span', { class: 'eyebrow', text: 'Saved robots' }),
+      h('button', {
+        class: 'btn subtle', text: '↻ re-check',
+        title: 'Probe every saved robot again',
+        onclick: function () { probeKnownRobots(); render(); }
+      })
+    ]);
+    wrap.appendChild(head);
+    state.knownRobots.forEach(function (r) {
+      var st = state.robotProbe[r.ip] || 'checking';
+      var row = h('div', { class: 'sr-row' + (r.ip === state.robot.ip ? ' current' : '') });
+      row.appendChild(h('span', {
+        class: 'sr-dot ' + st,
+        title: st === 'up' ? 'answering on port 80' : st === 'down' ? 'not answering' : 'checking…'
+      }));
+      row.appendChild(h('button', {
+        class: 'sr-name',
+        text: r.name || r.ip,
+        title: 'Connect to ' + r.ip,
+        onclick: function () {
+          ipIn.value = r.ip;
+          if (r.ftpUser) { userIn.value = r.ftpUser; state.robot.ftpUser = r.ftpUser; }
+          connectRobot(r.ip);
+        }
+      }));
+      if (r.name) row.appendChild(h('span', { class: 'sr-ip mono', text: r.ip }));
+      row.appendChild(h('span', { class: 'sr-seen', text: lastSeenText(r.lastSeen) }));
+      row.appendChild(h('span', { style: 'flex:1' }));
+      if (st === 'down') row.appendChild(h('span', { class: 'muted', text: 'not answering' }));
+      row.appendChild(h('span', {
+        class: 'seq-hide', text: '✕',
+        title: 'Forget ' + (r.name || r.ip),
+        onclick: function () { forgetRobot(r.ip); }
+      }));
+      wrap.appendChild(row);
+    });
+    return wrap;
+  }
+
+  function lastSeenText(iso) {
+    var t = Date.parse(iso || '');
+    if (isNaN(t)) return '';
+    var mins = Math.round((Date.now() - t) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + ' min ago';
+    var hrs = Math.round(mins / 60);
+    if (hrs < 24) return hrs + (hrs === 1 ? ' hour ago' : ' hours ago');
+    var days = Math.round(hrs / 24);
+    return days + (days === 1 ? ' day ago' : ' days ago');
+  }
+
   function renderRobot(pane) {
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Robot connection' }),
@@ -2272,6 +2400,7 @@
     form.appendChild(passIn);
     form.appendChild(h('button', { class: 'btn primary', text: state.robot.ip ? 'Reconnect' : 'Connect', onclick: function () { state.robot.ftpUser = userIn.value.trim(); state.robot.ftpPass = passIn.value; if (ipIn.value.trim()) connectRobot(ipIn.value.trim()); } }));
     pane.appendChild(form);
+    pane.appendChild(savedRobots(ipIn, userIn));
     var banner = uploadBanner();
     if (banner) pane.appendChild(banner);
 
