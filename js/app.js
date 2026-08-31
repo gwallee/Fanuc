@@ -28,22 +28,63 @@
     checksOpen: {},        // {rule: bool} transient expand state in the Checks tab
     xrefOpen: {},          // {itemKey: true} expanded items in Cross-reference
     xrefFilter: '',
-    flowFocus: null        // block idx isolated in the control-flow graph
+    flowFocus: null,       // block idx isolated in the control-flow graph
+    zoom: 100,             // interface scale, percent (persisted)
+    ignoreIoState: true    // Compare: skip the controller's inline I/O state (persisted)
   };
 
   var PREFS_KEY = 'fanuc-tp-studio.prefs.v1';
+
+  /* ---- interface zoom ----
+   * Every size in the stylesheet is in px, so scaling the shell with `zoom`
+   * is what actually shrinks all of it — code, diffs, tables, chrome — in
+   * one move, instead of a per-tab font size. */
+  var ZOOMS = [70, 80, 90, 100, 110, 125, 150];
+
+  function applyZoom(step) {
+    var i = ZOOMS.indexOf(state.zoom);
+    if (i === -1) i = ZOOMS.indexOf(100);
+    if (step === 0) i = ZOOMS.indexOf(100);
+    else i = Math.max(0, Math.min(ZOOMS.length - 1, i + step));
+    state.zoom = ZOOMS[i];
+    paintZoom();
+    savePrefs();
+    /* The control-flow arrows are drawn from measured pixel offsets, so they
+     * have to be re-measured at the new scale. Never while the editor is
+     * open — a re-render would rebuild the textarea and drop unsaved text. */
+    if (state.tab === 'flow' && !state.editing) render();
+  }
+
+  function paintZoom() {
+    var app = document.querySelector('.app');
+    if (!app) return;
+    var z = state.zoom / 100;
+    app.style.zoom = z === 1 ? '' : String(z);
+    app.style.setProperty('--zoom', String(z));
+    var lbl = document.getElementById('btn-zoom-reset');
+    if (lbl) lbl.textContent = state.zoom + '%';
+    var out = document.getElementById('btn-zoom-out');
+    var into = document.getElementById('btn-zoom-in');
+    if (out) out.disabled = state.zoom === ZOOMS[0];
+    if (into) into.disabled = state.zoom === ZOOMS[ZOOMS.length - 1];
+  }
 
   function loadPrefs() {
     try {
       var p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
       state.flowIgnore = p.flowIgnore || {};
       state.hiddenRules = p.hiddenRules || {};
+      if (ZOOMS.indexOf(p.zoom) !== -1) state.zoom = p.zoom;
+      if (typeof p.ignoreIoState === 'boolean') state.ignoreIoState = p.ignoreIoState;
     } catch (e) { /* defaults */ }
   }
 
   function savePrefs() {
     try {
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ flowIgnore: state.flowIgnore, hiddenRules: state.hiddenRules }));
+      localStorage.setItem(PREFS_KEY, JSON.stringify({
+        flowIgnore: state.flowIgnore, hiddenRules: state.hiddenRules, zoom: state.zoom,
+        ignoreIoState: state.ignoreIoState
+      }));
     } catch (e) { /* session-only */ }
   }
 
@@ -1967,11 +2008,13 @@
     return out;
   }
 
+  function diffOpts() { return { ignoreIoState: state.ignoreIoState }; }
+
   function setBaseline(label, programs) {
     state.compare = {
       label: label,
       programs: programs,
-      results: D.comparePrograms(programs, librarySources()),
+      results: D.comparePrograms(programs, librarySources(), diffOpts()),
       open: null
     };
     render();
@@ -1980,7 +2023,26 @@
   function renderCompare(pane) {
     // -- two-program compare (Notepad++ Compare-plugin style) --
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
-      h('span', { class: 'title', text: 'Compare two programs' })
+      h('span', { class: 'title', text: 'Compare two programs' }),
+      h('span', { style: 'flex:1' }),
+      (function () {
+        var cb = h('input', { type: 'checkbox' });
+        cb.checked = state.ignoreIoState;
+        cb.addEventListener('change', function () {
+          state.ignoreIoState = cb.checked;
+          savePrefs();
+          // the baseline verdicts were computed under the old setting
+          if (state.compare) {
+            state.compare.results = D.comparePrograms(state.compare.programs, librarySources(), diffOpts());
+          }
+          render();
+        });
+        var lab = h('label', {
+          title: 'With the controller\u2019s I/O-state display on, a listing reads DO[65:OFF:Vac-1 ON] instead of DO[65:Vac-1 ON]. That state is live machine data, not program content, so ignoring it stops every such line showing as a change against a backup taken with the display off.'
+        }, [cb]);
+        lab.appendChild(document.createTextNode(' Ignore inline I/O state'));
+        return lab;
+      })()
     ]));
     var names = Object.keys(state.programs).sort();
     if (names.length >= 1) {
@@ -2084,14 +2146,16 @@
     }
     progList('New since the baseline', r.added, 'added');
     progList('In the baseline but missing now', r.removed, 'removed');
-    progList('Header-only changes (dates / sizes — code identical)', r.headerOnly, 'header');
+    progList(state.ignoreIoState
+      ? 'No code changes (header dates / sizes, or inline I/O state only)'
+      : 'Header-only changes (dates / sizes — code identical)', r.headerOnly, 'header');
   }
 
   /* Side-by-side diff: baseline/A on the left, current/B on the right. */
   function renderDiffBody(baselineSrc, currentSrc, fullSource, aLabel, bLabel) {
     var ops = fullSource
-      ? D.diffLines(baselineSrc, currentSrc)
-      : D.diffLines(D.bodyOf(baselineSrc), D.bodyOf(currentSrc));
+      ? D.diffLines(baselineSrc, currentSrc, diffOpts())
+      : D.diffLines(D.bodyOf(baselineSrc), D.bodyOf(currentSrc), diffOpts());
     var rows = D.sideBySide(ops);
 
     var box = h('div', { class: 'codebox sbs-box' });
@@ -2561,6 +2625,10 @@
       }
     });
 
+    document.getElementById('btn-zoom-out').addEventListener('click', function () { applyZoom(-1); });
+    document.getElementById('btn-zoom-in').addEventListener('click', function () { applyZoom(1); });
+    document.getElementById('btn-zoom-reset').addEventListener('click', function () { applyZoom(0); });
+
     document.getElementById('btn-nav').addEventListener('click', function () { setNav(!navOpen()); });
     document.getElementById('nav-scrim').addEventListener('click', function () { setNav(false); });
     document.getElementById('btn-import').addEventListener('click', function () {
@@ -2620,6 +2688,7 @@
     if (buildTag && window.FANUC_STUDIO_BUILD) buildTag.textContent = window.FANUC_STUDIO_BUILD;
 
     loadPrefs();
+    paintZoom();
     restore();
     rebuildDerived();
     render();

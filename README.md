@@ -34,6 +34,8 @@ Want a double-click desktop install later? Wrap this same code in Electron/Tauri
 
 ### View
 - Multi-program library with syntax highlighting, header attributes, parsed `/POS` position tables (Cartesian + joint, multi-group), drag-and-drop import, localStorage persistence, `.LS` export
+- **Interface zoom** (`−  100%  +` in the header, 70–150%) scales the whole app — code, diffs, tables and chrome alike — and is remembered between sessions
+- **Phone / tablet**: below 760px the program library becomes an off-canvas drawer behind ☰ (tap a program, the backdrop, or Escape to close), and the header buttons scroll horizontally. Open `http://<bridge-pc-ip>:8642` from any device on the same network
 
 ### Edit
 - Full-source editor per program, syntax-highlighted and filling the tab: **Save to library** re-parses and refreshes every view and re-runs all checks; for programs opened from a directory via the bridge, **Save to library + disk** writes the file back
@@ -43,6 +45,7 @@ Want a double-click desktop install later? Wrap this same code in Electron/Tauri
 ### Find in files
 - The Search tab greps every line of every program, grouped by program, with match-case / whole-word / regex options
 - An item query like `R[10]` or `DO[104]` also matches its labeled form (`R[10:pallet slot]`)
+- The library filter (sidebar) ANDs multiple words against the program name *and* its comment, in any order — `set task` finds both `_SET_TASK` and `_TASK_SETUP`
 - **Ctrl+E** (Studio 5000 habit): select anything — in the viewer or the editor — and Ctrl+E cross-references it library-wide; clicking any register/I-O token in the Code view does the same
 - Click a `CALL`ed program name to open it (open-selection)
 
@@ -54,6 +57,7 @@ Want a double-click desktop install later? Wrap this same code in Electron/Tauri
 - **Two programs**: pick any two library programs and get a green/red unified diff (Notepad++ Compare-plugin style)
 - **Against a backup**: load a baseline (backup folder path via the bridge, or pick `.LS` files anywhere) and see everything that changed: changed / new / missing / header-only / identical, with per-program line diffs
 - Header-only differences (dates, sizes the controller rewrites on every touch) are classified separately so real code changes stand out
+- **Ignore inline I/O state** (on by default): with the controller's I/O-status display enabled, a listing reads `DO[65:OFF:Vac-1 ON]` where the file itself says `DO[65:Vac-1 ON]`. That injected field is live machine state, not program content, so it is skipped when comparing — otherwise every such line reads as changed against a backup taken with the display off. Only the field immediately after the index is dropped, and only when a comment follows it, so a real comment (even one ending in `ON`) is never touched. Both sides still *display* exactly what they contain
 
 ### Check (Checks tab)
 Static analysis across the whole library — comment lines (`!…`) never count as uses:
