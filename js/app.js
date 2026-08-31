@@ -748,6 +748,20 @@
     return terms.every(function (t) { return hay.indexOf(t) !== -1; });
   }
 
+  /* Off-canvas program library (narrow screens only — the class is inert at
+   * desktop widths, where the sidebar is always in the grid). */
+  function setNav(open) {
+    var app = document.querySelector('.app');
+    if (!app) return;
+    app.classList.toggle('nav-open', open);
+    var btn = document.getElementById('btn-nav');
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  function navOpen() {
+    var app = document.querySelector('.app');
+    return !!app && app.classList.contains('nav-open');
+  }
+
   function renderSidebar() {
     var list = document.getElementById('prog-list');
     list.innerHTML = '';
@@ -777,7 +791,7 @@
         class: 'prog-item' + (n === state.selected ? ' active' : ''),
         draggable: 'true',
         title: 'Click to open · drag onto the code view to open side-by-side',
-        onclick: function () { state.selected = n; state.editing = false; render(); }
+        onclick: function () { state.selected = n; state.editing = false; setNav(false); render(); }
       }, [
         h('div', { class: 'name', text: n }),
         h('div', { class: 'meta', text: meta })
@@ -2540,7 +2554,15 @@
         e.preventDefault();
         crossRefToken(selectedText());
       }
+      if (e.key === 'Escape' && navOpen()) {
+        setNav(false);
+        var nb = document.getElementById('btn-nav');
+        if (nb) nb.focus();
+      }
     });
+
+    document.getElementById('btn-nav').addEventListener('click', function () { setNav(!navOpen()); });
+    document.getElementById('nav-scrim').addEventListener('click', function () { setNav(false); });
     document.getElementById('btn-import').addEventListener('click', function () {
       document.getElementById('file-input').click();
     });

@@ -168,6 +168,11 @@ button { font: inherit; }
 .brand .build { font-size: 11px; }
 
 .header .spacer { flex: 1; }
+.header-actions { display: flex; align-items: center; gap: 8px; }
+
+/* drawer chrome — only ever visible at the narrow breakpoint below */
+.nav-toggle { display: none; }
+.nav-scrim { display: none; }
 
 .btn {
   border: 1px solid var(--line);
@@ -892,7 +897,66 @@ h3.sec-toggle:hover { color: var(--accent); }
   .cline.flash { transition: background 1.2s ease-out; }
 }
 
+/* ---------- narrow screens: phone layout ----------
+ * The sidebar leaves the grid and becomes an off-canvas drawer over the
+ * content; the header's action buttons become one horizontally scrollable
+ * strip so none of them can end up off-screen and unreachable. */
 @media (max-width: 760px) {
   .app { grid-template-columns: 1fr; grid-template-areas: "header" "main"; }
-  .sidebar { display: none; }
+
+  .header { flex-wrap: wrap; gap: 6px 10px; padding: 6px 10px; }
+  .header .spacer { display: none; }
+  .header-actions {
+    flex: 1 0 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .header-actions::-webkit-scrollbar { display: none; }
+  .header-actions .btn { flex: 0 0 auto; white-space: nowrap; }
+
+  .nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    line-height: 1;
+    padding: 5px 9px;
+    border-color: var(--line);
+    color: var(--ink);
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(280px, 82vw);
+    z-index: 40;
+    transform: translateX(-100%);
+    visibility: hidden;   /* also keeps the closed drawer out of the tab order */
+    transition: transform 0.18s ease, visibility 0.18s;
+    box-shadow: 4px 0 18px rgba(0, 0, 0, 0.28);
+  }
+  .app.nav-open .sidebar { transform: none; visibility: visible; }
+
+  .nav-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 39;
+    background: rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
+  }
+  .app.nav-open .nav-scrim { opacity: 1; pointer-events: auto; }
+
+  .pane { padding: 10px 12px 24px; }
+  .code-toolbar { gap: 8px; }
+  .flow-wrap { padding-left: 80px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar, .nav-scrim { transition: none; }
 }

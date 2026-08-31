@@ -12,21 +12,27 @@
 <body>
 <div class="app">
   <header class="header">
+    <button class="btn subtle nav-toggle" id="btn-nav" aria-label="Program library"
+            aria-expanded="false" aria-controls="sidebar">☰</button>
     <div class="brand">
       <span class="mark">FANUC TP</span>
       <h1>Program Studio</h1>
       <span class="muted build" id="build-tag"></span>
     </div>
     <div class="spacer"></div>
-    <button class="btn primary" id="btn-import">Import .LS files</button>
-    <button class="btn" id="btn-folder">Open folder</button>
-    <button class="btn" id="btn-samples">Load sample cell</button>
+    <div class="header-actions">
+      <button class="btn primary" id="btn-import">Import .LS files</button>
+      <button class="btn" id="btn-folder">Open folder</button>
+      <button class="btn" id="btn-samples">Load sample cell</button>
+    </div>
     <input type="file" id="file-input" accept=".ls,.LS,.txt" multiple hidden>
     <input type="file" id="folder-input" webkitdirectory multiple hidden>
     <input type="file" id="compare-input" accept=".ls,.LS" multiple hidden>
   </header>
 
-  <aside class="sidebar">
+  <div class="nav-scrim" id="nav-scrim" aria-hidden="true"></div>
+
+  <aside class="sidebar" id="sidebar">
     <div class="section-head">
       <span class="eyebrow">Sources</span>
     </div>
