@@ -511,6 +511,88 @@ check(pp.programs[0].task === 'yes' && pp.programs[1].protection === 'ON',
 check(!Object.prototype.hasOwnProperty.call(pp.locked, '_IDLE_PROG'),
   'an idle, write-protected program is not reported as held by a task');
 
+console.log('\n-- flow blocks: blanks, captions, inbound --');
+/* The shape that made the Flow view hard to read: a JMP, then a blank run,
+ * then a header comment captioning the label that follows it. */
+const fbSrc = `/PROG FB
+/MN
+   1:  LBL[400] ;
+   2:  IF (DI[18:Reject]),JMP LBL[420] ;
+   3:  JMP LBL[410] ;
+   4:  !**Normal Box ;
+   5:  LBL[410] ;
+   6:  R[101]=10 ;
+   7:  JMP LBL[500] ;
+   8:  !**Reject Box ;
+   9:  LBL[420] ;
+  10:  R[101]=70 ;
+  11:  JMP LBL[500] ;
+  12:   ;
+  13:   ;
+  14:  !***Pick Up Box*** ;
+  15:  LBL[500] ;
+  16:  CALL _SET_OFFS(0,0,250,61) ;
+  17:  END ;
+/END
+`;
+const fbParsed = P.parseLS(fbSrc, 'FB.LS');
+const fb = FL.buildFlow(fbParsed);
+
+// no block may consist only of blanks and comments
+const inert = fb.blocks.filter(b => b.activeCount === 0);
+check(inert.length === 0, 'no block is made only of blank/comment lines (got ' + inert.length + ')');
+
+const b500 = fb.blocks.find(b => b.labelNum === 500);
+check(!!b500, 'LBL[500] block exists');
+check(b500.startNum === 12 && b500.endNum === 17,
+  'the blank run and its header comment attach to the block below (lines ' + b500.startNum + '-' + b500.endNum + ')');
+check(b500.leadIn === 3, '3 lead-in lines recorded (blank, blank, comment) — got ' + b500.leadIn);
+check(b500.lines.some(l => l.num === 14 && l.comment !== null),
+  'line 14 "!***Pick Up Box***" belongs to LBL[500], not to the run above it');
+
+const b410 = fb.blocks.find(b => b.labelNum === 410);
+check(b410.startNum === 4 && b410.leadIn === 1, 'LBL[410] takes its own one-line caption');
+
+// how control reaches LBL[500]: the two JMPs, and nothing else
+const into500 = b500.inbound.map(e => e.kind + '@' + (e.fromLine || '')).sort();
+check(into500.join(',') === 'jump@11,jump@7',
+  'inbound edges are exactly the two jumps (' + into500.join(',') + ')');
+check(!b500.inbound.some(e => e.kind === 'fall'),
+  'no phantom fall-through from a comment-only block');
+
+// a comment in the middle of a block stays put rather than being hoisted
+const midSrc = `/PROG MID
+/MN
+   1:  LBL[10] ;
+   2:  R[1]=1 ;
+   3:  !mid comment ;
+   4:  R[2]=2 ;
+   5:  END ;
+/END
+`;
+const mid = FL.buildFlow(P.parseLS(midSrc, 'MID.LS'));
+check(mid.blocks.length === 1, 'straight-line block stays one block');
+check(mid.blocks[0].leadIn === undefined, 'an interior comment is not treated as a lead-in caption');
+check(mid.blocks[0].lines.length === 5, 'all 5 lines kept in order');
+
+// trailing blanks/comments must not vanish
+const tailSrc = `/PROG TAIL
+/MN
+   1:  LBL[10] ;
+   2:  R[1]=1 ;
+   3:   ;
+   4:  !trailing note ;
+/END
+`;
+const tail = FL.buildFlow(P.parseLS(tailSrc, 'TAIL.LS'));
+check(tail.blocks.length === 1, 'trailing inert lines do not create a block');
+check(tail.blocks[tail.blocks.length - 1].endNum === 4,
+  'trailing blank/comment stay with the last block (endNum ' + tail.blocks[tail.blocks.length - 1].endNum + ')');
+
+// preview no longer counts blank lines as content
+const prevBlanks = fb.blocks.every(b => b.preview.every(t => t.trim() !== ''));
+check(prevBlanks, 'no preview entry is an empty string');
+
 console.log('');
 if (failures) {
   console.error(failures + ' test(s) failed');

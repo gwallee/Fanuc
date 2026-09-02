@@ -19,6 +19,13 @@
   function isStop(text) { return /^(END\s*$|ABORT\s*$)/.test(text); }
   function isLabelDef(text) { return /^LBL\[/.test(text); }
 
+  /* A blank line and a comment line are both inert, but they were treated
+   * differently: comments were skipped, blanks counted as code. That is what
+   * produced blocks holding nothing but blank lines. */
+  function isActive(line) {
+    return line.comment === null && String(line.text).trim() !== '';
+  }
+
   function jumpTargets(text) {
     var out = [], m;
     JUMP_RE.lastIndex = 0;
@@ -34,23 +41,40 @@
     function close() { if (cur && cur.lines.length) blocks.push(cur); cur = null; }
     function open() { if (!cur) cur = { lines: [] }; }
 
+    /* Blanks and comments belong to whatever comes NEXT, not to what came
+     * before. "!***Pick Up Box***" sitting on line 88 is the caption for
+     * LBL[500] on 89, not a block of its own, and a run of blank lines is not
+     * a block at all. So buffer them and let the next active line decide
+     * where they land: a fresh block takes them as its lead-in, a block
+     * already under way just keeps them inline. */
+    var pending = [];
+
     parsed.lines.forEach(function (line) {
-      var active = line.comment === null;
-      if (active && isLabelDef(line.text)) {
-        close();
-        open();
+      if (!isActive(line)) { pending.push(line); return; }
+      var label = isLabelDef(line.text);
+      if (label) close();
+      open();
+      if (pending.length) {
+        if (!cur.lines.length) cur.leadIn = pending.length;
+        pending.forEach(function (pl) { cur.lines.push(pl); });
+        pending = [];
+      }
+      if (label) {
         var m = line.text.match(/^LBL\[\s*(\d+)\s*(?::([^\]]*))?\]/);
         cur.labelNum = parseInt(m[1], 10);
         cur.labelName = (m[2] || '').trim();
         labelBlock[cur.labelNum] = blocks.length; // idx once pushed
-      } else {
-        open();
       }
       cur.lines.push(line);
-      if (active && (jumpTargets(line.text).length || isStop(line.text) || isUncondJump(line.text))) {
-        close();
-      }
+      if (jumpTargets(line.text).length || isStop(line.text) || isUncondJump(line.text)) close();
     });
+    /* Trailing blanks and comments have no block left to caption. Keep them
+     * with the last one so no line disappears from the view. */
+    if (pending.length) {
+      if (!cur && blocks.length) cur = blocks.pop();
+      open();
+      pending.forEach(function (pl) { cur.lines.push(pl); });
+    }
     close();
 
     blocks.forEach(function (b, i) {
@@ -60,8 +84,10 @@
       b.count = b.lines.length;
       var lastActive = null;
       b.calls = [];
+      b.activeCount = 0;
       b.lines.forEach(function (l) {
-        if (l.comment !== null) return;
+        if (!isActive(l)) return;
+        b.activeCount++;
         lastActive = l;
         var cm = l.text.replace(/\[[^\]]*\]/g, '[]').match(/\b(?:CALL|RUN)\s+([A-Z_][A-Z0-9_]*)/);
         if (cm) b.calls.push(cm[1].toUpperCase());
@@ -79,7 +105,7 @@
       }
       if (b.labelNum !== undefined && lastActive && isStop(lastActive.text)) b.kind = 'label stop';
       b.preview = b.lines
-        .filter(function (l) { return l.comment === null; })
+        .filter(isActive)
         .slice(0, 3)
         .map(function (l) { return (l.motion ? l.motion + ' ' : '') + l.text; });
     });
@@ -107,6 +133,14 @@
       if (fallsThrough && i + 1 < blocks.length) {
         edges.push({ from: i, to: i + 1, kind: 'fall' });
       }
+    });
+
+    /* Which blocks lead here. In a jump-heavy program "how does it even
+     * reach this line" is the constant question, and the arrows alone do not
+     * answer it once there are more than a handful. */
+    blocks.forEach(function (b) { b.inbound = []; });
+    edges.forEach(function (e) {
+      if (e.to !== null && blocks[e.to]) blocks[e.to].inbound.push(e);
     });
 
     return { blocks: blocks, edges: edges };

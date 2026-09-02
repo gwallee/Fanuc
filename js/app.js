@@ -1842,7 +1842,7 @@
       });
       card.appendChild(h('div', { class: 'fc-head' }, [
         h('span', { class: 'fc-title', text: b.title }),
-        h('span', { class: 'fc-range', text: b.kind === 'normal' ? '' : 'lines ' + b.startNum + '–' + b.endNum }),
+        h('span', { class: 'fc-range', text: 'lines ' + b.startNum + '–' + b.endNum }),
         h('span', { class: 'fc-spacer' }),
         h('button', {
           class: 'fc-goto', text: '↗',
@@ -1851,12 +1851,45 @@
           onclick: function (ev) { ev.stopPropagation(); gotoLine(p.parsed.name, b.startNum); }
         })
       ]));
+      /* "How does it even reach this line" is the question a jump-heavy
+       * program raises constantly, so every block says where control comes
+       * from. Click a source to open that jump in the code. */
+      if (b.inbound.length) {
+        var inRow = h('div', { class: 'fc-in' });
+        inRow.appendChild(h('span', { class: 'fc-in-label', text: 'from' }));
+        b.inbound.forEach(function (e) {
+          var src = flow.blocks[e.from];
+          var atLine = e.kind === 'fall' ? (src ? src.endNum : b.startNum) : e.fromLine;
+          inRow.appendChild(h('button', {
+            class: 'fc-in-chip ' + e.kind,
+            text: (e.kind === 'fall' ? '↓ ' : '↷ ') + atLine,
+            title: (e.kind === 'fall' ? 'falls through from line ' + atLine
+              : (e.kind === 'cond' ? 'conditional jump from line ' : 'jump from line ') + atLine) +
+              (src ? ' · ' + src.title : '') + ' — click to open it in the code',
+            onclick: function (ev) { ev.stopPropagation(); gotoLine(p.parsed.name, atLine); }
+          }));
+        });
+        card.appendChild(inRow);
+      }
+
+      /* Every line, with its real number. This used to show three lines and
+       * "… N more lines", which is no use when the point is to read the
+       * program. Blank lines are dropped because they carry nothing, and the
+       * numbers make the gap obvious anyway. */
       var body = h('div', { class: 'fc-body' });
-      b.preview.forEach(function (t) {
-        body.appendChild(h('div', { class: 'fc-line', text: t.length > 64 ? t.slice(0, 62) + '…' : t }));
+      b.lines.forEach(function (l) {
+        var cmt = l.comment !== null;
+        if (!cmt && String(l.text).trim() === '') return;
+        var row = h('div', { class: 'fc-line' + (cmt ? ' cmt' : ''), 'data-ln': String(l.num) });
+        row.appendChild(h('span', { class: 'fc-ln', text: String(l.num) }));
+        row.appendChild(h('span', { class: 'fc-src', text: (l.motion ? l.motion + ' ' : '') + l.text }));
+        row.title = 'Line ' + l.num + ' — click to open it in the code';
+        row.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          gotoLine(p.parsed.name, l.num);
+        });
+        body.appendChild(row);
       });
-      var extra = b.lines.filter(function (l) { return l.comment === null; }).length - b.preview.length;
-      if (extra > 0) body.appendChild(h('div', { class: 'fc-line muted', text: '… ' + extra + ' more line' + (extra > 1 ? 's' : '') }));
       card.appendChild(body);
       var visCalls = b.calls.filter(function (n) { return !state.flowIgnore[n]; });
       if (visCalls.length) {
