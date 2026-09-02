@@ -105,6 +105,59 @@ async function post(route, body) {
     check(got.every((f) => /\.(LS|VA)$/i.test(f)) && got.includes('MAIN.LS') && got.includes('NUMREG.VA'),
       'quick backup contains only .LS/.VA: ' + got.join(', '));
     check(!got.includes('SYSMAST.SV') && !got.includes('MAIN.TP'), '.SV/.TP files skipped');
+
+    console.log('\n-- FTP client: a dead or fast connection must not wedge a request --');
+    const { Ftp } = require('../lib/ftp.js');
+
+    /* Two bugs used to combine to hang /api/robot/list forever, past every
+     * timeout in the stack:
+     *
+     *  1. A data command draws two replies (150 then 226). On a fast link the
+     *     server sends both in one segment, so the 226 was parsed while only
+     *     the 150 had a waiter queued -- and an unmatched reply was dropped.
+     *     The next _expect() then waited for a reply that no longer existed.
+     *  2. quit() issued QUIT on an already-dead socket, queueing a waiter that
+     *     could never settle: no data would arrive and close/error/timeout had
+     *     already fired. withFtp() awaits quit() in a finally, so the whole
+     *     HTTP request hung with it.
+     */
+    const bounded = (p, ms, label) => Promise.race([
+      Promise.resolve(p).then((v) => ({ ok: true, v })),
+      new Promise((r) => setTimeout(() => r({ ok: false, v: label + ' did not settle within ' + ms + 'ms' }), ms))
+    ]);
+
+    // (1) a listing over one connection: both replies must be accounted for
+    const f1 = await Ftp.connect('127.0.0.1', FTP_PORT, undefined, undefined, 3000);
+    const t1 = Date.now();
+    const listed = await bounded(f1.nlst(), 4000, 'nlst');
+    check(listed.ok, 'nlst settles rather than waiting on a reply that was dropped (' +
+      (listed.ok ? (Date.now() - t1) + 'ms' : listed.v) + ')');
+    check(listed.ok && listed.v.includes('MAIN.LS'), 'nlst returned the file list');
+    // and again on the same connection, to prove no reply was left buffered
+    const listed2 = await bounded(f1.nlst(), 4000, 'second nlst');
+    check(listed2.ok && listed2.v.includes('MAIN.LS'),
+      'a second nlst on the same connection still works (no stale reply left behind)');
+    const q1 = await bounded(f1.quit(), 3000, 'quit');
+    check(q1.ok, 'quit on a live connection settles');
+
+    // (2) quit() after the control connection has died must return at once
+    const f2 = await Ftp.connect('127.0.0.1', FTP_PORT, undefined, undefined, 3000);
+    f2.socket.destroy();                      // kill it under the client
+    await new Promise((r) => setTimeout(r, 150));
+    const t2 = Date.now();
+    const q2 = await bounded(f2.quit(), 3000, 'quit after death');
+    check(q2.ok, 'quit on a dead connection returns instead of hanging (' +
+      (q2.ok ? (Date.now() - t2) + 'ms' : q2.v) + ')');
+    const cmdAfter = await bounded(
+      f2.nlst().then(() => 'resolved').catch((e) => 'rejected: ' + e.message), 3000, 'nlst after death');
+    check(cmdAfter.ok && /^rejected/.test(cmdAfter.v),
+      'a command on a dead connection rejects rather than queueing forever (' + cmdAfter.v + ')');
+
+    // (3) the endpoint itself answers rather than hanging when nothing serves it
+    const t3 = Date.now();
+    const dead = await fetch(BASE + '/api/robot/list?ip=127.0.0.1:1').then((r) => r.status);
+    check(dead === 502, 'an unreachable controller returns 502, not a hang (status ' + dead + ')');
+    check(Date.now() - t3 < 30000, 'and it answers well inside 30s (' + (Date.now() - t3) + 'ms)');
   } catch (e) {
     failures++;
     console.error('FAIL  unexpected error: ' + (e.stack || e.message));
