@@ -20,15 +20,9 @@
       <span class="muted build" id="build-tag"></span>
     </div>
     <div class="spacer"></div>
-    <div class="zoom" role="group" aria-label="Interface size">
-      <button class="btn subtle" id="btn-zoom-out" aria-label="Smaller" title="Smaller">−</button>
-      <button class="btn subtle zoom-level" id="btn-zoom-reset" title="Interface size — click to reset to 100%">100%</button>
-      <button class="btn subtle" id="btn-zoom-in" aria-label="Larger" title="Larger">+</button>
-    </div>
     <div class="header-actions">
       <button class="btn primary" id="btn-import">Import .LS files</button>
       <button class="btn" id="btn-folder">Open folder</button>
-      <button class="btn" id="btn-samples">Load sample cell</button>
     </div>
     <input type="file" id="file-input" accept=".ls,.LS,.txt" multiple hidden>
     <input type="file" id="folder-input" webkitdirectory multiple hidden>
@@ -41,11 +35,12 @@
   <aside class="sidebar" id="sidebar">
     <div class="section-head">
       <span class="eyebrow">Sources</span>
+      <span class="bridge-dot" id="bridge-dot" role="img" hidden></span>
     </div>
     <div class="connect">
       <div class="row" id="robot-row">
-        <input id="robot-ip" type="text" placeholder="Robot IP">
-        <button class="btn" id="btn-robot">Connect</button>
+        <select id="robot-select"
+                title="Robots this bridge has saved. Pick one to connect — its saved FTP user comes with it. A new IP, an FTP password, or a subnet scan live on the Robot tab."></select>
       </div>
       <div class="row" id="dir-row">
         <input id="dir-path" type="text" placeholder="Local folder path">
@@ -80,7 +75,6 @@
 <script src="js/flow.js"></script>
 <script src="js/vaparse.js"></script>
 <script src="js/diff.js"></script>
-<script src="js/samples.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

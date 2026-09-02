@@ -24,14 +24,42 @@
     return out.replace(EMPTY_CMT_RE, '$1]');   // "DO[65:OFF:]" -> "DO[65]"
   }
 
-  function keyer(opts) { return (opts && opts.ignoreIoState) ? stripIoState : null; }
+  /* Every /MN line is written "<pad><n>:  <instruction> ;", so inserting or
+   * deleting one line renumbers every line after it. Those renumbered lines
+   * are identical program content, but compared verbatim they all read as
+   * changes and bury the one real edit. This drops the whole prefix — the pad
+   * too, since 9 -> 10 also shifts the padding — leaving the two spaces that
+   * separate it from the instruction, so indentation still counts. Anchored
+   * and bounded so it can only match that prefix and never /POS payload.
+   * Multiline + global because comparePrograms hands the normalizer a whole
+   * body at once while diffLines hands it one line at a time. */
+  var LINE_NUM_RE = /^[ \t]{0,6}\d{1,5}:/gm;
+
+  function stripLineNums(text) {
+    LINE_NUM_RE.lastIndex = 0;
+    return text.replace(LINE_NUM_RE, '');
+  }
+
+  function keyer(opts) {
+    if (!opts) return null;
+    var fns = [];
+    if (opts.ignoreIoState) fns.push(stripIoState);
+    if (opts.ignoreLineNums) fns.push(stripLineNums);
+    if (!fns.length) return null;
+    if (fns.length === 1) return fns[0];
+    return function (text) {
+      for (var i = 0; i < fns.length; i++) text = fns[i](text);
+      return text;
+    };
+  }
 
   /* Classic LCS line diff. Returns ops: {t: '='|'-'|'+', text, textB, an, bn}
    * (an/bn are 1-based line numbers in a/b where applicable).
-   * opts.ignoreIoState compares lines with the inline I/O state removed while
-   * every op still carries the text as it was actually written — textB is the
-   * b-side original of an '=' op, which can differ from text by exactly the
-   * state that was ignored. */
+   * opts.ignoreIoState / opts.ignoreLineNums compare lines with the inline
+   * I/O state and/or the leading line number removed while every op still
+   * carries the text as it was actually written — textB is the b-side
+   * original of an '=' op, which can differ from text by exactly what was
+   * ignored. */
   function diffLines(aText, bText, opts) {
     var a = aText.split(/\r\n|\r|\n/);
     var b = bText.split(/\r\n|\r|\n/);
@@ -162,7 +190,8 @@
 
   var api = {
     diffLines: diffLines, comparePrograms: comparePrograms, bodyOf: bodyOf,
-    sideBySide: sideBySide, stripIoState: stripIoState
+    sideBySide: sideBySide, stripIoState: stripIoState,
+    stripLineNums: stripLineNums
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucDiff = api;

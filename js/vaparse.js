@@ -141,7 +141,123 @@
     return out;
   }
 
-  var api = { parseNumreg: parseNumreg, rawLines: rawLines, parseIOComments: parseIOComments, parseIOState: parseIOState, parsePosreg: parsePosreg, posregValueStr: posregValueStr, parseErrall: parseErrall };
+
+  /* PRGSTATE.DG — the controller's own program/task state dump. Two sections:
+   *
+   *   TASK STATES:
+   *   1     ATCELLIO RUNNING @ 477 in MAIN of ATCELLIO
+   *   2  ZDTMSGTYPES status = ABORTED
+   *   ****** History Data ******            <- the routine stack for that task
+   *   Routine depth: 1  Routine: MAIN
+   *   Line:   477       Program: ATCELLIO   Type: PC
+   *
+   *   PROGRAM STATES:
+   *   _PK_RACK      TP
+   *   Task: no                              <- a task is attached to it
+   *   Protection: OFF                       <- write protected
+   *
+   * This is what answers "why will the controller not let me overwrite this".
+   * A controller refuses to overwrite a program that has a live task, and a
+   * PAUSED task is still live — only ABORT releases it. Everything on the
+   * routine stack is pinned too, not just the program the cursor sits in.
+   */
+  function parsePrgState(text) {
+    var src = String(text || '').replace(/\r\n?|\r/g, '\n');
+    var out = { header: {}, tasks: [], programs: [] };
+
+    var hdr = {
+      fNumber: /^F Number:\s*(\S+)/m,
+      version: /^VERSION *:\s*(.+?)\s*$/m,
+      sysVersion: /^\$VERSION:\s*(.+?)\s*$/m,
+      date: /^DATE:\s*(.+?)\s*$/m
+    };
+    Object.keys(hdr).forEach(function (k) {
+      var m = src.match(hdr[k]);
+      if (m) out.header[k] = m[1].trim();
+    });
+
+    /* ---- TASK STATES ---- */
+    var taskSec = src.split(/^TASK STATES:\s*$/m)[1];
+    if (taskSec) taskSec = taskSec.split(/^PROGRAM STATES:\s*$/m)[0];
+    if (taskSec) {
+      /* Two header shapes, hence the alternation: a live task reports where it
+       * is, a dead one only reports how it ended. */
+      var running = /^\s*(\d+)\s+(\S+)\s+([A-Z]+)\D*(\d+)\s+in\s+(\S+)\s+of\s+(\S+)/;
+      var stopped = /^\s*(\d+)\s+(\S+)\s+status\s*=\s*(\S+)/;
+      var depth = /^Routine depth:\s*(\d+)\s+Routine:\s*(\S+)/;
+      var lineOf = /^Line:\s*(\d+)\s+Program:\s*(\S+)(?:\s+Type:\s*(\S+))?/;
+      var cur = null;
+      taskSec.split('\n').forEach(function (raw) {
+        var line = raw.replace(/\s+$/, '');
+        var m = line.match(running);
+        if (m) {
+          cur = { n: +m[1], name: m[2], state: m[3].toUpperCase(), line: +m[4], routine: m[5], program: m[6], stack: [] };
+          out.tasks.push(cur);
+          return;
+        }
+        m = line.match(stopped);
+        if (m) {
+          cur = { n: +m[1], name: m[2], state: m[3].toUpperCase(), line: null, routine: null, program: null, stack: [] };
+          out.tasks.push(cur);
+          return;
+        }
+        if (!cur) return;
+        m = line.match(depth);
+        if (m) { cur.stack.push({ depth: +m[1], routine: m[2], line: null, program: null, type: null }); return; }
+        m = line.match(lineOf);
+        if (m && cur.stack.length) {
+          var top = cur.stack[cur.stack.length - 1];
+          top.line = +m[1]; top.program = m[2]; top.type = m[3] || null;
+        }
+      });
+    }
+
+    /* ---- PROGRAM STATES ---- */
+    var progSec = src.split(/^PROGRAM STATES:\s*$/m)[1];
+    if (progSec) {
+      var head = /^(\S+)\s+(TP|PC|VR|MN|KL)\s*$/;
+      var field = /^([A-Za-z][A-Za-z ]*?):\s+(.*?)\s*$/;
+      var p = null;
+      progSec.split('\n').forEach(function (raw) {
+        var line = raw.replace(/\s+$/, '');
+        var m = line.match(head);
+        if (m) { p = { name: m[1], type: m[2] }; out.programs.push(p); return; }
+        if (!p) return;
+        m = line.match(field);
+        if (!m) return;
+        var key = m[1].trim().toLowerCase();
+        var val = m[2].trim();
+        if (key === 'task') p.task = val;
+        else if (key === 'lines') p.lines = parseInt(val, 10);
+        else if (key === 'comment') p.comment = val;
+        else if (key === 'protection') p.protection = val;
+        else if (key === 'last modified') p.modified = val;
+        else if (key === 'program size') p.size = parseInt(val, 10);
+        else if (key === 'ignore abort') p.ignoreAbort = val;
+        else if (key === 'ignore pause') p.ignorePause = val;
+      });
+    }
+
+    /* Which programs a controller will refuse to overwrite. A task only holds
+     * its programs while it is alive, so ABORTED tasks are not counted — but
+     * anything on a live task's routine stack is, not just its current
+     * program. `Task:` is read as attached unless it explicitly says "no",
+     * so an unfamiliar value errs toward warning rather than silence. */
+    var LIVE = { RUNNING: 1, PAUSED: 1, HELD: 1 };
+    var locked = {};
+    out.tasks.forEach(function (t) {
+      if (!LIVE[t.state]) return;
+      if (t.program) locked[t.program.toUpperCase()] = t;
+      t.stack.forEach(function (f) { if (f.program) locked[f.program.toUpperCase()] = t; });
+    });
+    out.programs.forEach(function (p) {
+      if (p.task && p.task.toLowerCase() !== 'no') locked[p.name.toUpperCase()] = locked[p.name.toUpperCase()] || null;
+    });
+    out.locked = locked;
+    return out;
+  }
+
+  var api = { parseNumreg: parseNumreg, rawLines: rawLines, parseIOComments: parseIOComments, parseIOState: parseIOState, parsePosreg: parsePosreg, posregValueStr: posregValueStr, parseErrall: parseErrall, parsePrgState: parsePrgState };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucVA = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -16,7 +16,8 @@
     xref: null,
     findings: [],
     server: false,         // bridge server reachable?
-    robot: { ip: '', ftpUser: '', ftpPass: '', files: [], registers: null, rawIO: null, ioComments: null, error: null, loadedAt: null, backup: null },
+    robotImport: null,     // {total, done, added, skipped, failed, inFlight, cancel} while a bulk import runs
+    robot: { ip: '', ftpUser: '', ftpPass: '', files: [], registers: null, rawIO: null, ioComments: null, error: null, loadedAt: null, backup: null, notPrograms: {}, prgState: undefined },
     knownRobots: [],       // saved robots, served by the bridge (never a password)
     robotProbe: {},        // ip -> 'checking' | 'up' | 'down'
     scan: null,            // subnet sweep in progress / its last result
@@ -33,44 +34,62 @@
     xrefOpen: {},          // {itemKey: true} expanded items in Cross-reference
     xrefFilter: '',
     flowFocus: null,       // block idx isolated in the control-flow graph
-    zoom: 100,             // interface scale, percent (persisted)
-    ignoreIoState: true    // Compare: skip the controller's inline I/O state (persisted)
+    codeSize: 13,          // code font size in px (persisted)
+    ignoreIoState: true,   // Compare: skip the controller's inline I/O state (persisted)
+    ignoreLineNums: true   // Compare: skip the leading /MN line number (persisted)
   };
 
   var PREFS_KEY = 'fanuc-tp-studio.prefs.v1';
 
-  /* ---- interface zoom ----
-   * Every size in the stylesheet is in px, so scaling the shell with `zoom`
-   * is what actually shrinks all of it — code, diffs, tables, chrome — in
-   * one move, instead of a per-tab font size. */
-  var ZOOMS = [70, 80, 90, 100, 110, 125, 150];
+  /* ---- code text size ----
+   * Only the code surfaces scale: the viewer, the side-by-side/unified diffs
+   * and the editor all take their font-size from --code-size. This replaced
+   * an interface zoom that scaled the whole shell, which was never the point
+   * — the thing worth enlarging on a phone, or across a shop-floor desk, is
+   * the program text, not the chrome around it. The gutters are sized in em
+   * so they stay proportional as the text grows. */
+  var CODE_SIZES = [11, 12, 13, 14, 16, 18, 21];
+  var CODE_SIZE_DEFAULT = 13;
 
-  function applyZoom(step) {
-    var i = ZOOMS.indexOf(state.zoom);
-    if (i === -1) i = ZOOMS.indexOf(100);
-    if (step === 0) i = ZOOMS.indexOf(100);
-    else i = Math.max(0, Math.min(ZOOMS.length - 1, i + step));
-    state.zoom = ZOOMS[i];
-    paintZoom();
-    savePrefs();
-    /* The control-flow arrows are drawn from measured pixel offsets, so they
-     * have to be re-measured at the new scale. Never while the editor is
-     * open — a re-render would rebuild the textarea and drop unsaved text. */
-    if (state.tab === 'flow' && !state.editing) render();
+  function paintCodeSize() {
+    var app = document.querySelector('.app');
+    if (app) app.style.setProperty('--code-size', state.codeSize + 'px');
   }
 
-  function paintZoom() {
-    var app = document.querySelector('.app');
-    if (!app) return;
-    var z = state.zoom / 100;
-    app.style.zoom = z === 1 ? '' : String(z);
-    app.style.setProperty('--zoom', String(z));
-    var lbl = document.getElementById('btn-zoom-reset');
-    if (lbl) lbl.textContent = state.zoom + '%';
-    var out = document.getElementById('btn-zoom-out');
-    var into = document.getElementById('btn-zoom-in');
-    if (out) out.disabled = state.zoom === ZOOMS[0];
-    if (into) into.disabled = state.zoom === ZOOMS[ZOOMS.length - 1];
+  /* The − / size / + group for the Code tab's toolbar. It repaints its own
+   * label and sets the CSS variable directly rather than calling render(),
+   * because the editor shares this toolbar and a re-render would rebuild the
+   * textarea and drop unsaved text. */
+  function codeSizeControl() {
+    var minus = h('button', { class: 'btn subtle', text: '−', 'aria-label': 'Smaller code text', title: 'Smaller code text' });
+    var plus = h('button', { class: 'btn subtle', text: '+', 'aria-label': 'Larger code text', title: 'Larger code text' });
+    var level = h('button', {
+      class: 'btn subtle code-size-level',
+      title: 'Code text size — click to reset to ' + CODE_SIZE_DEFAULT + 'px'
+    });
+
+    function paint() {
+      level.textContent = state.codeSize + 'px';
+      minus.disabled = state.codeSize === CODE_SIZES[0];
+      plus.disabled = state.codeSize === CODE_SIZES[CODE_SIZES.length - 1];
+    }
+
+    function step(d) {
+      var i = CODE_SIZES.indexOf(state.codeSize);
+      if (i === -1) i = CODE_SIZES.indexOf(CODE_SIZE_DEFAULT);
+      state.codeSize = d === 0
+        ? CODE_SIZE_DEFAULT
+        : CODE_SIZES[Math.max(0, Math.min(CODE_SIZES.length - 1, i + d))];
+      paintCodeSize();
+      paint();
+      savePrefs();
+    }
+
+    minus.addEventListener('click', function () { step(-1); });
+    plus.addEventListener('click', function () { step(1); });
+    level.addEventListener('click', function () { step(0); });
+    paint();
+    return h('div', { class: 'code-size', role: 'group', 'aria-label': 'Code text size' }, [minus, level, plus]);
   }
 
   function loadPrefs() {
@@ -78,16 +97,17 @@
       var p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
       state.flowIgnore = p.flowIgnore || {};
       state.hiddenRules = p.hiddenRules || {};
-      if (ZOOMS.indexOf(p.zoom) !== -1) state.zoom = p.zoom;
+      if (CODE_SIZES.indexOf(p.codeSize) !== -1) state.codeSize = p.codeSize;
       if (typeof p.ignoreIoState === 'boolean') state.ignoreIoState = p.ignoreIoState;
+      if (typeof p.ignoreLineNums === 'boolean') state.ignoreLineNums = p.ignoreLineNums;
     } catch (e) { /* defaults */ }
   }
 
   function savePrefs() {
     try {
       localStorage.setItem(PREFS_KEY, JSON.stringify({
-        flowIgnore: state.flowIgnore, hiddenRules: state.hiddenRules, zoom: state.zoom,
-        ignoreIoState: state.ignoreIoState
+        flowIgnore: state.flowIgnore, hiddenRules: state.hiddenRules, codeSize: state.codeSize,
+        ignoreIoState: state.ignoreIoState, ignoreLineNums: state.ignoreLineNums
       }));
     } catch (e) { /* session-only */ }
   }
@@ -127,11 +147,36 @@
     state.xref = A.buildGlobalXref(state.programs);
     state.extern = buildExtern();
     state.findings = L.lint(state.programs, state.graph, state.xref, state.extern, { passThroughCalls: state.flowIgnore });
+    refreshCompare();
+  }
+
+  /* A loaded baseline is compared against the library as it stood at that
+   * moment. Every later import, edit or removal changes the library, so the
+   * stored verdicts have to be recomputed alongside it. Otherwise the changed
+   * list could name a program the library no longer holds, and opening that
+   * row threw on a missing .source — which aborted the rest of the render
+   * and looked like a row that simply would not open. */
+  function refreshCompare() {
+    var c = state.compare;
+    if (!c) return;
+    c.results = D.comparePrograms(c.programs, librarySources(), diffOpts());
+    if (c.open && !state.programs[c.open]) c.open = null;
   }
 
   // Controllers export logs (ERRALL.LS, HIST.LS, LOGBOOK.LS…) with a .ls
   // extension too — only files with a /PROG header are actual programs.
   function isProgramSource(src) { return /^\/PROG\b/m.test(src); }
+
+  /* A controller's file list gives names only, so the /PROG test above needs
+   * the file fetched first. These are the log exports by name, which lets the
+   * Robot tab keep them out of the program list before anything is read. Any
+   * other file that turns out to have no /PROG header is remembered in
+   * state.robot.notPrograms once a fetch has proved it. */
+  var LOG_EXPORT_RE = /^(ERR[A-Z]*|HIST|LOGBOOK)\.LS$/i;
+
+  function isKnownNonProgram(filename) {
+    return LOG_EXPORT_RE.test(filename) || !!state.robot.notPrograms[filename.toUpperCase()];
+  }
 
   function addProgram(source, filename, origin) {
     var parsed = P.parseLS(source, filename);
@@ -218,18 +263,6 @@
       };
       reader.readAsText(f);
     });
-  }
-
-  function loadSamples() {
-    if (!window.FANUC_SAMPLES) return;
-    var last = null;
-    Object.keys(window.FANUC_SAMPLES).forEach(function (n) {
-      last = addProgram(window.FANUC_SAMPLES[n], n + '.LS', { type: 'sample' });
-    });
-    state.selected = state.programs.MAIN ? 'MAIN' : last;
-    rebuildDerived();
-    persist();
-    render();
   }
 
   /* ================= bridge (server) API ================= */
@@ -386,7 +419,12 @@
     if (!state.server) return;
     api('/api/robots').then(function (b) {
       state.knownRobots = b.robots || [];
-      if (state.tab === 'robot') render();
+      /* The saved list arrives after the first paint. The Robot tab shows it
+       * in full, but the sidebar picker is built from it too, so it has to be
+       * refreshed on every other tab as well — otherwise the dropdown sits
+       * on "No saved robots yet" for the whole session. Repainting just the
+       * picker keeps a burst of probe results from re-rendering everything. */
+      if (state.tab === 'robot') render(); else paintRobotPicker();
       if (thenProbe !== false) probeKnownRobots();
     }).catch(function () { /* bridge without the endpoint — list just stays empty */ });
   }
@@ -419,14 +457,15 @@
       }).catch(function () {
         state.robotProbe[r.ip] = 'down';
       }).then(function () {
-        if (state.tab === 'robot') render();
+        if (state.tab === 'robot') render(); else paintRobotPicker();
       });
     });
-    if (state.knownRobots.length && state.tab === 'robot') render();
+    if (!state.knownRobots.length) return;
+    if (state.tab === 'robot') render(); else paintRobotPicker();
   }
 
   function connectRobot(ip) {
-    state.robot = { ip: ip, ftpUser: state.robot.ftpUser, ftpPass: state.robot.ftpPass, files: [], registers: null, posregs: null, rawIO: null, ioState: null, ioComments: null, errors: undefined, error: null, loadedAt: null, backup: null };
+    state.robot = { ip: ip, ftpUser: state.robot.ftpUser, ftpPass: state.robot.ftpPass, files: [], registers: null, posregs: null, rawIO: null, ioState: null, ioComments: null, errors: undefined, error: null, loadedAt: null, backup: null, notPrograms: {}, prgState: undefined };
     state.tab = 'robot';
     render();
     api('/api/robot/list?ip=' + encodeURIComponent(ip) + ftpQS()).then(function (b) {
@@ -480,6 +519,22 @@
     });
   }
 
+  /* PRGSTATE.DG answers "why will the controller not let me overwrite this".
+   * Read on demand rather than on connect: it is a large file, and it only
+   * matters at the moment an edit is being refused. */
+  function loadRobotPrgState() {
+    var ip = state.robot.ip;
+    state.robot.prgState = null;
+    render();
+    api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=PRGSTATE.DG' + ftpQS()).then(function (b) {
+      state.robot.prgState = VA.parsePrgState(b.content);
+      if (state.tab === 'robot') render();
+    }).catch(function (e) {
+      state.robot.prgState = { error: e.message };
+      if (state.tab === 'robot') render();
+    });
+  }
+
   function loadRobotIO() {
     var ip = state.robot.ip;
     // IOSTATE.DG carries live state + comments in ASCII (DIOCFGSV.IO is binary
@@ -507,7 +562,7 @@
   }
 
   function takeBackup(mode) {
-    state.robot.backup = { running: true };
+    state.robot.backup = { running: true, mode: mode };
     render();
     fetch('/api/robot/backup', {
       method: 'POST',
@@ -610,17 +665,78 @@
       '\n\nImporting from ' + state.robot.ip + ' will REPLACE those library copies. If you want to keep both robots’ versions, take a backup of each robot instead and use the Compare tab.\n\nReplace them?');
   }
 
-  function importFromRobot(name) {
+  /* A bulk import used to be a bare forEach over every file, which was wrong
+   * in three ways: render() ran only once the last file landed, so nothing
+   * moved for the whole import and every chip turned green at the same
+   * moment; all N files were requested at once, which on a 57-program
+   * controller means 57 simultaneous requests at a web server that is not
+   * really one; and rebuildDerived() + persist() ran per program, so the
+   * whole library was re-analysed and rewritten to localStorage N times.
+   *
+   * Now: a small pool, a render after every file so the chips fill in as they
+   * arrive, and the expensive rebuild exactly once at the end. */
+  var IMPORT_CONCURRENCY = 4;
+
+  function importAllFromRobot(names) {
+    var queue = names.slice();
+    state.robotImport = {
+      total: names.length, done: 0, added: 0, skipped: 0, failed: 0,
+      inFlight: {}, cancel: false
+    };
+    render();
+
+    function next() {
+      var imp = state.robotImport;
+      if (!imp || imp.cancel || !queue.length) return Promise.resolve();
+      var name = queue.shift();
+      imp.inFlight[name.toUpperCase()] = true;
+      return importFromRobot(name, true)
+        .then(function (prog) { if (prog) imp.added++; else imp.skipped++; })
+        .catch(function () { imp.failed++; })
+        .then(function () {
+          delete imp.inFlight[name.toUpperCase()];
+          imp.done++;
+          if (state.tab === 'robot') render();
+          return next();
+        });
+    }
+
+    var runners = [];
+    var n = Math.min(IMPORT_CONCURRENCY, queue.length);
+    for (var i = 0; i < n; i++) runners.push(next());
+
+    return Promise.all(runners).then(function () {
+      var imp = state.robotImport;
+      state.robotImport = null;
+      // the costly part, once, rather than once per program
+      rebuildDerived();
+      persist();
+      if (imp) {
+        toast(imp.cancel
+          ? 'Import stopped — ' + imp.added + ' of ' + imp.total + ' imported.'
+          : 'Imported ' + imp.added + ' program' + (imp.added === 1 ? '' : 's') +
+            (imp.skipped ? ' (skipped ' + imp.skipped + ' non-program file' + (imp.skipped === 1 ? '' : 's') + ')' : '') +
+            (imp.failed ? ' — ' + imp.failed + ' failed' : '') + '.');
+      }
+      render();
+    });
+  }
+
+  function importFromRobot(name, deferRebuild) {
     var ip = state.robot.ip;
     return api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=' + encodeURIComponent(name) + ftpQS())
       .then(function (b) {
         if (!isProgramSource(b.content)) {
-          toast(b.name + ' is a controller log export, not a TP program — skipped.');
+          // remember it so the program list stops offering this one
+          state.robot.notPrograms[String(name).toUpperCase()] = true;
+          // during a bulk import these are counted and summarised at the end
+          if (!deferRebuild) toast(b.name + ' is a controller log export, not a TP program — skipped.');
           return null;
         }
         var prog = addProgram(b.content, b.name, { type: 'robot', ip: ip, name: b.name });
-        rebuildDerived();
-        persist();
+        /* A bulk import defers both: re-analysing the whole library and
+         * rewriting localStorage per program is the bulk of the wall clock. */
+        if (!deferRebuild) { rebuildDerived(); persist(); }
         return prog;
       });
   }
@@ -843,22 +959,26 @@
       var node = sel.anchorNode;
       var el = node && (node.nodeType === 3 ? node.parentElement : node);
       var tokEl = el && el.closest ? el.closest('.tok-reg, .tok-io, .tok-lbl') : null;
-      if (tokEl) {
-        var m = tokEl.textContent.match(/^(R|PR|AR|SR|DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|AI|AO|F|M|TIMER|LBL)\[\s*(\d+)/);
-        // component references (PR[20,1]) count as uses; indices may be padded (LBL[ 610])
-        if (m) itemRe = new RegExp('\\b' + m[1] + '\\[\\s*' + m[2] + '(?:\\s*,\\s*\\d+)?\\s*(?::[^\\]]*)?\\]', 'g');
-      }
+      /* Inside the editor the anchor is the <textarea>, never a token span,
+       * so there is nothing to close() on. Read the item off the selected
+       * text instead, which gives edit mode the same item-aware matching the
+       * viewer has: select R[1] and R[1:part count] lights up too. */
+      var ITEM_HEAD = /^(R|PR|AR|SR|DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|AI|AO|F|M|TIMER|LBL)\[\s*(\d+)/;
+      var m = (tokEl ? tokEl.textContent : text).match(ITEM_HEAD);
+      // component references (PR[20,1]) count as uses; indices may be padded (LBL[ 610])
+      if (m) itemRe = new RegExp('\\b' + m[1] + '\\[\\s*' + m[2] + '(?:\\s*,\\s*\\d+)?\\s*(?::[^\\]]*)?\\]', 'g');
     } else {
       text = '';
     }
     var key = itemRe ? 'item:' + itemRe.source : (text ? 'text:' + text : null);
-    if (key === occLast) return;
+    // the editor's overlay is rebuilt as you type, so its ranges go stale
+    if (key === occLast && !document.querySelector('.pane.editing')) return;
     occLast = key;
     CSS.highlights.delete('tp-occ');
     if (!key) return;
 
     var ranges = [];
-    document.querySelectorAll('#pane .codebox .src').forEach(function (srcEl) {
+    document.querySelectorAll('#pane .codebox .src, #pane .editor-hl').forEach(function (srcEl) {
       var walker = document.createTreeWalker(srcEl, NodeFilter.SHOW_TEXT);
       var tn;
       while ((tn = walker.nextNode()) && ranges.length < 2000) {
@@ -986,7 +1106,7 @@
       terms.length ? names.length + ' of ' + all.length :
       all.length + ' program' + (all.length > 1 ? 's' : '');
     if (!all.length) {
-      list.appendChild(h('div', { class: 'empty', text: 'No programs yet. Import .LS files or load the sample cell.' }));
+      list.appendChild(h('div', { class: 'empty', text: 'No programs yet. Import .LS files or open a backup folder.' }));
       return;
     }
     if (!names.length) {
@@ -1016,23 +1136,85 @@
     });
   }
 
+  /* Sidebar robot picker. It replaced a bare IP text box that could not
+   * carry FTP credentials (so a controller needing FTP auth failed as though
+   * it were unreachable), did not know the saved robot names, and duplicated
+   * the Robot tab's own field. Its second job is to show which robot you are
+   * on from any tab — without that, a Compare against the wrong controller
+   * looks perfectly plausible. */
+  var ROBOT_PICK_TAB = '__robot_tab__';
+
+  function robotPickerKey() {
+    return state.knownRobots.map(function (r) {
+      return r.ip + '|' + (r.name || '') + '|' + (state.robotProbe[r.ip] || '');
+    }).join(',') + '#' + (state.robot.ip || '');
+  }
+
+  function paintRobotPicker() {
+    var sel = document.getElementById('robot-select');
+    if (!sel) return;
+    /* Only rebuild when the list or a status dot actually changed: probes
+     * land asynchronously and re-render, and swapping the options out from
+     * under an open menu would close it mid-choice. */
+    var key = robotPickerKey();
+    if (sel.getAttribute('data-key') !== key) {
+      sel.innerHTML = '';
+      if (!state.knownRobots.length) {
+        sel.appendChild(h('option', { value: '', text: 'No saved robots yet' }));
+      } else {
+        sel.appendChild(h('option', { value: '', text: state.robot.ip ? 'Switch robot…' : 'Pick a robot…' }));
+        state.knownRobots.forEach(function (r) {
+          var st = state.robotProbe[r.ip];
+          // ● answering · ○ not answering · · still checking
+          var dot = st === 'up' ? '● ' : st === 'down' ? '○ ' : '· ';
+          sel.appendChild(h('option', {
+            value: r.ip,
+            text: dot + (r.name ? r.name + '  —  ' + r.ip : r.ip)
+          }));
+        });
+      }
+      sel.appendChild(h('option', { value: ROBOT_PICK_TAB, text: '→ Robot tab (new IP, FTP, scan)' }));
+      sel.setAttribute('data-key', key);
+    }
+    var known = state.knownRobots.some(function (r) { return r.ip === state.robot.ip; });
+    sel.value = (state.robot.ip && known) ? state.robot.ip : '';
+  }
+
   function renderConnect() {
     var hint = document.getElementById('server-hint');
+    var dot = document.getElementById('bridge-dot');
     var robotRow = document.getElementById('robot-row');
     var dirRow = document.getElementById('dir-row');
     if (!hint) return;
     if (state.server) {
       robotRow.style.display = '';
       dirRow.style.display = '';
-      hint.innerHTML = '<span class="badge ok">bridge on</span> ' + (state.dirStatus ? esc(state.dirStatus) : 'Robot + folder access ready.');
+      /* The bridge being on is the normal case — it is how the app is
+       * started — so it says so with a dot in the "Sources" heading, which
+       * is on screen anyway, and costs no vertical space of its own. The
+       * explanation is on hover; the off state is the one worth words. */
+      if (dot) {
+        dot.hidden = false;
+        dot.setAttribute('aria-label', 'Bridge on');
+        dot.title = 'Bridge on — robot by IP, folder by path, uploads, backups and scanning are available';
+      }
+      // a folder-load result is real news, so it still gets a line
+      paintRobotPicker();
+      hint.innerHTML = state.dirStatus ? esc(state.dirStatus) : '';
+      hint.hidden = !state.dirStatus;
     } else {
       robotRow.style.display = 'none';
       dirRow.style.display = 'none';
+      if (dot) dot.hidden = true;
+      hint.hidden = false;
       hint.innerHTML = 'Robot &amp; folder-path access need the bridge:<br><code>node server.js</code> then open <code>http://localhost:8642</code>. The Robot tab has details.';
     }
   }
 
+  /* Robot leads: it is where a session starts (connect, then import), and it
+   * is the one tab that works with an empty library. */
   var TABS = [
+    ['robot', 'Robot'],
     ['code', 'Code'],
     ['summary', 'Summary'],
     ['flow', 'Flow'],
@@ -1040,8 +1222,7 @@
     ['compare', 'Compare'],
     ['positions', 'Positions'],
     ['xref', 'Cross-reference'],
-    ['search', 'Search'],
-    ['robot', 'Robot']
+    ['search', 'Search']
   ];
 
   /* Ctrl+E (Studio 5000 style): cross-reference the selected text.
@@ -1098,7 +1279,7 @@
         h('p', { text: 'View, edit, check, and understand FANUC teach pendant programs. Import ASCII listing files (.LS), open a backup folder, or connect to a robot by IP (Robot tab).' }),
         h('div', { class: 'drop-hint' }, [
           h('p', { text: 'Drag .LS files anywhere in this window,' }),
-          h('p', { text: 'or use Import / Open folder / Load sample cell above.' })
+          h('p', { text: 'or use Import / Open folder above.' })
         ])
       ]));
       return;
@@ -1131,8 +1312,15 @@
       if (t.classList.contains('tok-call')) {
         var name = t.getAttribute('data-call').toUpperCase();
         if (state.programs[name]) { state.selected = name; render(); }
-        return;
       }
+    });
+    /* Cross-referencing a register or I/O point is a DOUBLE click. On a
+     * single one it fired while you were only trying to place the caret or
+     * start a selection, and every stray click on an R[] threw the whole tab
+     * over to Search mid-read. Double-click is the ordinary "look this up"
+     * gesture, and Ctrl+E on a selection still does the same thing. */
+    box.addEventListener('dblclick', function (ev) {
+      var t = ev.target;
       if (t.classList.contains('tok-reg') || t.classList.contains('tok-io')) crossRefToken(t.textContent);
     });
     return box;
@@ -1202,6 +1390,7 @@
         onclick: function () { state.tab = 'checks'; render(); }
       }) : null,
       h('span', { style: 'flex:1' }),
+      codeSizeControl(),
       h('button', { class: 'btn', text: 'Edit', onclick: function () { state.editing = true; render(); } }),
       h('button', {
         class: 'btn', text: 'Side-by-side', title: 'Open a second program next to this one (or drag one from the library onto the right half)',
@@ -1322,6 +1511,7 @@
       h('span', { class: 'muted', text: 'saving re-parses the program and re-runs every check — renaming /PROG renames it in the library' }),
       status,
       h('span', { style: 'flex:1' }),
+      codeSizeControl(),
       h('button', { class: 'btn primary', text: 'Save to library', onclick: function () { save(false); } }),
       (p.origin.type === 'dir' && state.server)
         ? h('button', { class: 'btn', text: 'Save to library + disk', title: p.origin.path, onclick: function () { save(true); } })
@@ -2076,16 +2266,43 @@
   var searchOpts = { caseSensitive: false, wholeWord: false, regex: false };
 
   /* Build a matcher(text) -> {index, length} | null for the query.
-   * A bare item like "R[10]" or "DO[104]" also matches its labeled form
-   * ("R[10:pallet slot]"), which is how the code actually reads. */
+   *
+   * An item query is recognised from the type and index alone, so it does not
+   * have to be finished: "R[40", "R[40:", "R[40]" and "R[40:box count]" are
+   * all item searches for R 40. That matters because the results update as
+   * you type — the old form only recognised a closed "R[40]", so every
+   * keystroke before the bracket ran as plain text and swept up PR[40],
+   * AR[40], SR[40] and R[400]. A plain substring can never separate them:
+   * "PR[40:box base]" literally contains "R[40:box base]".
+   *
+   * The type guard is what does the work. R, PR, AR and SR all end in R, so
+   * matching R requires a non-letter in front of it; the same guard is now
+   * applied to every type rather than just R.
+   *
+   * Anything typed after the colon narrows by label, matched anywhere inside
+   * it, so "R[40:box" finds "R[40:box count]" while still excluding PR.
+   */
+  /* Escape a literal for use inside a RegExp. */
+  function escapeRe(t) { return String(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+  var ITEM_TYPES = 'R|PR|AR|SR|DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|AI|AO|F|M|TIMER|LBL';
+  var ITEM_QUERY = new RegExp(
+    '^\\s*(' + ITEM_TYPES + ')\\s*\\[\\s*(\\d+)\\s*' +   // type and index
+    '(?:,\\s*(\\d+)\\s*)?' +                             // optional component, PR[20,1]
+    '(?::\\s*([^\\]]*?)\\s*)?' +                         // optional label fragment
+    '\\]?\\s*$', 'i');                                   // closing bracket optional
+
   function buildMatcher(q) {
     var flags = searchOpts.caseSensitive ? 'g' : 'gi';
     var re = null;
-    var item = q.match(/^(R|PR|DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|AI|AO|F|M|TIMER|LBL|AR)\[(\d+)\]$/i);
-    if (item && !searchOpts.regex) {
+    var item = searchOpts.regex ? null : q.match(ITEM_QUERY);
+    if (item) {
       var type = item[1].toUpperCase();
-      var guard = type === 'R' ? '(?:^|[^A-Z])' : '\\b';
-      re = new RegExp(guard + '(' + type + '\\[\\s*' + item[2] + '\\s*(?::[^\\]]*)?\\])', 'g');
+      var comp = item[3] ? ',\\s*' + item[3] + '\\s*' : '(?:\\s*,\\s*\\d+\\s*)?';
+      var label = item[4]
+        ? ':[^\\]]*' + escapeRe(item[4]) + '[^\\]]*'
+        : '(?::[^\\]]*)?';
+      re = new RegExp('(?:^|[^A-Za-z])(' + type + '\\[\\s*' + item[2] + '\\s*' + comp + label + '\\])', flags);
       return function (text) {
         re.lastIndex = 0;
         var m = re.exec(text);
@@ -2095,7 +2312,7 @@
     if (searchOpts.regex) {
       try { re = new RegExp(q, flags); } catch (e) { return { error: 'Invalid regex: ' + e.message }; }
     } else {
-      var escd = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      var escd = escapeRe(q);
       if (searchOpts.wholeWord) escd = '\\b' + escd + '\\b';
       re = new RegExp(escd, flags);
     }
@@ -2179,7 +2396,9 @@
     return out;
   }
 
-  function diffOpts() { return { ignoreIoState: state.ignoreIoState }; }
+  function diffOpts() {
+    return { ignoreIoState: state.ignoreIoState, ignoreLineNums: state.ignoreLineNums };
+  }
 
   function setBaseline(label, programs) {
     state.compare = {
@@ -2191,31 +2410,34 @@
     render();
   }
 
+  /* One "ignore this kind of noise" checkbox for the Compare toolbar. Both
+   * settings feed diffOpts(), so flipping either has to recompute the stored
+   * baseline verdicts, which were decided under the old setting. */
+  function ignoreToggle(key, label, title) {
+    var cb = h('input', { type: 'checkbox' });
+    cb.checked = state[key];
+    cb.addEventListener('change', function () {
+      state[key] = cb.checked;
+      savePrefs();
+      refreshCompare();   // the stored verdicts were decided under the old setting
+      render();
+    });
+    var lab = h('label', { title: title }, [cb]);
+    lab.appendChild(document.createTextNode(' ' + label));
+    return lab;
+  }
+
   function renderCompare(pane) {
-    /* Tab-level toolbar: the I/O-state option governs both sections below, so
-     * it lives out here rather than inside one of them, where collapsing that
+    /* Tab-level toolbar: these options govern both sections below, so they
+     * live out here rather than inside one of them, where collapsing that
      * section would hide a control still affecting the other. */
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Compare' }),
       h('span', { style: 'flex:1' }),
-      (function () {
-        var cb = h('input', { type: 'checkbox' });
-        cb.checked = state.ignoreIoState;
-        cb.addEventListener('change', function () {
-          state.ignoreIoState = cb.checked;
-          savePrefs();
-          // the baseline verdicts were computed under the old setting
-          if (state.compare) {
-            state.compare.results = D.comparePrograms(state.compare.programs, librarySources(), diffOpts());
-          }
-          render();
-        });
-        var lab = h('label', {
-          title: 'With the controller\u2019s I/O-state display on, a listing reads DO[65:OFF:Vac-1 ON] instead of DO[65:Vac-1 ON]. That state is live machine data, not program content, so ignoring it stops every such line showing as a change against a backup taken with the display off.'
-        }, [cb]);
-        lab.appendChild(document.createTextNode(' Ignore inline I/O state'));
-        return lab;
-      })()
+      ignoreToggle('ignoreLineNums', 'Ignore line numbers',
+        'Every /MN line is written "12:  <instruction> ;", so inserting or deleting one line renumbers every line below it. Those lines are identical program content, so ignoring the number leaves just the real edit highlighted instead of the whole rest of the program.'),
+      ignoreToggle('ignoreIoState', 'Ignore inline I/O state',
+        'With the controller\u2019s I/O-state display on, a listing reads DO[65:OFF:Vac-1 ON] instead of DO[65:Vac-1 ON]. That state is live machine data, not program content, so ignoring it stops every such line showing as a change against a backup taken with the display off.')
     ]));
 
     // -- two-program compare (Notepad++ Compare-plugin style) --
@@ -2342,13 +2564,21 @@
           h('span', { class: 'diff-adds', text: '+' + ch.adds }),
           h('span', { class: 'diff-dels', text: '\u2212' + ch.dels })
         ]));
-        if (isOpen) pane.appendChild(renderDiffBody(c.programs[ch.name], state.programs[ch.name].source, false, ch.name + ' \u2014 backup', ch.name + ' \u2014 current'));
+        if (isOpen) {
+          var cur = state.programs[ch.name];
+          pane.appendChild(cur
+            ? renderDiffBody(c.programs[ch.name], cur.source, false, ch.name + ' \u2014 backup', ch.name + ' \u2014 current')
+            : h('p', { class: 'muted', text: ch.name + ' is in the baseline but no longer in the library \u2014 reload the baseline to refresh this list.' }));
+        }
       });
     }
     progList('New since the baseline', r.added, 'added');
     progList('In the baseline but missing now', r.removed, 'removed');
-    progList(state.ignoreIoState
-      ? 'No code changes (header dates / sizes, or inline I/O state only)'
+    var ignored = [];
+    if (state.ignoreLineNums) ignored.push('line numbers');
+    if (state.ignoreIoState) ignored.push('inline I/O state');
+    progList(ignored.length
+      ? 'No code changes (header dates / sizes, or ' + ignored.join(' / ') + ' only)'
       : 'Header-only changes (dates / sizes \u2014 code identical)', r.headerOnly, 'header');
   }
 
@@ -2403,17 +2633,30 @@
 
   /* ---- robot tab ---- */
 
+  var KIND_NOTE = {
+    wired: '',
+    wireless: ' (wireless)',
+    virtual: ' (a virtual adapter — only this PC and its VMs are on it)',
+    overlay: ' (a VPN overlay — controllers will not be on it)'
+  };
+
   /* Find controllers on the network. Deliberately a button and never
    * automatic: a subnet sweep looks like a port scan to an IDS, and that is
    * not something an app should start on a plant network by itself. */
   function scanPanel() {
     var wrap = h('div', { class: 'scan-panel' });
     var sc = state.scan;
-    var suggested = (state.subnets && state.subnets.length) ? state.subnets[0].cidr : '';
+    /* The bridge ranks its own interfaces, wired first — see localSubnets().
+     * The best one prefills the box; the rest are one-click buttons beside
+     * it, because only the person at the machine knows which network the
+     * controllers are actually on. */
+    var best = (state.subnets && state.subnets.length) ? state.subnets[0] : null;
+    var suggested = best ? best.cidr : '';
     var cidrIn = h('input', {
       type: 'text', class: 'scan-cidr',
       placeholder: suggested || '192.168.0.0/24',
-      title: 'Address range to sweep, up to 1024 addresses (a /22)'
+      title: 'Address range to sweep, up to 1024 addresses (a /22)' +
+        (best ? '. Prefilled from this PC’s ' + best.iface + ' address, ' + best.address : '')
     });
     cidrIn.value = (sc && sc.cidr) || suggested;
 
@@ -2423,7 +2666,7 @@
       row.appendChild(h('button', { class: 'btn', text: 'Cancel', onclick: function () { cancelScan(); render(); } }));
     } else {
       row.appendChild(h('button', {
-        class: 'btn', text: 'Scan for robots',
+        class: 'btn', text: 'Scan',
         title: 'Try port 80 on every address in the range, then confirm which are FANUC controllers',
         onclick: function () {
           var c = cidrIn.value.trim();
@@ -2435,7 +2678,8 @@
       state.subnets.slice(0, 4).forEach(function (n) {
         row.appendChild(h('button', {
           class: 'btn subtle opt', text: n.cidr,
-          title: n.iface + ' — ' + n.address,
+          title: n.iface + ' — this PC is ' + n.address + KIND_NOTE[n.kind] +
+            (n.narrowed ? '. Its real mask is wider than a /22, so this is the /24 around this PC' : ''),
           onclick: function () { cidrIn.value = n.cidr; }
         }));
       });
@@ -2567,31 +2811,58 @@
       return;
     }
 
-    // program files
-    var lsFiles = state.robot.files.filter(function (f) { return /\.LS$/i.test(f); });
+    // program files — log exports carry a .LS extension too, and offering
+    // them here only ever produced a chip that could not be imported
+    var allLs = state.robot.files.filter(function (f) { return /\.LS$/i.test(f); });
+    var lsFiles = allLs.filter(function (f) { return !isKnownNonProgram(f); });
+    var logFiles = allLs.filter(isKnownNonProgram);
     var secProgs = secHead('Programs on ' + state.robot.ip + ' (' + lsFiles.length + ')', 'robot-programs');
     pane.appendChild(secProgs.el);
     if (!secProgs.open) { /* collapsed */ } else if (lsFiles.length) {
-      var actions = h('p', {}, [
-        h('button', {
+      var imp = state.robotImport;
+      var actions = h('p', {});
+      if (imp) {
+        var pct = imp.total ? Math.round((imp.done / imp.total) * 100) : 0;
+        var bar = h('div', { class: 'import-bar' }, [
+          h('span', { style: 'width:' + pct + '%' })
+        ]);
+        actions.appendChild(bar);
+        var line = h('div', { class: 'import-line' }, [
+          h('span', { text: 'Importing ' + imp.done + ' of ' + imp.total + '… ' }),
+          h('span', { class: 'muted', text: '(' + imp.added + ' in' +
+            (imp.skipped ? ', ' + imp.skipped + ' skipped' : '') +
+            (imp.failed ? ', ' + imp.failed + ' failed' : '') + ')' }),
+          h('span', { text: ' ' }),
+          h('button', {
+            class: 'btn subtle', text: 'Stop',
+            title: 'Stop after the files already in flight',
+            onclick: function () { if (state.robotImport) state.robotImport.cancel = true; render(); }
+          })
+        ]);
+        actions.appendChild(line);
+      } else {
+        actions.appendChild(h('button', {
           class: 'btn', text: 'Import all ' + lsFiles.length + ' programs',
+          title: 'Read every listed program off the controller, ' + IMPORT_CONCURRENCY + ' at a time',
           onclick: function () {
             if (!confirmCrossSource(lsFiles)) return;
-            var pending = lsFiles.length;
-            lsFiles.forEach(function (f) {
-              importFromRobot(f).catch(function () {}).then(function () { if (--pending === 0) render(); });
-            });
+            importAllFromRobot(lsFiles);
           }
-        })
-      ]);
+        }));
+      }
       pane.appendChild(actions);
       var fl = h('div', { class: 'robot-files' });
       lsFiles.forEach(function (f) {
         var name = f.replace(/\.LS$/i, '');
+        var busy = imp && imp.inFlight[f.toUpperCase()];
+        var here = !!state.programs[name];
+        /* Three states, so a bulk import reads as motion rather than a wall
+         * of red that turns green all at once when it finishes. */
         fl.appendChild(h('span', {
-          class: 'chip ' + (state.programs[name] ? 'read' : 'write'),
-          text: f + (state.programs[name] ? ' ✓' : ''),
-          title: state.programs[name] ? 'in library — click to re-import' : 'click to import',
+          class: 'chip ' + (busy ? 'loading' : here ? 'read' : 'write'),
+          text: f + (busy ? ' …' : here ? ' ✓' : ''),
+          title: busy ? 'reading from the controller…'
+            : here ? 'in library — click to re-import' : 'click to import',
           onclick: function () {
             if (!confirmCrossSource([f])) return;
             importFromRobot(f).then(function (n) { if (n) { state.selected = n; render(); } });
@@ -2599,6 +2870,13 @@
         }));
       });
       pane.appendChild(fl);
+      if (logFiles.length) {
+        pane.appendChild(h('p', {
+          class: 'muted',
+          text: 'Not listed (controller logs, not programs): ' + logFiles.join(', ') +
+            '. The error history below reads ERRALL.LS directly.'
+        }));
+      }
     } else if (state.robot.loadedAt) {
       pane.appendChild(h('p', { class: 'muted', text: 'No .LS files listed. Some controllers need ASCII upload support for .LS on MD:. The file list found: ' + (state.robot.files.join(', ') || 'nothing') }));
     } else {
@@ -2612,19 +2890,33 @@
     var today = new Date().toISOString().slice(0, 10);
     if (secBk.open) {
     pane.appendChild(h('p', { class: 'muted', text: 'Saved to backups/<robot-name-or-ip>_' + today + '_NN on the bridge PC — NN increments automatically for multiple backups on the same day, and quick backups get a _quick suffix. The robot name is read from the controller when it answers over HTTP.' }));
-    pane.appendChild(h('p', {}, [
-      h('button', {
-        class: 'btn primary', text: (bk && bk.running) ? 'Backing up…' : 'Full backup',
-        title: 'Every file on MD:',
-        onclick: (bk && bk.running) ? null : function () { takeBackup('full'); }
-      }),
-      document.createTextNode(' '),
-      h('button', {
-        class: 'btn', text: (bk && bk.running) ? '…' : 'Quick backup (.LS + .VA)',
-        title: 'Just programs and variable files — fast, ideal right before making changes',
-        onclick: (bk && bk.running) ? null : function () { takeBackup('quick'); }
-      })
-    ]));
+    /* Both labels stay put while a backup runs and the buttons simply grey
+     * out. Collapsing the quick-backup label to '…' left an unidentifiable
+     * button on screen at exactly the moment someone would ask what it is,
+     * and dropping the handler alone was not a disable — the button still
+     * rendered enabled, took hover and focus, and swallowed the click. */
+    var bkRunning = !!(bk && bk.running);
+    var fullBtn = h('button', {
+      class: 'btn primary', text: 'Full backup',
+      title: 'Every file on MD:',
+      onclick: function () { takeBackup('full'); }
+    });
+    var quickBtn = h('button', {
+      class: 'btn', text: 'Quick backup (.LS + .VA)',
+      title: 'Just programs and variable files — fast, ideal right before making changes',
+      onclick: function () { takeBackup('quick'); }
+    });
+    fullBtn.disabled = bkRunning;
+    quickBtn.disabled = bkRunning;
+    var bkRow = h('p', {}, [fullBtn, document.createTextNode(' '), quickBtn]);
+    if (bkRunning) {
+      bkRow.appendChild(document.createTextNode(' '));
+      bkRow.appendChild(h('span', {
+        class: 'muted',
+        text: (bk.mode === 'quick' ? 'Taking a quick backup…' : 'Taking a full backup… every file on MD: can take a minute.')
+      }));
+    }
+    pane.appendChild(bkRow);
     if (bk && bk.error) pane.appendChild(h('p', {}, [h('span', { class: 'badge warn', text: 'backup failed' }), h('span', { class: 'muted', text: ' ' + bk.error })]));
     if (bk && bk.ok) {
       pane.appendChild(h('p', {}, [
@@ -2636,6 +2928,163 @@
       pane.appendChild(h('p', { class: 'muted', text: 'To diff a robot against this backup later: Compare tab → load this folder as the baseline.' }));
     }
     } // end backups section
+
+    /* ---- program / task state ----
+     * Why an edit gets refused. Read on demand: PRGSTATE.DG is a big file and
+     * it is only interesting when the controller is saying no. */
+    var ps = state.robot.prgState;
+    var psOk = ps && !ps.error ? ps : null;
+    var lockedNames = psOk ? Object.keys(psOk.locked) : [];
+    var secPs = secHead('Program state (PRGSTATE.DG)' +
+      (psOk ? ' — ' + (lockedNames.length
+        ? lockedNames.length + ' program' + (lockedNames.length > 1 ? 's' : '') + ' in use'
+        : 'nothing in use') : ''),
+      'robot-prgstate');
+    pane.appendChild(secPs.el);
+    if (secPs.open) {
+      pane.appendChild(h('p', { class: 'muted', text: 'A controller refuses to overwrite a program that has a live task — and a PAUSED task is still live, only ABORT releases it. Every program on a live task’s routine stack is held, not just the one the cursor is in, which is why an edit can be refused for a program that looks idle.' }));
+      pane.appendChild(h('p', {}, [
+        h('button', {
+          class: 'btn subtle',
+          text: (ps !== undefined && ps !== null) ? 'Refresh from robot' : 'Read from robot',
+          onclick: loadRobotPrgState
+        })
+      ]));
+      if (ps === null) {
+        pane.appendChild(h('p', { class: 'muted', text: 'Reading…' }));
+      } else if (ps && ps.error) {
+        pane.appendChild(h('p', { class: 'muted', text: 'Could not read PRGSTATE.DG: ' + ps.error }));
+      } else if (psOk) {
+        if (lockedNames.length) {
+          pane.appendChild(h('h3', { text: 'Held by a live task — an edit will be refused' }));
+          var lw = h('div', { class: 'robot-files' });
+          lockedNames.sort().forEach(function (n) {
+            var lt = psOk.locked[n];
+            lw.appendChild(h('span', {
+              class: 'chip write',
+              text: n,
+              title: lt
+                ? 'task ' + lt.name + ' is ' + lt.state + (lt.line ? ' at line ' + lt.line + ' of ' + lt.routine : '')
+                : 'a task is attached to this program'
+            }));
+          });
+          pane.appendChild(lw);
+        } else {
+          pane.appendChild(h('p', { class: 'muted', text: 'No program is held by a live task right now — edits should be accepted.' }));
+        }
+
+        pane.appendChild(h('h3', { text: 'Tasks' }));
+        var tskWrap = h('div', { class: 'table-wrap' });
+        var tskTbl = h('table', { class: 'attr-table' });
+        var tskHead = h('tr');
+        ['#', 'Task', 'State', 'At', 'Routine stack'].forEach(function (c) {
+          tskHead.appendChild(h('th', { text: c }));
+        });
+        tskTbl.appendChild(tskHead);
+        psOk.tasks.forEach(function (t) {
+          var live = t.state === 'RUNNING' || t.state === 'PAUSED' || t.state === 'HELD';
+          var row = h('tr');
+          row.appendChild(h('td', { text: String(t.n) }));
+          row.appendChild(h('td', { class: 'mono', text: t.name }));
+          row.appendChild(h('td', {}, [h('span', { class: 'badge ' + (live ? 'warn' : 'ok'), text: t.state })]));
+          row.appendChild(h('td', { class: 'mono', text: t.program ? t.program + ':' + t.line : '' }));
+          row.appendChild(h('td', {
+            class: 'mono',
+            text: t.stack.map(function (f) { return f.program + ':' + f.line; }).join('  <  ')
+          }));
+          tskTbl.appendChild(row);
+        });
+        tskWrap.appendChild(tskTbl);
+        pane.appendChild(tskWrap);
+
+        if (psOk.programs.length) {
+          pane.appendChild(h('h3', { text: 'Programs on the controller (' + psOk.programs.length + ')' }));
+          var pBar = h('div', { class: 'search-bar' });
+          var pIn = h('input', { type: 'search', placeholder: 'Filter… e.g. _pk, protected, in use' });
+          pBar.appendChild(pIn);
+          pane.appendChild(pBar);
+          var pWrap = h('div', { class: 'table-wrap' });
+          pane.appendChild(pWrap);
+          var drawPrgs = function () {
+            var q = pIn.value.trim().toLowerCase();
+            pWrap.innerHTML = '';
+            var tbl = h('table', { class: 'attr-table' });
+            var hr = h('tr');
+            ['Program', 'Type', 'Task', 'Protection', 'Lines', 'Comment', 'Last modified'].forEach(function (c) {
+              hr.appendChild(h('th', { text: c }));
+            });
+            tbl.appendChild(hr);
+            var shown = 0;
+            psOk.programs.forEach(function (pr) {
+              var held = pr.task && pr.task.toLowerCase() !== 'no';
+              var prot = /on/i.test(pr.protection || '');
+              var hay = (pr.name + ' ' + (pr.comment || '') + ' ' + (pr.type || '') +
+                (held ? ' in use' : ' free') + (prot ? ' protected' : '')).toLowerCase();
+              if (q && hay.indexOf(q) === -1) return;
+              if (++shown > 400) return;
+              var r = h('tr');
+              r.appendChild(h('td', { class: 'mono', text: pr.name }));
+              r.appendChild(h('td', { text: pr.type || '' }));
+              r.appendChild(h('td', {}, [held
+                ? h('span', { class: 'badge warn', text: 'in use' })
+                : h('span', { class: 'muted', text: 'free' })]));
+              r.appendChild(h('td', { text: pr.protection || '' }));
+              r.appendChild(h('td', { class: 'n', text: pr.lines === undefined ? '' : String(pr.lines) }));
+              r.appendChild(h('td', { text: pr.comment || '' }));
+              r.appendChild(h('td', { text: pr.modified || '' }));
+              tbl.appendChild(r);
+            });
+            pWrap.appendChild(tbl);
+            if (!shown) pWrap.appendChild(h('p', { class: 'muted', text: 'No programs match.' }));
+          };
+          pIn.addEventListener('input', drawPrgs);
+          drawPrgs();
+        }
+      }
+    }
+
+    /* ---- live pendant (iPendant mirror) ----
+     * The controller serves its own pendant UI, which is the only way to
+     * reach the screens it never exports as a file. Execution History is the
+     * one that matters: its trace buffer lives in controller memory and
+     * appears in no backup, no MD: file and no system variable.
+     *
+     * These open a real window rather than an inline frame. Framing was tried
+     * and does not work: the page loads but sticks on "Logging in to
+     * controller" forever, because its login handshake needs a top-level
+     * context. The controller's own home page opens them with window.open
+     * too, at these same sizes.
+     *
+     * Opening one registers an interactive login on the controller (TPIF-137
+     * names the PC that connected), so the window has a Logout button and it
+     * is worth using. */
+    var PENDANT_VIEWS = [
+      ['/frh/jcgtp/cgtp.stm', 1024, 800, 'iPendant',
+        'The full pendant UI — Execution History and every other menu. This drives the real controller.'],
+      ['/frh/jcgtp/echo.stm', 692, 620, 'Display only',
+        'Mirrors whatever the physical pendant is showing. You cannot navigate it from here.'],
+      ['/frh/jcgtp/sop.stm', 1024, 800, 'Soft operator panel',
+        'The operator panel: cycle start, hold, alarm reset.']
+    ];
+    var secPen = secHead('Live pendant (iPendant)', 'robot-pendant');
+    pane.appendChild(secPen.el);
+    if (secPen.open) {
+      pane.appendChild(h('p', { class: 'muted', text: 'The controller serves its own pendant UI, so screens it never writes to a file are still reachable — Execution History among them. Each opens in its own window, because the pendant’s login does not complete inside an embedded frame.' }));
+      var penRow = h('p', {});
+      PENDANT_VIEWS.forEach(function (v) {
+        var url = 'http://' + state.robot.ip.split(':')[0] + v[0];
+        penRow.appendChild(h('button', {
+          class: 'btn', text: v[3], title: v[4] + '  ·  ' + url,
+          onclick: function () {
+            window.open(url, 'fanuc-pendant-' + v[3].replace(/[^a-z]/gi, ''),
+              'width=' + v[1] + ',height=' + v[2] + ',resizable=yes,scrollbars=yes');
+          }
+        }));
+        penRow.appendChild(document.createTextNode(' '));
+      });
+      pane.appendChild(penRow);
+      pane.appendChild(h('p', { class: 'muted', text: 'Two things worth knowing: the window talks straight to ' + state.robot.ip + ', so this device has to be able to reach the robot itself — fine on the plant network, but a phone reaching only the bridge from off-site will not load it. And opening one registers an interactive login on the controller, so use the pendant’s own Logout button when you are done rather than just closing the window.' }));
+    }
 
     // error history
     var errs = state.robot.errors;
@@ -2959,9 +3408,6 @@
       }
     });
 
-    document.getElementById('btn-zoom-out').addEventListener('click', function () { applyZoom(-1); });
-    document.getElementById('btn-zoom-in').addEventListener('click', function () { applyZoom(1); });
-    document.getElementById('btn-zoom-reset').addEventListener('click', function () { applyZoom(0); });
 
     document.getElementById('btn-nav').addEventListener('click', function () { setNav(!navOpen()); });
     document.getElementById('nav-scrim').addEventListener('click', function () { setNav(false); });
@@ -2971,7 +3417,6 @@
     document.getElementById('btn-folder').addEventListener('click', function () {
       document.getElementById('folder-input').click();
     });
-    document.getElementById('btn-samples').addEventListener('click', loadSamples);
     document.getElementById('lib-filter').addEventListener('input', renderSidebar);
     document.getElementById('btn-clear').addEventListener('click', function () {
       if (!Object.keys(state.programs).length) return;
@@ -2982,9 +3427,18 @@
       persist();
       render();
     });
-    document.getElementById('btn-robot').addEventListener('click', function () {
-      var ip = document.getElementById('robot-ip').value.trim();
-      if (ip) connectRobot(ip);
+    document.getElementById('robot-select').addEventListener('change', function () {
+      var v = this.value;
+      if (v === ROBOT_PICK_TAB) { state.tab = 'robot'; render(); return; }
+      if (!v) return;
+      var saved = state.knownRobots.filter(function (r) { return r.ip === v; })[0];
+      /* connectRobot() carries ftpUser/ftpPass over from the current
+       * state.robot, so seed them first. The username comes back with the
+       * saved entry; the password never does, by design — a robot that
+       * needs one has to be connected from the Robot tab. */
+      state.robot.ftpUser = (saved && saved.ftpUser) || '';
+      state.robot.ftpPass = '';
+      connectRobot(v);
     });
     document.getElementById('btn-dir').addEventListener('click', function () {
       var d = document.getElementById('dir-path').value.trim();
@@ -3022,7 +3476,7 @@
     if (buildTag && window.FANUC_STUDIO_BUILD) buildTag.textContent = window.FANUC_STUDIO_BUILD;
 
     loadPrefs();
-    paintZoom();
+    paintCodeSize();
     restore();
     rebuildDerived();
     render();

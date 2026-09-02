@@ -24,7 +24,7 @@ const OUT = path.join(DIST, 'FanucStudio-portable-win-x64.zip');
 
 const APP_FILES = [
   'index.html', 'server.js', 'README.md', 'Start FANUC Studio.bat', 'start.sh',
-  'css', 'js', 'lib', 'samples'
+  'css', 'js', 'lib'
 ];
 
 function sh(cmd, opts) {

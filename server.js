@@ -41,6 +41,7 @@ const MAX_ROBOTS = 64;
 const SCAN_TIMEOUT_MS = 500;
 const SCAN_CONCURRENCY = 48;
 const SCAN_MAX_HOSTS = 1024;
+const SCAN_MIN_BITS = 22;      // SCAN_MAX_HOSTS expressed as a prefix length
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -513,6 +514,28 @@ function cidrHosts(text) {
   return { hosts: hosts, cidr: intToIp(net) + '/' + bits };
 }
 
+/* A PC on a plant floor typically has several IPv4 interfaces, and only one
+ * of them can reach a robot. os.networkInterfaces() hands them back in an
+ * order that means nothing, so classify each and rank them: the wired network
+ * is the overwhelmingly likely place to find controllers, wireless next, and
+ * hypervisor host-only networks and VPN overlays last — nothing but this PC
+ * and its VMs lives on those, so sweeping one is guaranteed to find nothing.
+ * They stay in the list rather than being dropped, so an unusual setup can
+ * still pick one; they just never win the default. */
+const IFACE_VIRTUAL = /vmware|virtualbox|vbox|hyper-?v|vethernet|wsl|docker|loopback|bluetooth|npcap/i;
+const IFACE_OVERLAY = /tailscale|zerotier|wireguard|openvpn|\bvpn\b|tap-|tun\d/i;
+
+function ifaceKind(name, address) {
+  if (IFACE_OVERLAY.test(name)) return 'overlay';
+  // 100.64/10 is carrier-grade NAT, which is what Tailscale hands out
+  if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(address)) return 'overlay';
+  if (IFACE_VIRTUAL.test(name)) return 'virtual';
+  if (/wi-?fi|wireless|wlan|802\.11/i.test(name)) return 'wireless';
+  return 'wired';
+}
+
+const KIND_RANK = { wired: 0, wireless: 1, virtual: 2, overlay: 3 };
+
 /* The subnets this bridge is actually attached to — the sensible default for
  * a scan, since a robot has to be reachable from here to be usable. */
 function localSubnets() {
@@ -522,15 +545,29 @@ function localSubnets() {
     for (const a of ifs[name] || []) {
       if (a.family !== 'IPv4' && a.family !== 4) continue;
       if (a.internal) continue;
+      if (/^169\.254\./.test(a.address)) continue;   // link-local: no DHCP answered
       const mask = ipToInt(a.netmask);
       if (mask === null) continue;
       let bits = 0;
       for (let i = 31; i >= 0; i--) { if ((mask >>> i) & 1) bits++; else break; }
+      /* A /16 corporate Ethernet is 65k addresses, which /api/robots/scan
+       * refuses. Offer the /24 around this PC instead of a range that can
+       * only ever come back as an error. */
+      const narrowed = bits < SCAN_MIN_BITS;
+      if (narrowed) bits = 24;
       const size = Math.pow(2, 32 - bits);
       const net = Math.floor(ipToInt(a.address) / size) * size;
-      out.push({ iface: name, address: a.address, cidr: intToIp(net) + '/' + bits, hosts: Math.max(0, size - 2) });
+      out.push({
+        iface: name,
+        address: a.address,
+        cidr: intToIp(net) + '/' + bits,
+        hosts: Math.max(0, size - 2),
+        kind: ifaceKind(name, a.address),
+        narrowed: narrowed
+      });
     }
   }
+  out.sort((x, y) => (KIND_RANK[x.kind] - KIND_RANK[y.kind]) || x.iface.localeCompare(y.iface));
   return out;
 }
 

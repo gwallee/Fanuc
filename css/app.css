@@ -13,6 +13,9 @@
   --code-bg: #fcfcfa;
   --gutter: #a9ada9;
   --sel-bg: #f3e9cf;
+  /* Editor selection sits ON TOP of the coloured text, so it has to be
+   * translucent — see .editor::selection. */
+  --sel-editor-bg: rgba(181, 126, 0, 0.26);
   --kw: #8a4baf;        /* keywords: IF/JMP/WAIT/CALL */
   --motion: #1a66c2;    /* J/L/C prefix */
   --reg: #0e7a6d;       /* R[], PR[] */
@@ -54,6 +57,7 @@
     --code-bg: #1a1d20;
     --gutter: #5d646b;
     --sel-bg: #3a3117;
+    --sel-editor-bg: rgba(255, 200, 56, 0.24);
     --kw: #c792ea;
     --motion: #6fb3ff;
     --reg: #4ecfbc;
@@ -91,6 +95,7 @@
   --code-bg: #1a1d20;
   --gutter: #5d646b;
   --sel-bg: #3a3117;
+  --sel-editor-bg: rgba(255, 200, 56, 0.24);
   --kw: #c792ea;
   --motion: #6fb3ff;
   --reg: #4ecfbc;
@@ -133,10 +138,9 @@ button { font: inherit; }
   grid-template-rows: auto 1fr;
   grid-template-columns: 250px 1fr;
   grid-template-areas: "header header" "sidebar main";
-  /* Interface zoom scales the whole app. 100vh would be scaled along with
-   * everything else and overflow the window, so the app's own height is
-   * divided back out by the same factor. */
-  height: calc(100vh / var(--zoom, 1));
+  height: 100vh;
+  /* Code surfaces read this; the −/+ control on the Code tab sets it. */
+  --code-size: 13px;
 }
 
 /* ---------- header ---------- */
@@ -173,9 +177,9 @@ button { font: inherit; }
 .header .spacer { flex: 1; }
 .header-actions { display: flex; align-items: center; gap: 8px; }
 
-.zoom { display: flex; align-items: center; gap: 1px; }
-.zoom .btn { padding: 3px 7px; font-variant-numeric: tabular-nums; }
-.zoom .zoom-level { min-width: 46px; text-align: center; font-size: 12px; }
+.code-size { display: flex; align-items: center; gap: 1px; }
+.code-size .btn { padding: 3px 7px; font-variant-numeric: tabular-nums; }
+.code-size .code-size-level { min-width: 44px; text-align: center; font-size: 12px; }
 
 /* drawer chrome — only ever visible at the narrow breakpoint below */
 .nav-toggle { display: none; }
@@ -189,7 +193,12 @@ button { font: inherit; }
   padding: 4px 10px;
   cursor: pointer;
 }
-.btn:hover { border-color: var(--accent); }
+/* Hover only ever applies to a button you can actually press, and a
+ * disabled one has to read as disabled — the backup pair and the code-size
+ * steps both rely on it. Without this they kept full contrast and their
+ * hover cue, so a dead button still invited the click. */
+.btn:not(:disabled):hover { border-color: var(--accent); }
+.btn:disabled { opacity: 0.45; cursor: default; }
 .btn:focus-visible, .tab:focus-visible, .prog-item:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -201,7 +210,7 @@ button { font: inherit; }
   font-weight: 600;
 }
 .btn.subtle { border-color: transparent; background: transparent; color: var(--muted); }
-.btn.subtle:hover { color: var(--ink); }
+.btn.subtle:not(:disabled):hover { color: var(--ink); }
 
 /* ---------- sidebar ---------- */
 .sidebar {
@@ -289,6 +298,14 @@ button { font: inherit; }
   border-bottom: 1px solid var(--line);
   background: var(--bg);
   overflow-x: auto;
+  /* Setting one axis to `auto` makes the other compute to `auto` too, which
+   * gave the strip a phantom vertical axis: on a touch screen a vertical drag
+   * was captured here and rubber-banded against no content. Pin it shut, keep
+   * the horizontal scroll from chaining to the page (and to the browser's
+   * back gesture), and let vertical drags fall through to the page. */
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x pinch-zoom;
   /* scrollable when narrow, but never show a scrollbar (Windows draws one always) */
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -359,7 +376,7 @@ body.dragging .drop-hint, body.dragging .pane { outline: 2px dashed var(--accent
   background: var(--code-bg);
   overflow-x: auto;
   font-family: "IBM Plex Mono", ui-monospace, "Cascadia Mono", monospace;
-  font-size: 13px;
+  font-size: var(--code-size, 13px);
   line-height: 1.5;
 }
 
@@ -368,7 +385,7 @@ body.dragging .drop-hint, body.dragging .pane { outline: 2px dashed var(--accent
 .cline.flash { background: var(--sel-bg); }
 
 .cline .ln {
-  flex: 0 0 52px;
+  flex: 0 0 4em;
   text-align: right;
   padding: 0 12px 0 0;
   color: var(--gutter);
@@ -442,6 +459,7 @@ tr:last-child td { border-bottom: none; }
 }
 .chip.read { background: var(--read-bg); color: var(--read); }
 .chip.write { background: var(--write-bg); color: var(--write); }
+.chip.loading { background: var(--accent-bg); color: var(--accent); }
 .chip:hover { border-color: currentColor; }
 
 .badge {
@@ -505,8 +523,34 @@ tr:last-child td { border-bottom: none; }
   color: var(--ink);
 }
 .connect input:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+.connect select {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel-2);
+  color: var(--ink);
+}
+.connect select:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
 .connect .btn { padding: 5px 10px; font-size: 13px; }
 .connect .hint { font-size: 12px; line-height: 1.5; }
+/* Bridge status. On is a dot in the "Sources" heading; off keeps the full
+ * instructions, since that is the case where there is something to do about
+ * it. The [hidden] rule is not redundant: an author `display` declaration
+ * outranks the UA stylesheet's own [hidden] { display: none }, so without it
+ * the dot would stay visible with the attribute set. */
+.bridge-dot {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--on);
+}
+.bridge-dot[hidden] { display: none; }
 .connect .hint code { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; }
 
 /* ---------- editor ----------
@@ -534,7 +578,7 @@ tr:last-child td { border-bottom: none; }
   margin: 0;
   border: 0;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 13px;
+  font-size: var(--code-size, 13px);
   line-height: 1.55;
   letter-spacing: normal;
   tab-size: 4;
@@ -552,7 +596,11 @@ tr:last-child td { border-bottom: none; }
   caret-color: var(--ink);
   overflow: auto;
 }
-.editor::selection { background: var(--sel-bg); }
+/* The textarea is stacked ABOVE the coloured <pre> with its own text
+ * transparent, so an opaque selection background paints straight over the
+ * only readable copy of the line and the text vanishes while selected. The
+ * highlight has to be a translucent tint instead. */
+.editor::selection { background: var(--sel-editor-bg); }
 .editor:focus-visible { outline: none; }
 .editor-hl {
   overflow: hidden;
@@ -725,6 +773,24 @@ tr:last-child td { border-bottom: none; }
   gap: 2px 8px;
   margin: 6px 0 4px;
 }
+/* Bulk-import progress. The chips below fill in green as each program
+ * lands, so this only has to carry the count and a way to stop. */
+.import-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  max-width: 420px;
+}
+.import-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.15s linear;
+}
+.import-line { display: flex; align-items: center; gap: 6px; margin-top: 5px; font-size: 12.5px; }
+
 .robot-files .chip {
   margin: 0;
   font-size: 12px;
@@ -917,7 +983,7 @@ h3.sec-toggle:hover { color: var(--accent); }
 }
 .sbs-cell.a { border-right: 1px solid var(--line); }
 .sbs-cell .ln {
-  flex: 0 0 46px;
+  flex: 0 0 3.6em;
   text-align: right;
   padding-right: 10px;
   color: var(--gutter);
@@ -967,21 +1033,17 @@ h3.sec-toggle:hover { color: var(--accent); }
 
 /* ---------- narrow screens: phone layout ----------
  * The sidebar leaves the grid and becomes an off-canvas drawer over the
- * content; the header's action buttons become one horizontally scrollable
- * strip so none of them can end up off-screen and unreachable. */
+ * content, and the header collapses to one slim row: the drawer toggle and
+ * the brand/build tag, nothing else. The file pickers are desktop-only — on
+ * a phone the sources that matter (robot IP, bridge folder path) are in the
+ * drawer. The code text size lives on the Code tab's own toolbar, which stays
+ * visible here — it is the control a phone actually wants. */
 @media (max-width: 760px) {
   .app { grid-template-columns: 1fr; grid-template-areas: "header" "main"; }
 
-  .header { flex-wrap: wrap; gap: 6px 10px; padding: 6px 10px; }
+  .header { gap: 10px; padding: 6px 10px; }
   .header .spacer { display: none; }
-  .header-actions {
-    flex: 1 0 100%;
-    overflow-x: auto;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-  .header-actions::-webkit-scrollbar { display: none; }
-  .header-actions .btn { flex: 0 0 auto; white-space: nowrap; }
+  .header-actions { display: none; }
 
   .nav-toggle {
     display: inline-flex;

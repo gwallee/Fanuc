@@ -418,6 +418,99 @@ const cmp2 = D.comparePrograms({ MAIN: oldMain }, { MAIN: bodyTouched });
 check(cmp2.changed.length === 1 && cmp2.changed[0].adds === 1 && cmp2.changed[0].dels === 1,
   'real body change: 1 added + 1 removed line');
 
+console.log('\n-- diff: ignore line numbers --');
+check(D.stripLineNums('   1:  UTOOL_NUM=1 ;') === '  UTOOL_NUM=1 ;', 'line number prefix stripped, indentation kept');
+check(D.stripLineNums('  10:  UTOOL_NUM=1 ;') === D.stripLineNums('   9:  UTOOL_NUM=1 ;'),
+  'padding shift from 9 -> 10 normalizes away');
+check(D.stripLineNums('/MN') === '/MN' && D.stripLineNums('P[1]{') === 'P[1]{',
+  'section markers and /POS payload untouched');
+// One line inserted at the top renumbers everything below it.
+const before = '/MN\n   1:  A ;\n   2:  B ;\n   3:  C ;\n/END\n';
+const after  = '/MN\n   1:  NEW ;\n   2:  A ;\n   3:  B ;\n   4:  C ;\n/END\n';
+const naive = D.diffLines(before, after);
+check(naive.filter(o => o.t === '+').length === 4 && naive.filter(o => o.t === '-').length === 3,
+  'without the option a 1-line insert reports the whole program changed');
+const renum = D.diffLines(before, after, { ignoreLineNums: true });
+check(renum.filter(o => o.t === '+').length === 1 && renum.filter(o => o.t === '-').length === 0,
+  'with the option the same insert reports exactly 1 added line');
+check(renum.filter(o => o.t === '+')[0].text === '   1:  NEW ;',
+  'the added op still carries the line as actually written');
+// A pure renumber (no content change) is not a change at all.
+const pureRenum = D.comparePrograms(
+  { P: '/PROG P\n/MN\n   1:  A ;\n   2:  B ;\n/END\n' },
+  { P: '/PROG P\n/MN\n   9:  A ;\n  10:  B ;\n/END\n' },
+  { ignoreLineNums: true }
+);
+check(pureRenum.headerOnly.includes('P') && !pureRenum.changed.length,
+  'pure renumber classified as no code change');
+
+console.log('\n-- PRGSTATE.DG (program / task state) --');
+const psRaw = fs.readFileSync(path.join(__dirname, '..', 'testdata', 'prgstate.dg'), 'utf8');
+const psr = VA.parsePrgState(psRaw);
+check(psr.header.fNumber === 'F333543', 'header F number read (' + psr.header.fNumber + ')');
+check(psr.tasks.length === 7, 'all 7 tasks parsed (got ' + psr.tasks.length + ')');
+const runningTasks = psr.tasks.filter(t => t.state === 'RUNNING');
+check(runningTasks.length === 2, '2 tasks RUNNING (got ' + runningTasks.length + ')');
+const atcellio = psr.tasks.find(t => t.name === 'ATCELLIO');
+check(atcellio && atcellio.line === 477 && atcellio.routine === 'MAIN' && atcellio.program === 'ATCELLIO',
+  'RUNNING header parsed: line/routine/program');
+check(atcellio && atcellio.stack.length === 2 &&
+      atcellio.stack[0].program === 'ATCELLIO' && atcellio.stack[0].line === 477 &&
+      atcellio.stack[1].line === 603,
+  'routine stack parsed with a frame per depth');
+check(psr.tasks.filter(t => t.state === 'ABORTED').length === 5, '5 tasks ABORTED');
+
+// only live tasks pin their programs
+check(Object.keys(psr.locked).sort().join(',') === 'ATCELLIO,ATSHELL',
+  'locked = programs held by live tasks only (' + Object.keys(psr.locked).sort().join(',') + ')');
+
+check(psr.programs.length === 85, '85 program blocks parsed (got ' + psr.programs.length + ')');
+const gh = psr.programs.find(p => p.name === 'GET_HOME');
+check(gh && gh.type === 'PC' && gh.task === 'no' && gh.comment === 'Get Home Pos' && gh.protection === 'OFF',
+  'program block fields read (type/task/comment/protection)');
+check(psr.programs.every(p => p.name && p.type), 'every program block has a name and type');
+
+/* A PAUSED task still holds its programs — this is the case that actually
+ * bites, and the sample backup has no paused task in it, so synthesise one. */
+const pausedDump = [
+  'F Number: F1',
+  'DATE:     01-JAN-26 00:00',
+  '',
+  'TASK STATES:',
+  '',
+  '1     _PL_RACK PAUSED @ 42 in _PL_RACK of __AUTO',
+  '',
+  '******  History Data  ******',
+  'Routine depth: 1  Routine: _PL_RACK',
+  'Line:    42       Program: _PL_RACK      Type: TP',
+  '',
+  'Routine depth: 0  Routine: __AUTO',
+  'Line:   118       Program: __AUTO        Type: TP',
+  '',
+  'PROGRAM STATES:',
+  '_PL_RACK      TP',
+  'Task: yes',
+  'Lines:   90',
+  'Protection:      OFF',
+  '',
+  '_IDLE_PROG      TP',
+  'Task: no',
+  'Lines:   10',
+  'Protection:      ON',
+  ''
+].join('\n');
+const pp = VA.parsePrgState(pausedDump);
+check(pp.tasks.length === 1 && pp.tasks[0].state === 'PAUSED', 'PAUSED task recognised as a state');
+check(pp.tasks[0].program === '__AUTO' && pp.tasks[0].line === 42, 'PAUSED header line/program read');
+check(Object.keys(pp.locked).sort().join(',') === '_PL_RACK,__AUTO',
+  'a PAUSED task holds every program on its stack, not just the current one (' +
+  Object.keys(pp.locked).sort().join(',') + ')');
+check(pp.programs.length === 2, 'both program blocks parsed');
+check(pp.programs[0].task === 'yes' && pp.programs[1].protection === 'ON',
+  'Task: yes and Protection: ON read');
+check(!Object.prototype.hasOwnProperty.call(pp.locked, '_IDLE_PROG'),
+  'an idle, write-protected program is not reported as held by a task');
+
 console.log('');
 if (failures) {
   console.error(failures + ' test(s) failed');
