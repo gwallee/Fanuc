@@ -2769,6 +2769,12 @@
             h('span', { class: 'title mono', text: 'Editing ' + name }),
             ed.status,
             h('span', { style: 'flex:1' }),
+            TPS ? ed.snipWrap : null,
+            TPS ? h('button', {
+              class: 'btn', text: 'Renumber',
+              title: 'Number the /MN rows 1, 2, 3… after inserting or deleting lines by hand',
+              onclick: function () { ed.ta.value = TPS.renumber(ed.ta.value); ed.paint(); ed.ta.focus(); }
+            }) : null,
             h('button', { class: 'btn primary', text: 'Save', title: 'Save to library — re-parses and re-runs every check', onclick: function () { ed.save(false); } }),
             (p.origin.type === 'dir' && state.server)
               ? h('button', { class: 'btn', text: '+ disk', title: 'Save to library and to ' + p.origin.path, onclick: function () { ed.save(true); } })
@@ -2786,8 +2792,11 @@
             })
           ]));
           col.appendChild(ed.el);
+          col.appendChild(ed.statusBar);
+          col.appendChild(ed.problems);
           wrap.appendChild(col);
           ed.ta.focus();
+          ed.renderStatus();
           return;
         }
 
@@ -3176,7 +3185,14 @@
       });
     }
 
-    return { el: editorWrap, ta: ta, status: status, save: save, saveAndSend: saveAndSend };
+    return {
+      el: editorWrap, ta: ta, status: status, save: save, saveAndSend: saveAndSend,
+      // the syntax-check strip, its problem list, the snippet menu and the
+      // repaint hook all live in here — hand them out so any editor surface
+      // (full page or a split half) can mount them
+      statusBar: statusBar, problems: problems, snipWrap: snipWrap,
+      paint: paint, renderStatus: renderStatus
+    };
   }
 
   function renderEditor(pane, p) {
@@ -3194,11 +3210,11 @@
       status,
       h('span', { style: 'flex:1' }),
       codeSizeControl(),
-      TPS ? snipWrap : null,
+      TPS ? ed.snipWrap : null,
       TPS ? h('button', {
         class: 'btn', text: 'Renumber',
         title: 'Number the /MN rows 1, 2, 3… after inserting or deleting lines by hand',
-        onclick: function () { ta.value = TPS.renumber(ta.value); paint(); ta.focus(); }
+        onclick: function () { ta.value = TPS.renumber(ta.value); ed.paint(); ta.focus(); }
       }) : null,
       h('button', { class: 'btn primary', text: 'Save to library', onclick: function () { save(false); } }),
       (p.origin.type === 'dir' && state.server)
@@ -3216,11 +3232,11 @@
       pane.appendChild(h('p', { class: 'muted', text: 'This program was read from robot ' + p.origin.ip + '. Connect to the robot (Robot tab) to send edits back over FTP with the snapshot/auto-restore safety net.' }));
     }
     pane.appendChild(editorWrap);
-    pane.appendChild(statusBar);
-    pane.appendChild(problems);
+    pane.appendChild(ed.statusBar);
+    pane.appendChild(ed.problems);
     pane.classList.add('editing');
     ta.focus();
-    renderStatus();
+    ed.renderStatus();
   }
 
   function exportProgram(p) {
