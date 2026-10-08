@@ -1583,3 +1583,12 @@ h3.sec-toggle:hover { color: var(--accent); }
 .dataview-row { padding: 1px 4px; border-radius: 3px; }
 .dataview-row:hover { background: var(--panel-2); }
 .code-pane .dataview-rows { max-height: none; }
+
+/* ---- editing inside a split half ---- */
+@media (min-width: 1001px) {
+  .pane.splitting .code-pane .editor-wrap { flex: 1 1 auto; min-height: 0; }
+}
+@media (max-width: 1000px) {
+  .code-pane .editor-wrap { min-height: 55vh; }
+}
+.code-pane .pane-head .title { font-size: 13px; }
