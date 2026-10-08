@@ -69,7 +69,9 @@
      * needing a second browser window. */
     openDocs: [],          // ordered open-doc ids (the tab strip)
     activeDoc: null,       // doc in the left (or only) half of the Code view
-    splitDoc: null         // doc docked on the right, or null
+    splitDoc: null,        // doc docked on the right, or null
+    editSide: null,        // 'left' | 'right' — which split half is an editor
+    dataFilter: {}         // data-view filter text, per doc id — survives re-renders
   };
 
   var PREFS_KEY = 'fanuc-tp-studio.prefs.v1';
@@ -340,7 +342,7 @@
    * chose to stay (unsaved editor text). */
   function setLibrary(id) {
     if (id === state.library) return true;
-    if (state.editing && !confirm('Switch libraries? Unsaved editor changes will be lost.')) return false;
+    if ((state.editing || state.editSide) && editorDirty() && !confirm('Switch libraries? Unsaved editor changes will be lost.')) return false;
     if (state.robotImport) state.robotImport.cancel = true;
     persist();                      // save the outgoing library
     libGen++;
@@ -348,6 +350,7 @@
     state.programs = {};
     state.selected = null;
     state.editing = false;
+    state.editSide = null;
     state.openDocs = [];
     state.activeDoc = null;
     state.splitDoc = null;
@@ -1816,12 +1819,13 @@
   function onPopState(e) {
     var s = e.state;
     if (!s || !s.tab) return;
-    if (state.editing) {
-      if (!confirm('Leave the editor? Unsaved changes will be lost.')) {
+    if (state.editing || state.editSide) {
+      if (editorDirty() && !confirm('Leave the editor? Unsaved changes will be lost.')) {
         try { history.pushState(navSnapshot(), ''); } catch (err) { /* ignore */ }
         return;
       }
       state.editing = false;
+      state.editSide = null;
     }
     state.tab = s.tab;
     if (s.selected && state.programs[s.selected]) state.selected = s.selected;
@@ -1927,7 +1931,7 @@
         class: 'prog-item' + (n === state.selected ? ' active' : ''),
         draggable: 'true',
         title: (p.origin.dir ? 'From ' + p.origin.dir + '/ · ' : '') + 'Click to open · drag onto the code view to open side-by-side',
-        onclick: function () { state.selected = n; state.editing = false; openDoc('P:' + n); state.activeDoc = 'P:' + n; docSelSync = n; setNav(false); render(); }
+        onclick: function () { setNav(false); activateDoc('P:' + n); }
       }, [
         h('div', { class: 'name' }, [
           document.createTextNode(n),
@@ -2419,9 +2423,10 @@
 
   function activateDoc(id) {
     if (!docValid(id)) return;
-    if (state.editing) {
-      if (!confirm('Leave the editor? Unsaved changes will be lost.')) return;
+    if (state.editing || state.editSide) {
+      if (editorDirty() && !confirm('Leave the editor? Unsaved changes will be lost.')) return;
       state.editing = false;
+      state.editSide = null;
     }
     openDoc(id);
     state.activeDoc = id;
@@ -2433,8 +2438,11 @@
    * gesture, shared by tab drags and library drags. */
   function dockDoc(id, rightHalf) {
     if (!docValid(id)) return;
+    if ((state.editing || state.editSide) && editorDirty() &&
+        !confirm('Leave the editor? Unsaved changes will be lost.')) return;
     state.tab = 'code';
     state.editing = false;
+    state.editSide = null;
     openDoc(id);
     if (rightHalf) {
       if (!state.activeDoc || !docValid(state.activeDoc)) state.activeDoc = id;
@@ -2455,6 +2463,10 @@
   function syncDocs() {
     state.openDocs = state.openDocs.filter(docValid);
     if (state.splitDoc && !docValid(state.splitDoc)) state.splitDoc = null;
+    // split-editing only exists while that half holds a program
+    if (state.editSide === 'right' && !docIsProg(state.splitDoc)) state.editSide = null;
+    if (state.editSide === 'left' && !docIsProg(state.activeDoc)) state.editSide = null;
+    if (!state.splitDoc) state.editSide = null;
     if (state.selected && state.selected !== docSelSync) {
       docSelSync = state.selected;
       openDoc('P:' + state.selected, true);
@@ -2551,6 +2563,9 @@
 
     var head = h('div', { class: 'dataview-head' });
     var filter = h('input', { type: 'text', placeholder: 'Filter ' + DATA_DOCS[id].toLowerCase() + '…', class: 'dataview-filter' });
+    // the view is rebuilt on every render (tab switches, robot refreshes…),
+    // so the typed filter lives in state, not in the input
+    filter.value = state.dataFilter[id] || '';
     head.appendChild(filter);
     if (source) head.appendChild(h('span', { class: 'muted', text: 'from ' + source }));
     if (state.server && state.robot.ip) {
@@ -2577,10 +2592,15 @@
       listEl.appendChild(el);
       return el;
     });
-    filter.addEventListener('input', function () {
+    function applyFilter() {
       var q = filter.value.trim().toLowerCase();
       els.forEach(function (el) { el.style.display = (!q || el._filterText.indexOf(q) !== -1) ? '' : 'none'; });
+    }
+    filter.addEventListener('input', function () {
+      state.dataFilter[id] = filter.value;
+      applyFilter();
     });
+    applyFilter();
     box.appendChild(listEl);
     return box;
   }
@@ -2663,8 +2683,16 @@
       h('span', { class: 'title', text: 'Side by side' }),
       h('span', { class: 'muted', text: 'drag a tab or a library program onto either half to view it there' }),
       h('span', { style: 'flex:1' }),
-      bothProgs ? syncLabel : null,
-      h('button', { class: 'btn subtle', text: 'Close split', onclick: function () { state.splitDoc = null; render(); } })
+      bothProgs && !state.editSide ? syncLabel : null,
+      h('button', {
+        class: 'btn subtle', text: 'Close split',
+        onclick: function () {
+          if (state.editSide && editorDirty() && !confirm('Discard your unsaved changes?')) return;
+          state.splitDoc = null;
+          state.editSide = null;
+          render();
+        }
+      })
     ]));
 
     var wrap = h('div', { class: 'split-wrap' });
@@ -2674,15 +2702,50 @@
       if (docIsProg(id)) {
         var name = docProg(id);
         var p = state.programs[name];
+
+        // this half is being edited — the other half stays a live reference
+        if (p && state.editSide === side[0]) {
+          var ed = buildEditorCore(p, { side: side[0] });
+          col.classList.add('editing');
+          col.appendChild(h('div', { class: 'pane-head' }, [
+            h('span', { class: 'title mono', text: 'Editing ' + name }),
+            ed.status,
+            h('span', { style: 'flex:1' }),
+            h('button', { class: 'btn primary', text: 'Save', title: 'Save to library — re-parses and re-runs every check', onclick: function () { ed.save(false); } }),
+            (p.origin.type === 'dir' && state.server)
+              ? h('button', { class: 'btn', text: '+ disk', title: 'Save to library and to ' + p.origin.path, onclick: function () { ed.save(true); } })
+              : null,
+            (state.server && state.robot.ip)
+              ? h('button', { class: 'btn', text: '+ robot', title: 'Save and FTP to ' + state.robot.ip + ' with snapshot + verify + auto-restore', onclick: ed.saveAndSend })
+              : null,
+            h('button', {
+              class: 'btn subtle', text: 'Cancel',
+              onclick: function () {
+                if (editorDirty() && !confirm('Discard your changes to ' + name + '?')) return;
+                state.editSide = null;
+                render();
+              }
+            })
+          ]));
+          col.appendChild(ed.el);
+          wrap.appendChild(col);
+          ed.ta.focus();
+          return;
+        }
+
         col.appendChild(h('div', { class: 'pane-head' }, [
           progSelect(name, function (v) {
-            if (side[0] === 'left') { state.selected = v; state.activeDoc = 'P:' + v; openDoc('P:' + v); }
+            if (side[0] === 'left') { state.selected = v; docSelSync = v; state.activeDoc = 'P:' + v; openDoc('P:' + v); }
             else { state.splitDoc = 'P:' + v; openDoc('P:' + v); }
             render();
           }),
           h('button', {
-            class: 'btn subtle', text: 'Edit',
-            onclick: function () { state.selected = name; state.activeDoc = 'P:' + name; state.splitDoc = null; state.editing = true; render(); }
+            class: 'btn subtle', text: 'Edit', title: 'Edit this half in place — the other half stays open beside it',
+            onclick: function () {
+              if (state.editSide && editorDirty() && !confirm('Discard your unsaved changes in the other half?')) return;
+              state.editSide = side[0];
+              render();
+            }
           }),
           bothProgs ? h('button', {
             class: 'btn subtle', text: 'Compare A↔B', title: 'Diff these two programs in the Compare tab',
@@ -2772,7 +2835,29 @@
     pane.appendChild(buildCodeBox(p));
   }
 
-  function renderEditor(pane, p) {
+  /* The one live editor (full-page or a split half). Dirty means the text no
+   * longer matches what was loaded — the guards below only interrupt for
+   * changes that would actually be lost. */
+  var liveEditor = null;
+
+  function editorDirty() {
+    return !!(liveEditor && liveEditor.ta.isConnected && liveEditor.ta.value !== liveEditor.source);
+  }
+
+  /* A program was renamed by editing its /PROG header — every open doc
+   * reference follows it. */
+  function renameDocRefs(oldId, newId) {
+    state.openDocs = state.openDocs.map(function (d) { return d === oldId ? newId : d; })
+      .filter(function (d, i, arr) { return arr.indexOf(d) === i; });
+    if (state.activeDoc === oldId) state.activeDoc = newId;
+    if (state.splitDoc === oldId) state.splitDoc = newId;
+  }
+
+  /* The editor itself — textarea, highlight overlay, save/send logic — shared
+   * by the full-page editor and a split half. opts.side ('left'|'right') means
+   * it lives in that half of a side-by-side view. */
+  function buildEditorCore(p, opts) {
+    opts = opts || {};
     var oldName = p.parsed.name;
     var status = h('span', { class: 'muted' });
 
@@ -2960,20 +3045,40 @@
     ta.addEventListener('keyup', renderStatus);
     ta.addEventListener('click', renderStatus);
     paint();
+    liveEditor = { ta: ta, source: p.source };
 
-    function save(alsoDisk) {
-      var src = ta.value;
+    function stopEditing() { state.editing = false; state.editSide = null; }
+
+    /* Store the edited source and keep every view pointing at it, renamed or
+     * not. Editing the RIGHT half must not yank the left half over to the
+     * saved program, so only a left/full edit moves the selection. */
+    function store(src) {
       var parsed = P.parseLS(src, oldName + '.LS');
-      if (parsed.name !== oldName) delete state.programs[oldName];
+      if (parsed.name !== oldName) {
+        delete state.programs[oldName];
+        renameDocRefs('P:' + oldName, 'P:' + parsed.name);
+      }
       state.programs[parsed.name] = {
         parsed: parsed,
         analysis: A.analyzeProgram(parsed),
         source: src,
         origin: p.origin
       };
-      state.selected = parsed.name;
+      if (opts.side === 'right') {
+        state.splitDoc = 'P:' + parsed.name;
+      } else {
+        state.selected = parsed.name;
+        docSelSync = parsed.name;
+        state.activeDoc = 'P:' + parsed.name;
+      }
       rebuildDerived();
       persist();
+      return parsed;
+    }
+
+    function save(alsoDisk) {
+      var src = ta.value;
+      store(src);
       if (alsoDisk && p.origin.type === 'dir' && state.server) {
         fetch('/api/dir/file', {
           method: 'POST',
@@ -2981,12 +3086,12 @@
           body: JSON.stringify({ path: p.origin.path, content: src })
         }).then(function (r) { return r.json(); }).then(function (b) {
           if (b.error) throw new Error(b.error);
-          state.editing = false;
+          stopEditing();
           render();
         }).catch(function (e) { status.textContent = 'Disk save failed: ' + e.message; });
         return;
       }
-      state.editing = false;
+      stopEditing();
       render();
     }
 
@@ -2994,12 +3099,7 @@
       // save to library first so nothing is ever lost, then upload with the
       // snapshot/verify/restore safety net
       var src = ta.value;
-      var parsed = P.parseLS(src, oldName + '.LS');
-      if (parsed.name !== oldName) delete state.programs[oldName];
-      state.programs[parsed.name] = { parsed: parsed, analysis: A.analyzeProgram(parsed), source: src, origin: p.origin };
-      state.selected = parsed.name;
-      rebuildDerived();
-      persist();
+      var parsed = store(src);
       var blocking = state.findings.filter(function (f) {
         return f.severity === 'error' && f.refs.some(function (r) { return r.prog === parsed.name; });
       });
@@ -3011,10 +3111,24 @@
       status.textContent = 'Uploading to ' + state.robot.ip + '…';
       sendToRobot(parsed.name, src, function (result) {
         // on failure keep the editor open so the fix is one keystroke away
-        state.editing = !result.ok;
+        if (result.ok) stopEditing();
+        else if (opts.side) state.editSide = opts.side;
+        else state.editing = true;
         render();
       });
     }
+
+    return { el: editorWrap, ta: ta, status: status, save: save, saveAndSend: saveAndSend };
+  }
+
+  function renderEditor(pane, p) {
+    var oldName = p.parsed.name;
+    var ed = buildEditorCore(p, {});
+    var status = ed.status;
+    var save = ed.save;
+    var saveAndSend = ed.saveAndSend;
+    var editorWrap = ed.el;
+    var ta = ed.ta;
 
     var bar = h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Editing ' + oldName }),
