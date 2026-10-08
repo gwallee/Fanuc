@@ -1541,3 +1541,9 @@ h3.sec-toggle:hover { color: var(--accent); }
 .cmt-edit.ok { border-color: var(--on); background: var(--diff-add-bg); }
 .cmt-edit.bad { border-color: var(--off); background: var(--warn-bg); }
 .cmt-note { margin-left: 6px; font-size: 11px; color: var(--muted); }
+
+/* ---- "Check robot for changes" ---- */
+.rc-badge { margin-left: 6px; font-size: 10px; vertical-align: 1px; white-space: nowrap; }
+.robot-check { margin: 8px 0 12px; }
+.robot-check .import-bar { margin-bottom: 6px; }
+.robot-check .robot-files { margin-top: 6px; }

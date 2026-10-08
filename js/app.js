@@ -58,7 +58,8 @@
     hideNav: false,        // hide the library on every tab — the ☰ button in the header (persisted)
     codeSize: 13,          // code font size in px (persisted)
     ignoreIoState: true,   // Compare: skip the controller's inline I/O state (persisted)
-    ignoreLineNums: true   // Compare: skip the leading /MN line number (persisted)
+    ignoreLineNums: true,  // Compare: skip the leading /MN line number (persisted)
+    robotCheck: null       // last "check robot for changes" run — manual, never polled
   };
 
   var PREFS_KEY = 'fanuc-tp-studio.prefs.v1';
@@ -990,6 +991,7 @@
     // each robot works against its own stored library
     if (!setLibrary(ip)) return;
     state.robot = { ip: ip, ftpUser: state.robot.ftpUser, ftpPass: state.robot.ftpPass, files: [], registers: null, posregs: null, strregs: null, rawIO: null, ioState: null, ioComments: null, errors: undefined, error: null, loadedAt: null, backup: null, notPrograms: {}, prgState: undefined };
+    state.robotCheck = null;   // verdicts belong to the robot they were read from
     state.tab = 'robot';
     render();
     api('/api/robot/list?ip=' + encodeURIComponent(ip) + ftpQS()).then(function (b) {
@@ -1377,11 +1379,74 @@
           return null;
         }
         var prog = addProgram(b.content, b.name, { type: 'robot', ip: ip, name: b.name });
+        // the library copy IS the robot copy now, so any earlier
+        // "differs from robot" verdict for it is settled
+        if (prog && state.robotCheck && state.robotCheck.ip === ip) {
+          delete state.robotCheck.differs[prog];
+          if (state.robotCheck.sources) state.robotCheck.sources[prog] = state.programs[prog].source;
+        }
         /* A bulk import defers both: re-analysing the whole library and
          * rewriting localStorage per program is the bulk of the wall clock. */
         if (!deferRebuild) { rebuildDerived(); persist(); }
         return prog;
       });
+  }
+
+  /* ---- "did anything change on the robot?" ----
+   * Strictly on demand — press the button, the bridge reads each program
+   * that exists both in the library and on the controller, and the verdicts
+   * land as ≠ badges in the sidebar and the Robot tab. No background
+   * polling: a browser tab re-reading every program on a timer is noise on
+   * the robot network, and a verdict is only trustworthy with a time on it
+   * anyway. */
+  function checkRobotChanges() {
+    var ip = state.robot.ip;
+    if (!ip || (state.robotCheck && state.robotCheck.running)) return;
+    var gen = libGen;
+    var onRobot = {};
+    state.robot.files.forEach(function (f) {
+      if (/\.LS$/i.test(f) && !isKnownNonProgram(f)) onRobot[f.replace(/\.LS$/i, '').toUpperCase()] = f;
+    });
+    var libNames = Object.keys(state.programs);
+    var targets = libNames.filter(function (n) { return onRobot[n.toUpperCase()]; });
+    var rc = state.robotCheck = {
+      running: true, cancel: false, ip: ip, at: null,
+      total: targets.length, done: 0, same: 0,
+      differs: {},        // NAME -> {name, adds, dels} vs the robot copy
+      headerOnly: [],     // only /ATTR noise (dates, sizes) moved
+      notOnRobot: libNames.filter(function (n) { return !onRobot[n.toUpperCase()]; }),
+      failed: [],
+      sources: {}         // NAME -> robot copy, ready to open in Compare
+    };
+    render();
+    var chain = Promise.resolve();
+    targets.forEach(function (n) {
+      chain = chain.then(function () {
+        if (rc.cancel || state.robotCheck !== rc || gen !== libGen) return;
+        return api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=' + encodeURIComponent(onRobot[n.toUpperCase()]) + ftpQS())
+          .then(function (b) {
+            if (gen !== libGen || !state.programs[n]) return;
+            rc.sources[n] = b.content;
+            var robotSide = {}; robotSide[n] = b.content;
+            var librarySide = {}; librarySide[n] = state.programs[n].source;
+            var res = D.comparePrograms(robotSide, librarySide, diffOpts());
+            if (res.changed.length) rc.differs[n] = res.changed[0];
+            else if (res.headerOnly.length) rc.headerOnly.push(n);
+            else rc.same++;
+          })
+          .catch(function () { rc.failed.push(n); })
+          .then(function () {
+            rc.done++;
+            if (state.tab === 'robot' || rc.done >= rc.total) render();
+          });
+      });
+    });
+    chain.then(function () {
+      if (state.robotCheck !== rc) return;
+      rc.running = false;
+      rc.at = new Date();
+      render();
+    });
   }
 
   function openDirectory(dirPath) {
@@ -1828,13 +1893,20 @@
       else if (p.origin.type === 'dir') meta += ' · on disk';
       else if (p.origin.folder) meta += ' · from ' + p.origin.folder;
       else if (p.parsed.attrs.COMMENT) meta += ' · ' + p.parsed.attrs.COMMENT;
+      var dif = robotDiffers(n);
       var item = h('button', {
         class: 'prog-item' + (n === state.selected ? ' active' : ''),
         draggable: 'true',
         title: (p.origin.dir ? 'From ' + p.origin.dir + '/ · ' : '') + 'Click to open · drag onto the code view to open side-by-side',
         onclick: function () { state.selected = n; state.editing = false; setNav(false); render(); }
       }, [
-        h('div', { class: 'name', text: n }),
+        h('div', { class: 'name' }, [
+          document.createTextNode(n),
+          dif ? h('span', {
+            class: 'badge warn rc-badge', text: '≠ robot',
+            title: 'The copy on ' + state.robot.ip + ' differs from this library copy (+' + dif.adds + '/−' + dif.dels + ' lines) — from the last “Check robot for changes”'
+          }) : null
+        ]),
         h('div', { class: 'meta', text: meta })
       ]);
       item.addEventListener('dragstart', function (e) {
@@ -5289,6 +5361,82 @@
     }
   }
 
+  /* The latest check-for-changes verdict for one program, or null. Verdicts
+   * stream in while the check runs, so badges appear as they are decided. */
+  function robotDiffers(n) {
+    var rc = state.robotCheck;
+    return (rc && rc.ip === state.robot.ip && rc.differs[n]) || null;
+  }
+
+  function robotCheckControls() {
+    var rc = state.robotCheck;
+    if (rc && rc.running) {
+      return h('button', {
+        class: 'btn subtle', text: 'Checking ' + rc.done + ' of ' + rc.total + '… stop',
+        title: 'Stop after the program currently being read',
+        onclick: function () { rc.cancel = true; rc.running = false; rc.at = new Date(); render(); }
+      });
+    }
+    if (!Object.keys(state.programs).length) return null;
+    return h('button', {
+      class: 'btn', text: 'Check robot for changes',
+      title: 'Re-read every library program from ' + state.robot.ip + ' and flag the ones whose copy on the controller no longer matches the library. Read-only — nothing is sent to the robot.',
+      onclick: checkRobotChanges
+    });
+  }
+
+  function robotCheckPanel() {
+    var rc = state.robotCheck;
+    if (!rc || rc.ip !== state.robot.ip) return null;
+    var box = h('div', { class: 'robot-check' });
+    if (rc.running) {
+      var pct = rc.total ? Math.round((rc.done / rc.total) * 100) : 0;
+      box.appendChild(h('div', { class: 'import-bar' }, [h('span', { style: 'width:' + pct + '%' })]));
+    }
+    var difNames = Object.keys(rc.differs).sort();
+    var parts = [];
+    parts.push(difNames.length
+      ? difNames.length + ' differ' + (difNames.length === 1 ? 's' : '') + ' from the robot'
+      : (rc.running ? 'nothing differs so far' : 'library and robot match'));
+    parts.push(rc.same + ' identical');
+    if (rc.headerOnly.length) parts.push(rc.headerOnly.length + ' header-only (dates/sizes)');
+    if (rc.failed.length) parts.push(rc.failed.length + ' unreadable');
+    if (rc.notOnRobot.length) parts.push(rc.notOnRobot.length + ' only in the library');
+    box.appendChild(h('div', {}, [
+      h('strong', { text: (rc.running ? 'Checking against ' : 'Checked against ') + rc.ip + (rc.at ? ' at ' + rc.at.toLocaleTimeString() : '') + ' — ' }),
+      h('span', { text: parts.join(', ') + '.' }),
+      rc.at && !rc.running ? h('span', { class: 'muted', text: ' Verdicts age as you edit — run it again after changes.' }) : null
+    ]));
+    if (difNames.length) {
+      var fl = h('div', { class: 'robot-files' });
+      difNames.forEach(function (n) {
+        var d = rc.differs[n];
+        fl.appendChild(h('span', {
+          class: 'chip write', text: n + ' ≠ (+' + d.adds + '/−' + d.dels + ')',
+          title: 'The copy on ' + rc.ip + ' differs from the library (' + d.adds + ' added / ' + d.dels + ' removed lines). Click to see the diff.',
+          onclick: function () { openRobotCheckCompare(n); }
+        }));
+      });
+      box.appendChild(fl);
+      box.appendChild(h('p', {}, [h('button', {
+        class: 'btn subtle', text: 'Open all in Compare',
+        title: 'Load the robot copies as the Compare baseline: robot on the left, library on the right',
+        onclick: function () { openRobotCheckCompare(null); }
+      })]));
+    }
+    return box;
+  }
+
+  function openRobotCheckCompare(name) {
+    var rc = state.robotCheck;
+    if (!rc) return;
+    setBaseline('robot ' + rc.ip + (rc.at ? ' @ ' + rc.at.toLocaleTimeString() : ''), rc.sources);
+    if (name) state.compare.open = name;
+    state.tab = 'compare';
+    setNav(false);
+    render();
+  }
+
   function renderRobot(pane) {
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Robot connection' }),
@@ -5386,19 +5534,25 @@
             importAllFromRobot(lsFiles);
           }
         }));
+        var rcBtn = robotCheckControls();
+        if (rcBtn) { actions.appendChild(document.createTextNode(' ')); actions.appendChild(rcBtn); }
       }
       pane.appendChild(actions);
+      var rcPanel = robotCheckPanel();
+      if (rcPanel) pane.appendChild(rcPanel);
       var fl = h('div', { class: 'robot-files' });
       lsFiles.forEach(function (f) {
         var name = f.replace(/\.LS$/i, '');
         var busy = imp && imp.inFlight[f.toUpperCase()];
         var here = !!state.programs[name];
+        var dif = here && robotDiffers(name);
         /* Three states, so a bulk import reads as motion rather than a wall
          * of red that turns green all at once when it finishes. */
         fl.appendChild(h('span', {
-          class: 'chip ' + (busy ? 'loading' : here ? 'read' : 'write'),
-          text: f + (busy ? ' …' : here ? ' ✓' : ''),
+          class: 'chip ' + (busy ? 'loading' : dif ? 'write' : here ? 'read' : 'write'),
+          text: f + (busy ? ' …' : dif ? ' ≠' : here ? ' ✓' : ''),
           title: busy ? 'reading from the controller…'
+            : dif ? 'the robot copy DIFFERS from the library (+' + dif.adds + '/−' + dif.dels + ' lines) — click to replace the library copy with the robot’s'
             : here ? 'in library — click to re-import' : 'click to import',
           onclick: function () {
             if (!confirmCrossSource([f])) return;
