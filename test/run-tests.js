@@ -743,6 +743,60 @@ check(CS.storedComment('IOSTATE.DG', 'DOUT[  65] OFF  Vac-1 ON\n', 'DO', 65) ===
   'an I/O rename is verified against IOSTATE.DG');
 check(CS.storedComment('IOSTATE.DG', 'DIN[   1]  ON  Auto Mode\n', 'DO', 1) === null,
   'DI[1] and DO[1] are not confused when verifying');
+console.log('\n-- TP syntax: shapes, grammar, snippets --');
+const S = require('../js/tpsyntax.js');
+const SH = require('../js/tpshapes.js');
+check(S.normalize('IF (R[93:*tempZ]<225),R[93:*tempZ]=(225) ;') === 'IF (R[n]<N),R[n]=(N)', 'normalize blanks indices, comments and numbers');
+check(S.normalize('L PR[55:*PalStk Meas] R[207:*ScanSpd]mm/sec FINE Tool_Offset Skip,LBL[217],PR[49:*EdgeFind-LPOS]=LPOS') === 'L PR[n] R[n]mm/sec FINE Tool_Offset Skip,LBL[n],PR[n]=LPOS', 'normalize keeps the motion option structure');
+check(S.normalize("CALL _SET_ALARM(2,'Status ID not 0',' Grip.')") === "CALL PROG(N,'s','s')", 'normalize blanks program names and strings');
+check(SH.shapes && SH.shapes['JMP LBL[n]'] && SH.shapes['JMP LBL[n]'][0] > 100, 'the mined dictionary holds JMP LBL[n] with a count');
+check(SH.lines > 10000 && SH.programs > 100, 'dictionary built from a real-sized sample (' + SH.programs + ' programs)');
+const ok = (t) => S.check(t, SH).level === 'ok';
+const err = (t) => S.check(t, SH).level === 'error';
+const unk = (t) => S.check(t, SH).level === 'unknown';
+check(ok('R[8:Task-JMP LBL]=0 ;') && ok('J PR[1:Home] R[202:Speed-J]% CNT50') && ok('IF (DO[33:At Home]),JMP LBL[200]'), 'controller-written lines are known shapes');
+check(S.check('J PR[1] R[202]% CNT50', SH).count > 100, 'a known shape reports how often the robots use it');
+check(err('IF (R[1]=1,JMP LBL[1]'), 'unclosed parenthesis is an error');
+check(err('R[1]=(R[2]+1'), 'unbalanced parenthesis in an assignment is an error');
+check(err("SR[1]='abc"), 'unterminated string is an error');
+check(err('1500=R[2]'), 'a number on the left of = is an error');
+check(err('R[1]=-1') && ok('R[1]=(-1)'), 'a bare negative literal is an error, in parentheses it is fine');
+check(err('F[1]=ON') && ok('F[1]=(ON)'), 'a flag written without parentheses is an error');
+check(err('J P[1] FINE') && err('J P[1] 100%') && err('J P[1] 500mm/sec FINE') && err('L P[1] 100% FINE'), 'motion lines: missing speed, missing termination, wrong unit for J and L');
+check(err('L P[1] 500 mm/sec FINE'), 'a space before the speed unit is an error');
+check(ok('L PR[20] 500mm/sec CNT50 Offset') && !err('L P[1] 200mm/sec CNT100 TB 0.5sec,DO[1]=ON') && ok('J PR[R[20]] 75% CNT100 Offset'), 'motion options and an indirect PR pass');
+check(err('IF R[1]>5 JMP LBL[1]') && ok('IF R[1]>5,JMP LBL[1]'), 'plain IF needs the comma before its action');
+check(err('IF !DI[1],JMP LBL[1]') && ok('IF (!DI[1]),JMP LBL[1]'), '"!" needs the mixed-logic parentheses');
+check(err('IF (R[1]=1) THEN R[2]=0') && ok('IF (R[1]=1) THEN'), 'nothing may follow THEN');
+check(err('WAIT 0.5sec') && ok('WAIT    .10(sec)') && ok('WAIT (DI[17:Conv Pk Rdy])'), 'timed wait needs (sec); mixed-logic wait passes');
+check(err('CALL _TRANSIT(-90)') && ok('CALL _TRANSIT((-90))'), 'a negative call argument needs its own parentheses');
+check(err('SELECT R[1]=1,R[2]=0') && ok('SELECT R[1]=1,JMP LBL[1]') && ok('=20,JMP LBL[921]') && ok('ELSE,CALL _RECOVER'), 'SELECT rows take JMP or CALL only');
+check(unk('L P[1] 500mm/sec FINE Wobble'), 'an unknown motion option is "unknown", not an error');
+check(S.check('R[1]=R[2] XOR R[3]', SH).nearest.length > 0, 'an unknown form offers nearest known shapes');
+check(ok('! a remark') && ok('//PAUSE') && ok(''), 'comments, disabled lines and blanks are never flagged');
+// row-level checks over a listing, plus renumber and formatRow
+const rowSrc = '/PROG RS\r\n/MN\r\n   1:  R[1]=0 ;\r\n   2:  R[2]=1\r\n   3:J P[1] 100% FINE ;\r\n  R[3]=2 ;\r\n   5:  CALL VERY_LONG(1,\r\n    :  2) ;\r\n/POS\r\n/END';
+const rowIssues = S.checkSource(rowSrc, SH);
+check(rowIssues.length === 3 && rowIssues[0].row === 3 && /end with " ;"/.test(rowIssues[0].message), 'a row without " ;" is flagged (got ' + rowIssues.length + ')');
+check(rowIssues[1].row === 5 && /line number/.test(rowIssues[1].message), 'a row without a line number is flagged');
+check(rowIssues[2].level === 'unknown' && rowIssues[2].rows.length === 2 && rowIssues[2].shape === 'CALL PROG(N,N)', 'a wrapped CALL is checked as one instruction spanning two rows (shape ' + rowIssues[2].shape + ')');
+const renumbered = S.renumber(rowSrc);
+check(/\r\n   4:  R\[3\]/.test(renumbered) === false && /\r\n   3:J P\[1\]/.test(renumbered) && /   4:  CALL VERY_LONG\(1,\r\n    :  2\) ;/.test(renumbered), 'renumber counts only numbered rows and keeps continuation rows (CRLF kept)');
+check(S.formatRow(12, 'R[1]=0') === '  12:  R[1]=0 ;' && S.formatRow(3, 'J P[1] 100% FINE') === '   3:J P[1] 100% FINE ;', 'formatRow writes rows the way the controller does');
+check(S.snippets(SH).some((s) => s.name === 'Joint move' && s.count > 0) && S.snippets(SH).some((s) => s.group === 'Most used on your robots'), 'snippets carry dictionary counts and the most-used group');
+// every line the controller wrote must pass the grammar
+{
+  let bad = 0, scanned = 0;
+  const dirs = [path.join(__dirname, '..', 'testdata'), path.join(__dirname, '..', 'samples')];
+  dirs.forEach((d) => fs.readdirSync(d).filter((f) => /\.ls$/i.test(f)).forEach((f) => {
+    const src = fs.readFileSync(path.join(d, f), 'latin1');
+    if (!/^\/PROG\b/m.test(src)) return;
+    scanned++;
+    bad += S.checkSource(src, null).filter((i) => i.level === 'error').length;
+  }));
+  check(scanned > 20 && bad === 0, 'no controller-written line in testdata/samples is called an error (' + bad + ' in ' + scanned + ' programs)');
+}
+
 console.log('');
 if (failures) {
   console.error(failures + ' test(s) failed');
