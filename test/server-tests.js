@@ -95,6 +95,14 @@ async function post(route, body) {
     check(dr.ok === true && drFiles['MAIN.LS'].includes('R[1]=8'), 'safe upload works behind md:');
     drServer.close();
 
+    console.log('\n-- pooled FTP recovers from a dropped connection --');
+    r = await fetch(BASE + '/api/robot/file?ip=' + ROBOT + '&name=MAIN.LS').then((x) => x.json());
+    check(r.content && r.content.length > 0, 'read works (connection now pooled)');
+    ftpServer.destroyConnections(); // robot drops the idle control connection
+    await new Promise((res2) => setTimeout(res2, 150));
+    r = await fetch(BASE + '/api/robot/file?ip=' + ROBOT + '&name=MAIN.LS').then((x) => x.json());
+    check(r.content && r.content.length > 0, 'next read reconnects and succeeds (stale retry)');
+
     console.log('\n-- quick backup (.LS + .VA only) --');
     files['SYSMAST.SV'] = 'binary-ish system file';
     files['MAIN.TP'] = 'binary tp';

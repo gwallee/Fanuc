@@ -80,14 +80,20 @@
       state.hiddenRules = p.hiddenRules || {};
       if (ZOOMS.indexOf(p.zoom) !== -1) state.zoom = p.zoom;
       if (typeof p.ignoreIoState === 'boolean') state.ignoreIoState = p.ignoreIoState;
+      if (p.lastRobot && p.lastRobot.ip) state.lastRobot = p.lastRobot; // {ip, ftpUser}
     } catch (e) { /* defaults */ }
+    try {
+      // the password never touches disk — it lives for this tab only
+      state.sessionFtpPass = sessionStorage.getItem('fanuc-tp-studio.ftpPass') || '';
+    } catch (e) { /* no session storage — re-enter it after a refresh */ }
   }
 
   function savePrefs() {
     try {
       localStorage.setItem(PREFS_KEY, JSON.stringify({
         flowIgnore: state.flowIgnore, hiddenRules: state.hiddenRules, zoom: state.zoom,
-        ignoreIoState: state.ignoreIoState
+        ignoreIoState: state.ignoreIoState,
+        lastRobot: state.lastRobot || null
       }));
     } catch (e) { /* session-only */ }
   }
@@ -127,6 +133,19 @@
     state.xref = A.buildGlobalXref(state.programs);
     state.extern = buildExtern();
     state.findings = L.lint(state.programs, state.graph, state.xref, state.extern, { passThroughCalls: state.flowIgnore });
+
+    // live names: the controller's CURRENT register/PR/IO comments, shown in
+    // place of whatever stale comment the program text was exported with
+    state.liveNames = null;
+    if (state.extern) {
+      var ln = { r: {}, pr: {}, io: {} };
+      var any = false;
+      (state.extern.registers || []).forEach(function (r2) { if (r2.comment) { ln.r[r2.index] = r2.comment; any = true; } });
+      (state.extern.posregs || []).forEach(function (r2) { if (r2.group === 1 && r2.comment) { ln.pr[r2.index] = r2.comment; any = true; } });
+      (state.extern.io || []).forEach(function (p2) { if (p2.comment) { ln.io[p2.type + '[' + p2.index + ']'] = p2.comment; any = true; } });
+      if (any) state.liveNames = ln;
+    }
+    state.namesRev = (state.namesRev || 0) + 1; // invalidates highlight caches
   }
 
   // Controllers export logs (ERRALL.LS, HIST.LS, LOGBOOK.LS…) with a .ls
@@ -266,7 +285,20 @@
       .then(function (b) {
         state.server = !!(b && b.ok);
         renderConnect();
-        if (state.server) { loadKnownRobots(); loadSubnets(); }
+        if (state.server) {
+          loadKnownRobots();
+          loadSubnets();
+          // pick up where the last page load left off: silently reconnect to
+          // the robot that was selected before the refresh
+          if (state.lastRobot && state.lastRobot.ip && !state.robot.ip) {
+            state.robot.ftpUser = state.lastRobot.ftpUser || '';
+            state.robot.ftpPass = state.sessionFtpPass || '';
+            var keepTab = state.tab;
+            connectRobot(state.lastRobot.ip);
+            state.tab = keepTab; // reconnecting is background work, not navigation
+            render();
+          }
+        }
       })
       .catch(function () { state.server = false; renderConnect(); });
   }
@@ -434,6 +466,10 @@
       state.robot.loadedAt = new Date();
       render();
       rememberRobot(ip);   // only ever remember one that actually answered
+      // survive page refreshes: next load reconnects to this robot by itself
+      state.lastRobot = { ip: ip, ftpUser: state.robot.ftpUser || '' };
+      savePrefs();
+      try { sessionStorage.setItem('fanuc-tp-studio.ftpPass', state.robot.ftpPass || ''); } catch (e) { /* optional */ }
       loadRobotRegisters();
       loadRobotPosregs();
     }).catch(function (e) {
@@ -537,6 +573,14 @@
     }).then(function (r) { return r.json(); }).then(function (b) {
       b.sentContent = content; // for mapping controller file-line errors back to program lines
       state.upload = b;
+      if (b.ok) {
+        // the controller regenerates register/IO comments during LS→TP→LS, so
+        // pull its copy straight back — the old FileZilla re-open, automated
+        importFromRobot(name + '.LS').then(function () {
+          b.refetched = true;
+          render();
+        }).catch(function () { /* library still holds what we sent */ });
+      }
       onDone(b);
     }).catch(function (e) {
       state.upload = { ok: false, name: name + '.LS', error: e.message };
@@ -550,6 +594,7 @@
     var el = h('div', { class: 'banner ' + (u.ok ? 'good' : 'bad') });
     if (u.ok) {
       el.appendChild(h('strong', { text: u.name + ' uploaded to ' + state.robot.ip + ' and verified on the robot. ' }));
+      if (u.refetched) el.appendChild(h('span', { text: 'Library copy refreshed from the robot (comments regenerated). ' }));
       if (u.snapshot) el.appendChild(h('span', { text: 'The previous version was snapshotted to ' + u.snapshot + ' before the upload.' }));
     } else {
       el.appendChild(h('strong', { text: u.name + ' — upload failed. ' }));
@@ -778,19 +823,52 @@
     if (line.comment !== null) {
       return '<span class="tok-cmt">! ' + esc(line.comment) + '</span>';
     }
-    return tokenize(esc(line.text));
+    return tokenize(esc(line.text), true);
   }
 
-  /* Colour the instruction text of one already-HTML-escaped TP line. */
-  function tokenize(s) {
+  /* Colour the instruction text of one already-HTML-escaped TP line.
+   * live=true additionally swaps register/PR/IO comments for the
+   * controller's CURRENT names (from NUMREG.VA etc.) — display only, and
+   * never for the editor overlay, which must align with the raw text. */
+  function tokenize(s, live) {
+    var ln = live ? state.liveNames : null;
+
+    function liveSpan(cls, shown) {
+      // title stays free of ON/OFF etc. — later keyword passes rescan the
+      // whole string and would mangle spans inside an attribute
+      return '<span class="' + cls + ' tok-livename" title="Name from controller data">' + shown + '</span>';
+    }
+
     s = s.replace(/(MESSAGE\[)([^\]]*)(\])/g, '<span class="tok-kw">$1</span><span class="tok-str">$2</span><span class="tok-kw">$3</span>');
     s = s.replace(/\bLBL\[[^\]]*\]/g, function (m0) { return '<span class="tok-lbl">' + m0 + '</span>'; });
     s = s.replace(/\b(CALL|RUN)\s+([A-Z_][A-Z0-9_]*)/g, function (_, kw, name) {
       return '<span class="tok-kw">' + kw + '</span> <span class="tok-call" data-call="' + name + '">' + name + '</span>';
     });
-    s = s.replace(/\b(PR|AR|SR|GP\d+)\[[^\]]*\]/g, function (m0) { return '<span class="tok-reg">' + m0 + '</span>'; });
-    s = s.replace(/(^|[^A-Z>])(R\[[^\]]*\])/g, function (_, pre, r) { return pre + '<span class="tok-reg">' + r + '</span>'; });
-    s = s.replace(/\b(DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|AI|AO|WI|WO|F|M|TIMER)\[[^\]]*\]/g, function (m0) {
+    s = s.replace(/\b(PR|AR|SR|GP\d+)\[[^\]]*\]/g, function (m0, kind) {
+      if (ln && kind === 'PR') {
+        var pm = m0.match(/^PR\[\s*(\d+)((?:\s*,\s*\d+)?)\s*(?::([^\]]*))?\]$/);
+        if (pm && ln.pr[pm[1]] !== undefined) {
+          return liveSpan('tok-reg', 'PR[' + pm[1] + pm[2] + ':' + esc(ln.pr[pm[1]]) + ']', pm[3]);
+        }
+      }
+      return '<span class="tok-reg">' + m0 + '</span>';
+    });
+    s = s.replace(/(^|[^A-Z>])(R\[[^\]]*\])/g, function (_, pre, r) {
+      if (ln) {
+        var rm = r.match(/^R\[\s*(\d+)\s*(?::([^\]]*))?\]$/);
+        if (rm && ln.r[rm[1]] !== undefined) {
+          return pre + liveSpan('tok-reg', 'R[' + rm[1] + ':' + esc(ln.r[rm[1]]) + ']', rm[2]);
+        }
+      }
+      return pre + '<span class="tok-reg">' + r + '</span>';
+    });
+    s = s.replace(/\b(DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|AI|AO|WI|WO|F|M|TIMER)\[[^\]]*\]/g, function (m0, type) {
+      if (ln && type !== 'TIMER') {
+        var im = m0.match(/^[A-Z]+\[\s*(\d+)\s*(?::([^\]]*))?\]$/);
+        if (im && ln.io[type + '[' + im[1] + ']'] !== undefined) {
+          return liveSpan('tok-io', type + '[' + im[1] + ':' + esc(ln.io[type + '[' + im[1] + ']']) + ']', im[2]);
+        }
+      }
       return '<span class="tok-io">' + m0 + '</span>';
     });
     s = s.replace(/\bP\[[^\]]*\]/g, function (m0) { return '<span class="tok-num">' + m0 + '</span>'; });
@@ -1120,10 +1198,20 @@
 
   function buildCodeBox(p) {
     var box = h('div', { class: 'codebox' });
-    p.parsed.lines.forEach(function (line) {
+    // highlighting is pure per line, so cache the HTML per program object —
+    // a re-parse makes a new object, and new controller name data bumps
+    // namesRev, either way giving a fresh cache
+    if (p.hlRev !== state.namesRev) { p.hlCache = []; p.hlRev = state.namesRev; }
+    var cache = p.hlCache;
+    p.parsed.lines.forEach(function (line, i) {
+      var html = cache[i];
+      if (html === undefined) {
+        html = (line.motion ? '<span class="tok-motion">' + line.motion + '</span> ' : '') + highlight(line);
+        cache[i] = html;
+      }
       box.appendChild(h('div', { class: 'cline', 'data-line': line.num }, [
         h('span', { class: 'ln', text: line.num }),
-        h('span', { class: 'src', html: (line.motion ? '<span class="tok-motion">' + line.motion + '</span> ' : '') + highlight(line) })
+        h('span', { class: 'src', html: html })
       ]));
     });
     box.addEventListener('click', function (ev) {
@@ -3027,6 +3115,11 @@
     rebuildDerived();
     render();
     detectServer();
+
+    // installable app: register the service worker when served by the bridge
+    if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
+      navigator.serviceWorker.register('sw.js').catch(function () { /* optional */ });
+    }
   }
 
   document.addEventListener('DOMContentLoaded', init);

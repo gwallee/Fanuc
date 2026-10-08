@@ -47,6 +47,7 @@ const MIME = {
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json',
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
   '.ls': 'text/plain; charset=utf-8'
@@ -305,9 +306,9 @@ async function handleApi(req, res, u) {
     if (typeof content !== 'string' || !content.trim()) return fail(res, 400, 'missing content');
     const t = parseTarget(ip);
     const result = { ok: false, name: name.toUpperCase(), snapshot: null, restored: false };
-    let ftp;
     try {
-      ftp = await ftpConnect(t, user, pass);
+      // never retried: an upload must not be able to run twice
+      await pooledFtp(t, user, pass, async (ftp) => {
       // 1. snapshot what's on the robot now
       let prev = null;
       try { prev = await ftp.retr(result.name); } catch (e) { /* program not on robot yet */ }
@@ -345,18 +346,15 @@ async function handleApi(req, res, u) {
             result.restored = !!(check && check.length);
           } catch (e) { result.restoreError = e.message; }
         }
-        await ftp.quit();
-        return json(res, 200, result);
+        return;
       }
-      await ftp.quit();
       result.ok = true;
       result.verified = true;
-      return json(res, 200, result);
+      }, undefined, false);
     } catch (e) {
-      if (ftp) try { await ftp.quit(); } catch (e2) { /* already gone */ }
-      result.error = e.message;
-      return json(res, 200, result);
+      result.error = result.error || e.message;
     }
+    return json(res, 200, result);
   }
 
   /* Full backup over FTP into <name-or-ip>_<YYYY-MM-DD>_<NN>/ */
@@ -384,23 +382,24 @@ async function handleApi(req, res, u) {
     }
     const folder = path.join(destRoot, base + '_' + String(nn).padStart(2, '0') + (mode === 'quick' ? '_quick' : ''));
     try {
-      const ftp = await ftpConnect(t, user, pass, 20000);
-      const files = await ftp.nlst();
-      fs.mkdirSync(folder, { recursive: true });
-      let saved = 0, bytes = 0;
-      const failed = [];
-      for (const f of files) {
-        if (!ROBOT_NAME.test(f)) continue;
-        if (mode === 'quick' && !/\.(ls|va)$/i.test(f)) continue;
-        try {
-          const buf = await ftp.retr(f);
-          fs.writeFileSync(path.join(folder, f.toUpperCase()), buf);
-          saved++;
-          bytes += buf.length;
-        } catch (e) { failed.push(f); }
-      }
-      await ftp.quit();
-      return json(res, 200, { ok: true, folder, robotName, mode, files: saved, failed, bytes });
+      const out = await pooledFtp(t, user, pass, async (ftp) => {
+        const files = await ftp.nlst();
+        fs.mkdirSync(folder, { recursive: true });
+        let saved = 0, bytes = 0;
+        const failed = [];
+        for (const f of files) {
+          if (!ROBOT_NAME.test(f)) continue;
+          if (mode === 'quick' && !/\.(ls|va)$/i.test(f)) continue;
+          try {
+            const buf = await ftp.retr(f);
+            fs.writeFileSync(path.join(folder, f.toUpperCase()), buf);
+            saved++;
+            bytes += buf.length;
+          } catch (e) { failed.push(f); }
+        }
+        return { saved, bytes, failed };
+      }, 20000, true);
+      return json(res, 200, { ok: true, folder, robotName, mode, files: out.saved, failed: out.failed, bytes: out.bytes });
     } catch (e) {
       return fail(res, 502, 'backup failed: ' + e.message);
     }
@@ -593,13 +592,67 @@ async function ftpConnect(t, user, pass, timeout) {
   return ftp;
 }
 
-async function withFtp(t, q, fn) {
-  const ftp = await ftpConnect(t, q.get('user') || undefined, q.get('pass') || undefined);
-  try {
-    return await fn(ftp);
-  } finally {
-    try { await ftp.quit(); } catch (e) { /* already gone */ }
+/* ---- pooled FTP ----
+ * One control connection per robot+user, reused across API calls — the UI
+ * fires several calls per action, and a fresh login + CWD for each one is
+ * the slowest part of talking to a controller. Calls are serialized per
+ * connection, the connection closes after 25s idle, and a connection that
+ * died while idle is replaced (with one retry for read-only calls; an
+ * upload is never retried, so it can never run twice). Protocol errors
+ * (550 file not found, …) keep the connection; anything that smells like a
+ * broken socket drops it. */
+const FTP_IDLE_MS = 25000;
+const ftpPool = new Map(); // key -> { key, ftp, chain, idleTimer }
+
+function connectionStillGood(e) {
+  // a clean server rejection carries the reply code; transport trouble doesn't
+  return e && typeof e.code === 'number' && e.code >= 400 && e.code < 600;
+}
+
+async function pooledFtp(t, user, pass, fn, connectTimeout, retryOnStale) {
+  const key = t.host + ':' + t.port + '|' + (user || '');
+  let entry = ftpPool.get(key);
+  if (!entry) {
+    entry = { key, ftp: null, chain: Promise.resolve(), idleTimer: null };
+    ftpPool.set(key, entry);
   }
+  const run = entry.chain.then(async () => {
+    clearTimeout(entry.idleTimer);
+    for (let attempt = 0; ; attempt++) {
+      const reused = !!entry.ftp;
+      if (!entry.ftp) {
+        entry.ftp = await ftpConnect(t, user, pass, connectTimeout);
+        const ftpRef = entry.ftp;
+        ftpRef.socket.once('close', () => { if (entry.ftp === ftpRef) entry.ftp = null; });
+      }
+      try {
+        return await fn(entry.ftp);
+      } catch (e) {
+        if (!connectionStillGood(e)) {
+          const dead = entry.ftp;
+          entry.ftp = null;
+          if (dead) { try { dead.socket.destroy(); } catch (e2) { /* gone */ } }
+          if (reused && retryOnStale && attempt === 0) continue; // idle-dropped by the robot — go again fresh
+        }
+        throw e;
+      }
+    }
+  });
+  entry.chain = run.catch(() => { /* keep the queue moving */ }).then(() => {
+    clearTimeout(entry.idleTimer);
+    entry.idleTimer = setTimeout(() => {
+      const f = entry.ftp;
+      entry.ftp = null;
+      if (ftpPool.get(key) === entry) ftpPool.delete(key);
+      if (f) f.quit().catch(() => { /* closing anyway */ });
+    }, FTP_IDLE_MS);
+    if (entry.idleTimer.unref) entry.idleTimer.unref();
+  });
+  return run;
+}
+
+async function withFtp(t, q, fn) {
+  return pooledFtp(t, q.get('user') || undefined, q.get('pass') || undefined, fn, undefined, true);
 }
 
 function readBody(req) {

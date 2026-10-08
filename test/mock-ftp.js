@@ -11,7 +11,10 @@ const DEVICES = ['fr:', 'mc:', 'md:', 'mdb:', 'rd:', 'ud1:', 'ut1:'];
 
 function startMockFtp(port, files, opts) {
   opts = opts || {};
+  const sockets = new Set();
   const server = net.createServer((sock) => {
+    sockets.add(sock);
+    sock.on('close', () => sockets.delete(sock));
     let buf = '';
     let pasvServer = null;
     let pasvConn = null; // promise of the data socket
@@ -95,7 +98,11 @@ function startMockFtp(port, files, opts) {
     });
     sock.on('error', () => {});
   });
-  return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve(server)));
+  return new Promise((resolve) => server.listen(port, '127.0.0.1', () => {
+    // imitate a controller dropping idle control connections
+    server.destroyConnections = () => { for (const s of sockets) s.destroy(); };
+    resolve(server);
+  }));
 }
 
 module.exports = { startMockFtp };

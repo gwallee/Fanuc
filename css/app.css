@@ -790,6 +790,9 @@ tr:last-child td { border-bottom: none; }
   .split-wrap { grid-template-columns: 1fr; }
 }
 
+/* a register/IO comment replaced by the controller's current name */
+.tok-livename { text-decoration: underline dotted var(--faint); text-underline-offset: 3px; }
+
 /* ---------- occurrence highlighting (select text → all instances light up) */
 ::highlight(tp-occ) {
   background-color: var(--occ-bg);
