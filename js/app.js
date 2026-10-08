@@ -3069,18 +3069,20 @@
         var q = filt.value.trim().toLowerCase(), lastGroup = null;
         body.innerHTML = '';
         list.forEach(function (s) {
+          // names and notes still match the filter ("jump" finds JMP) —
+          // they just don't take up a row each. The reader knows what a
+          // jump instruction is; the detail waits on hover.
           if (q && (s.group + ' ' + s.name + ' ' + s.text + ' ' + s.note).toLowerCase().indexOf(q) === -1) return;
           if (s.group !== lastGroup) { body.appendChild(h('div', { class: 'snip-group', text: s.group })); lastGroup = s.group; }
-          var mined = s.group === 'Most used on your robots';
-          var countTxt = s.count ? s.count + '× on your robots' : '';
+          var tip = [s.name, s.note, s.count ? 'used ' + s.count + '× on your robots' : '']
+            .filter(Boolean).join('\n');
           body.appendChild(h('div', {
             class: 'snip-item',
+            title: tip,
             onmousedown: function (e) { e.preventDefault(); },   // keep the textarea's caret
             onclick: function () { insertSnippet(s.text); closeMenu(); }
           }, [
-            mined ? null : h('div', { class: 'name' }, [document.createTextNode(s.name), countTxt ? h('span', { class: 'count', text: countTxt }) : null]),
-            h('div', { class: 'code', text: s.text }),
-            s.note ? h('div', { class: 'note', text: s.note }) : (mined ? h('div', { class: 'note', text: countTxt }) : null)
+            h('div', { class: 'code', text: s.text })
           ]));
         });
         if (!body.children.length) body.appendChild(h('div', { class: 'snip-group', text: 'nothing matches' }));

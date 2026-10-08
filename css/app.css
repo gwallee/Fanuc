@@ -713,7 +713,7 @@ tr:last-child td { border-bottom: none; }
 }
 .snip-menu input { width: calc(100% - 20px); margin: 4px 10px 6px; font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel-2); color: var(--ink); }
 .snip-group { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--faint); padding: 8px 12px 2px; }
-.snip-item { display: flex; flex-direction: column; gap: 1px; padding: 4px 12px; cursor: pointer; }
+.snip-item { display: flex; flex-direction: column; gap: 1px; padding: 2px 12px 3px; cursor: pointer; }
 .snip-item:hover, .snip-item.active { background: var(--accent-bg); }
 .snip-item .name { font-size: 12.5px; }
 .snip-item .name .count { font-size: 11px; color: var(--accent); margin-left: 8px; }
