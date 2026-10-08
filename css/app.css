@@ -8,14 +8,14 @@
   --muted: #61676d;
   --faint: #8b9096;
   --line: #dedfd8;
-  --accent: #b57e00;
-  --accent-bg: #f7ecd2;
+  --accent: #1f6fce;
+  --accent-bg: #e3edf9;
   --code-bg: #fcfcfa;
   --gutter: #a9ada9;
-  --sel-bg: #f3e9cf;
+  --sel-bg: #dbe9fb;
   /* Editor selection sits ON TOP of the coloured text, so it has to be
    * translucent — see .editor::selection. */
-  --sel-editor-bg: rgba(181, 126, 0, 0.26);
+  --sel-editor-bg: rgba(31, 111, 206, 0.22);
   --kw: #8a4baf;        /* keywords: IF/JMP/WAIT/CALL */
   --motion: #1a66c2;    /* J/L/C prefix */
   --reg: #0e7a6d;       /* R[], PR[] */
@@ -52,12 +52,12 @@
     --muted: #9aa1a8;
     --faint: #767d84;
     --line: #2e3338;
-    --accent: #ffc838;
-    --accent-bg: #3a3117;
+    --accent: #6fb0f5;
+    --accent-bg: #1c324f;
     --code-bg: #1a1d20;
     --gutter: #5d646b;
-    --sel-bg: #3a3117;
-    --sel-editor-bg: rgba(255, 200, 56, 0.24);
+    --sel-bg: #1c324f;
+    --sel-editor-bg: rgba(111, 176, 245, 0.28);
     --kw: #c792ea;
     --motion: #6fb3ff;
     --reg: #4ecfbc;
@@ -90,12 +90,12 @@
   --muted: #9aa1a8;
   --faint: #767d84;
   --line: #2e3338;
-  --accent: #ffc838;
-  --accent-bg: #3a3117;
+  --accent: #6fb0f5;
+  --accent-bg: #1c324f;
   --code-bg: #1a1d20;
   --gutter: #5d646b;
-  --sel-bg: #3a3117;
-  --sel-editor-bg: rgba(255, 200, 56, 0.24);
+  --sel-bg: #1c324f;
+  --sel-editor-bg: rgba(111, 176, 245, 0.28);
   --kw: #c792ea;
   --motion: #6fb3ff;
   --reg: #4ecfbc;
@@ -161,7 +161,7 @@ button { font: inherit; }
   font-weight: 600;
   font-size: 12px;
   letter-spacing: 0.14em;
-  color: #1c1e21;
+  color: #ffffff;
   background: var(--accent);
   padding: 3px 8px;
   border-radius: 3px;
@@ -209,8 +209,12 @@ button { font: inherit; }
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #1c1e21;
+  color: #ffffff;
   font-weight: 600;
+}
+:root[data-theme="dark"] .btn.primary { color: #16181a; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .btn.primary { color: #16181a; }
 }
 .btn.subtle { border-color: transparent; background: transparent; color: var(--muted); }
 .btn.subtle:not(:disabled):hover { color: var(--ink); }

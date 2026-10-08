@@ -8,8 +8,8 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
-const AMBER = [0xb5, 0x7e, 0x00];
-const INK = [0x1c, 0x1e, 0x21];
+const BLUE = [0x1f, 0x6f, 0xce];
+const INK = [0xff, 0xff, 0xff];
 
 // 5x7 glyphs
 const GLYPHS = {
@@ -21,9 +21,9 @@ function makePng(size) {
   const px = Buffer.alloc(size * size * 3);
   const put = (x, y, c) => { const o = (y * size + x) * 3; px[o] = c[0]; px[o + 1] = c[1]; px[o + 2] = c[2]; };
 
-  // amber tile with rounded corners (transparent-ish corners drawn as white
+  // steel-blue tile with rounded corners (transparent-ish corners drawn as white
   // would show on dark docks, so keep square fill — launchers mask anyway)
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) put(x, y, AMBER);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) put(x, y, BLUE);
 
   // "TP" centered: two 5x7 glyphs + 1 col gap = 11x7 cells
   const cell = Math.floor(size / 16);
@@ -85,5 +85,5 @@ for (const size of [192, 512]) {
   console.log(`icons/icon-${size}.png`);
 }
 fs.writeFileSync(path.join(dir, 'icon.svg'),
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="5" fill="#b57e00"/><text x="16" y="22" font-family="monospace" font-size="14" font-weight="bold" fill="#1c1e21" text-anchor="middle">TP</text></svg>\n`);
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="5" fill="#1f6fce"/><text x="16" y="22" font-family="monospace" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">TP</text></svg>\n`);
 console.log('icons/icon.svg');
