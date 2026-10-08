@@ -40,6 +40,20 @@ check(main.parsed.positions.length === 1 && main.parsed.positions[0].name === 'h
 const homeG = main.parsed.positions[0].groups[0];
 check(homeG.uf === 1 && homeG.ut === 1 && homeG.coords.X.value === 785.0, 'home position UF/UT/X parsed');
 check(programs.PICK.parsed.positions.length === 2, 'PICK has 2 positions');
+
+// fileLine + applyLineEdits: the find/replace path writes edited rows back
+// into the listing by the file line each parsed line started on.
+const flSrc = '/PROG FL\r\n/MN\r\n   1:L P[1] R[30:Spd]mm/sec FINE ;\r\n   2:  R[30:Spd]=R[31] ;\r\n   3:  CALL VERY_LONG_PROGRAM_NAME(1,2,\r\n    :  3,4) ;\r\n   4:  !end ;\r\n/POS\r\n/END';
+const fl = P.parseLS(flSrc, 'FL.LS');
+check(fl.lines.map(l => l.fileLine).join(',') === '3,4,5,7', 'body lines record their file line (got ' + fl.lines.map(l => l.fileLine).join(',') + ')');
+check(fl.lines[2].raw.split('\n').length === 2, 'a wrapped instruction keeps both raw rows');
+const flOut = P.applyLineEdits(flSrc, [
+  { fileLine: 3, count: 1, text: '   1:L P[1] 1500mm/sec FINE ;' },
+  { fileLine: 5, count: 2, text: '   3:  CALL SHORT ;' }
+]);
+check(flOut.split('\r\n').length === 8 && /\r\n/.test(flOut), 'edits keep CRLF endings and shrink the wrapped row (got ' + flOut.split('\r\n').length + ' rows)');
+const flP = P.parseLS(flOut, 'FL.LS');
+check(flP.lines[0].text === 'P[1] 1500mm/sec FINE' && flP.lines[2].text === 'CALL SHORT' && flP.lines[3].fileLine === 6, 'edited listing re-parses with the rows below shifted up');
 check(programs.GRIPPER.parsed.positions.length === 0, 'GRIPPER has no /POS section');
 
 console.log('\n-- analyzer --');
@@ -60,6 +74,29 @@ check(ma.timers[1] && ma.timers[1].writes.length >= 2, 'TIMER[1] START/STOP/RESE
 const pa = programs.PLACE.analysis;
 check(pa.posRegs[20] && pa.posRegs[20].writes.length >= 3, 'PR[20] written (incl. component writes)');
 check(pa.registers[11] && pa.registers[11].reads.length >= 1, 'R[11] read on right-hand side');
+
+// A motion line's trailing TB/DB trigger or Skip,LBL,PR=LPOS has the only '='
+// on the line; the speed register and the destination PR left of it are reads.
+const wrSrc = [
+  '/PROG WR', '/MN',
+  '   1:L PR[55:Meas] R[207:ScanSpd]mm/sec FINE Tool_Offset Skip,LBL[217],PR[49:Edge]=LPOS ;',
+  '   2:J P[1] R[31:Speed-J]% CNT50 TB 0.5sec,DO[101]=ON ;',
+  '   3:  IF R[31:Speed-J]=75,JMP LBL[1] ;',
+  '   4:  SELECT R[31]=1,CALL A ;',
+  '   5:  R[31:Speed-J]=R[31:Speed-J]+1 ;',
+  '   6:  GO[1]=R[31] ;',
+  '   7:  IF (R[31:Speed-J]<10),R[31:Speed-J]=(10) ;',
+  '   8:  IF ((R[31]=1) AND (DI[1]=ON)),DO[102]=(ON) ;',
+  '   9:  IF (R[31]=1),JMP LBL[1] ;',
+  '/POS', '/END'
+].join('\n');
+const wrA = A.analyzeProgram(P.parseLS(wrSrc, 'WR.LS'));
+check(wrA.registers[207].writes.length === 0 && wrA.registers[207].reads.length === 1, 'speed register on a Skip,PR=LPOS line is a read');
+check(wrA.posRegs[55].writes.length === 0 && wrA.posRegs[49].writes.length === 1, 'Skip line: destination PR read, PR=LPOS written');
+check(wrA.registers[31].writes.join(',') === '5,7', 'R[31]: written by R[31]=... and by the IF (...),R[31]=(10) action (got ' + wrA.registers[31].writes.join(',') + ')');
+check(wrA.registers[31].reads.length === 8, 'R[31]: TB, IF, SELECT, RHS, GO[1]= and IF-condition uses are reads (got ' + wrA.registers[31].reads.length + ')');
+check(wrA.io['DO[101]'].writes.length === 1 && wrA.io['GO[1]'].writes.length === 1, 'DO[101] in TB trigger and GO[1] target are writes');
+check(wrA.io['DO[102]'].writes.length === 1 && wrA.io['DI[1]'].reads.length === 1, 'IF (nested cond),DO[102]=(ON): DO written, DI read');
 
 console.log('\n-- call graph --');
 const graph = A.buildCallGraph(programs);
@@ -418,6 +455,294 @@ const cmp2 = D.comparePrograms({ MAIN: oldMain }, { MAIN: bodyTouched });
 check(cmp2.changed.length === 1 && cmp2.changed[0].adds === 1 && cmp2.changed[0].dels === 1,
   'real body change: 1 added + 1 removed line');
 
+console.log('\n-- diff: ignore line numbers --');
+check(D.stripLineNums('   1:  UTOOL_NUM=1 ;') === '  UTOOL_NUM=1 ;', 'line number prefix stripped, indentation kept');
+check(D.stripLineNums('  10:  UTOOL_NUM=1 ;') === D.stripLineNums('   9:  UTOOL_NUM=1 ;'),
+  'padding shift from 9 -> 10 normalizes away');
+check(D.stripLineNums('/MN') === '/MN' && D.stripLineNums('P[1]{') === 'P[1]{',
+  'section markers and /POS payload untouched');
+// One line inserted at the top renumbers everything below it.
+const before = '/MN\n   1:  A ;\n   2:  B ;\n   3:  C ;\n/END\n';
+const after  = '/MN\n   1:  NEW ;\n   2:  A ;\n   3:  B ;\n   4:  C ;\n/END\n';
+const naive = D.diffLines(before, after);
+check(naive.filter(o => o.t === '+').length === 4 && naive.filter(o => o.t === '-').length === 3,
+  'without the option a 1-line insert reports the whole program changed');
+const renum = D.diffLines(before, after, { ignoreLineNums: true });
+check(renum.filter(o => o.t === '+').length === 1 && renum.filter(o => o.t === '-').length === 0,
+  'with the option the same insert reports exactly 1 added line');
+check(renum.filter(o => o.t === '+')[0].text === '   1:  NEW ;',
+  'the added op still carries the line as actually written');
+// A pure renumber (no content change) is not a change at all.
+const pureRenum = D.comparePrograms(
+  { P: '/PROG P\n/MN\n   1:  A ;\n   2:  B ;\n/END\n' },
+  { P: '/PROG P\n/MN\n   9:  A ;\n  10:  B ;\n/END\n' },
+  { ignoreLineNums: true }
+);
+check(pureRenum.headerOnly.includes('P') && !pureRenum.changed.length,
+  'pure renumber classified as no code change');
+
+console.log('\n-- PRGSTATE.DG (program / task state) --');
+const psRaw = fs.readFileSync(path.join(__dirname, '..', 'testdata', 'prgstate.dg'), 'utf8');
+const psr = VA.parsePrgState(psRaw);
+check(psr.header.fNumber === 'F333543', 'header F number read (' + psr.header.fNumber + ')');
+check(psr.tasks.length === 7, 'all 7 tasks parsed (got ' + psr.tasks.length + ')');
+const runningTasks = psr.tasks.filter(t => t.state === 'RUNNING');
+check(runningTasks.length === 2, '2 tasks RUNNING (got ' + runningTasks.length + ')');
+const atcellio = psr.tasks.find(t => t.name === 'ATCELLIO');
+check(atcellio && atcellio.line === 477 && atcellio.routine === 'MAIN' && atcellio.program === 'ATCELLIO',
+  'RUNNING header parsed: line/routine/program');
+check(atcellio && atcellio.stack.length === 2 &&
+      atcellio.stack[0].program === 'ATCELLIO' && atcellio.stack[0].line === 477 &&
+      atcellio.stack[1].line === 603,
+  'routine stack parsed with a frame per depth');
+check(psr.tasks.filter(t => t.state === 'ABORTED').length === 5, '5 tasks ABORTED');
+
+// only live tasks pin their programs
+check(Object.keys(psr.locked).sort().join(',') === 'ATCELLIO,ATSHELL',
+  'locked = programs held by live tasks only (' + Object.keys(psr.locked).sort().join(',') + ')');
+
+check(psr.programs.length === 85, '85 program blocks parsed (got ' + psr.programs.length + ')');
+const gh = psr.programs.find(p => p.name === 'GET_HOME');
+check(gh && gh.type === 'PC' && gh.task === 'no' && gh.comment === 'Get Home Pos' && gh.protection === 'OFF',
+  'program block fields read (type/task/comment/protection)');
+check(psr.programs.every(p => p.name && p.type), 'every program block has a name and type');
+
+/* A PAUSED task still holds its programs — this is the case that actually
+ * bites, and the sample backup has no paused task in it, so synthesise one. */
+const pausedDump = [
+  'F Number: F1',
+  'DATE:     01-JAN-26 00:00',
+  '',
+  'TASK STATES:',
+  '',
+  '1     _PL_RACK PAUSED @ 42 in _PL_RACK of __AUTO',
+  '',
+  '******  History Data  ******',
+  'Routine depth: 1  Routine: _PL_RACK',
+  'Line:    42       Program: _PL_RACK      Type: TP',
+  '',
+  'Routine depth: 0  Routine: __AUTO',
+  'Line:   118       Program: __AUTO        Type: TP',
+  '',
+  'PROGRAM STATES:',
+  '_PL_RACK      TP',
+  'Task: yes',
+  'Lines:   90',
+  'Protection:      OFF',
+  '',
+  '_IDLE_PROG      TP',
+  'Task: no',
+  'Lines:   10',
+  'Protection:      ON',
+  ''
+].join('\n');
+const pp = VA.parsePrgState(pausedDump);
+check(pp.tasks.length === 1 && pp.tasks[0].state === 'PAUSED', 'PAUSED task recognised as a state');
+check(pp.tasks[0].program === '__AUTO' && pp.tasks[0].line === 42, 'PAUSED header line/program read');
+check(Object.keys(pp.locked).sort().join(',') === '_PL_RACK,__AUTO',
+  'a PAUSED task holds every program on its stack, not just the current one (' +
+  Object.keys(pp.locked).sort().join(',') + ')');
+check(pp.programs.length === 2, 'both program blocks parsed');
+check(pp.programs[0].task === 'yes' && pp.programs[1].protection === 'ON',
+  'Task: yes and Protection: ON read');
+check(!Object.prototype.hasOwnProperty.call(pp.locked, '_IDLE_PROG'),
+  'an idle, write-protected program is not reported as held by a task');
+
+console.log('\n-- flow blocks: blanks, captions, inbound --');
+/* The shape that made the Flow view hard to read: a JMP, then a blank run,
+ * then a header comment captioning the label that follows it. */
+const fbSrc = `/PROG FB
+/MN
+   1:  LBL[400] ;
+   2:  IF (DI[18:Reject]),JMP LBL[420] ;
+   3:  JMP LBL[410] ;
+   4:  !**Normal Box ;
+   5:  LBL[410] ;
+   6:  R[101]=10 ;
+   7:  JMP LBL[500] ;
+   8:  !**Reject Box ;
+   9:  LBL[420] ;
+  10:  R[101]=70 ;
+  11:  JMP LBL[500] ;
+  12:   ;
+  13:   ;
+  14:  !***Pick Up Box*** ;
+  15:  LBL[500] ;
+  16:  CALL _SET_OFFS(0,0,250,61) ;
+  17:  END ;
+/END
+`;
+const fbParsed = P.parseLS(fbSrc, 'FB.LS');
+const fb = FL.buildFlow(fbParsed);
+
+// no block may consist only of blanks and comments
+const inert = fb.blocks.filter(b => b.activeCount === 0);
+check(inert.length === 0, 'no block is made only of blank/comment lines (got ' + inert.length + ')');
+
+const b500 = fb.blocks.find(b => b.labelNum === 500);
+check(!!b500, 'LBL[500] block exists');
+check(b500.startNum === 12 && b500.endNum === 17,
+  'the blank run and its header comment attach to the block below (lines ' + b500.startNum + '-' + b500.endNum + ')');
+check(b500.leadIn === 3, '3 lead-in lines recorded (blank, blank, comment) — got ' + b500.leadIn);
+check(b500.lines.some(l => l.num === 14 && l.comment !== null),
+  'line 14 "!***Pick Up Box***" belongs to LBL[500], not to the run above it');
+
+const b410 = fb.blocks.find(b => b.labelNum === 410);
+check(b410.startNum === 4 && b410.leadIn === 1, 'LBL[410] takes its own one-line caption');
+
+// how control reaches LBL[500]: the two JMPs, and nothing else
+const into500 = b500.inbound.map(e => e.kind + '@' + (e.fromLine || '')).sort();
+check(into500.join(',') === 'jump@11,jump@7',
+  'inbound edges are exactly the two jumps (' + into500.join(',') + ')');
+check(!b500.inbound.some(e => e.kind === 'fall'),
+  'no phantom fall-through from a comment-only block');
+
+// a comment in the middle of a block stays put rather than being hoisted
+const midSrc = `/PROG MID
+/MN
+   1:  LBL[10] ;
+   2:  R[1]=1 ;
+   3:  !mid comment ;
+   4:  R[2]=2 ;
+   5:  END ;
+/END
+`;
+const mid = FL.buildFlow(P.parseLS(midSrc, 'MID.LS'));
+check(mid.blocks.length === 1, 'straight-line block stays one block');
+check(mid.blocks[0].leadIn === undefined, 'an interior comment is not treated as a lead-in caption');
+check(mid.blocks[0].lines.length === 5, 'all 5 lines kept in order');
+
+// trailing blanks/comments must not vanish
+const tailSrc = `/PROG TAIL
+/MN
+   1:  LBL[10] ;
+   2:  R[1]=1 ;
+   3:   ;
+   4:  !trailing note ;
+/END
+`;
+const tail = FL.buildFlow(P.parseLS(tailSrc, 'TAIL.LS'));
+check(tail.blocks.length === 1, 'trailing inert lines do not create a block');
+check(tail.blocks[tail.blocks.length - 1].endNum === 4,
+  'trailing blank/comment stay with the last block (endNum ' + tail.blocks[tail.blocks.length - 1].endNum + ')');
+
+// preview no longer counts blank lines as content
+const prevBlanks = fb.blocks.every(b => b.preview.every(t => t.trim() !== ''));
+check(prevBlanks, 'no preview entry is an empty string');
+
+/* -- QR encoder --
+ * The symbols this produces were checked once against a real decoder (jsQR)
+ * across every version 1-10, all 8 masks, and each version's exact byte
+ * limit — that is what says the encoder is *correct*. These tests are the
+ * regression net around it: the published capacity table, the structure any
+ * scanner looks for first, and a fingerprint of one fixed symbol, so a change
+ * to the Reed-Solomon or the placement cannot pass unnoticed. */
+console.log('\n-- qr --');
+const QR = require('../js/qr.js');
+
+// The byte-mode capacities at level M, straight out of the standard's table.
+const CAPACITIES = [14, 26, 42, 62, 84, 106, 122, 152, 180, 213];
+check(CAPACITIES.every((n, i) => QR.capacity(i + 1) === n),
+  'byte-mode level-M capacities match the standard for versions 1-10');
+check(QR.maxBytes === 213, 'the encoder tops out at 213 bytes');
+
+const url = 'http://192.168.0.50:8642';
+const sym = QR.encode(url);
+check(sym.version === 2 && sym.size === 25, 'a LAN URL fits version 2 (25x25), got v' + sym.version);
+check(QR.encode('a'.repeat(14)).version === 1 && QR.encode('a'.repeat(15)).version === 2,
+  'version steps up exactly at the capacity boundary');
+
+// Structure: three finders, their separators, the timing rows, the dark module.
+const m = sym.modules;
+const finderOK = [[0, 0], [0, sym.size - 7], [sym.size - 7, 0]].every(([r0, c0]) => {
+  for (let r = 0; r < 7; r++) {
+    for (let c = 0; c < 7; c++) {
+      const d = Math.max(Math.abs(r - 3), Math.abs(c - 3));
+      if (m[r0 + r][c0 + c] !== (d !== 2 ? 1 : 0)) return false;
+    }
+  }
+  return true;
+});
+check(finderOK, 'all three finder patterns are drawn correctly');
+let timingOK = true;
+for (let i = 8; i < sym.size - 8; i++) {
+  if (m[6][i] !== (i % 2 === 0 ? 1 : 0) || m[i][6] !== (i % 2 === 0 ? 1 : 0)) timingOK = false;
+}
+check(timingOK, 'both timing patterns alternate');
+check(m[sym.size - 8][8] === 1, 'the always-dark module is dark');
+let quietOK = true;
+for (let i = 0; i < 8; i++) { if (m[7][i] || m[i][7]) quietOK = false; }
+check(quietOK, 'the separator around the top-left finder is clear');
+
+// A fingerprint of the whole symbol: any change to the encoder moves it.
+const fingerprint = m.reduce((h, row) =>
+  row.reduce((a, v) => (a * 31 + v) >>> 0, h), 7);
+check(fingerprint === 2679924875,
+  'the symbol for ' + url + ' is bit-for-bit unchanged (got ' + fingerprint + ')');
+
+check(QR.svg(url).indexOf('viewBox="0 0 33 33"') > 0,
+  'the SVG carries the 4-module quiet zone a scanner needs');
+let tooLong = false;
+try { QR.encode('x'.repeat(214)); } catch (e) { tooLong = true; }
+check(tooLong, 'text past the last version is refused rather than truncated');
+
+
+console.log('\n-- STRREG.VA parser --');
+const srSample = [
+  "[*STRREG*]$STRREG  Storage: SHADOW  Access: RW  : ARRAY[25] OF String Reg",
+  "  [1] = Error setting SR Alarm text.  '*Active Alarm' ",
+  "  [2] =   '' ",
+  "  [6] = Status ID not 0 with no Box in Grip. Reset R[101] Sts ID to 0.  'PrevAlarm-2' ",
+  "  [7] = value with no comment field at all"
+].join('\n');
+const srs = VA.parseStrreg(srSample);
+check(srs.length === 4, 'the ARRAY[25] header line is not read as a register (got ' + srs.length + ')');
+check(srs[0].index === 1 && srs[0].comment === '*Active Alarm' && srs[0].value === 'Error setting SR Alarm text.',
+  'value and comment split on the LAST quoted run');
+check(srs[1].value === '' && srs[1].comment === '', 'an empty string register parses as empty, not skipped');
+check(srs[2].index === 6 && srs[2].comment === 'PrevAlarm-2',
+  'a stored string containing R[101] does not read as a second register');
+check(srs[3].index === 7 && srs[3].comment === '' && srs[3].value === 'value with no comment field at all',
+  'a line with no quoted comment still yields its value');
+
+console.log('\n-- renaming on the controller (ComSet) --');
+const CS = require('../lib/comset.js');
+// The codes are the controller's own, read off its /KAREL/COMMAIN page's
+// klserver.js handlers. If one of these ever changes, a rename silently writes
+// the wrong table on a live robot — so they are pinned here.
+check(CS.CODES.R.fc === 1 && CS.CODES.PR.fc === 3 && CS.CODES.SR.fc === 14,
+  'register comment codes pinned: R=1, PR=3, SR=14');
+check(CS.CODES.DI.fc === 8 && CS.CODES.DO.fc === 9 && CS.CODES.F.fc === 19,
+  'I/O comment codes pinned: DI=8, DO=9, F=19');
+check(CS.CODES.R.max === 16 && CS.CODES.DO.max === 24,
+  "length caps match the controller's own maxlength: 16 for registers, 24 for I/O");
+['UI', 'UO', 'SI', 'SO', 'WI', 'WO', 'M'].forEach((t) => {
+  check(!!CS.plan(t, 1, 'x').error, t + ' has no comment write on the controller, so a rename is refused');
+});
+
+const good = CS.plan('r', 1, 'Task ID');
+check(good.url === '/karel/ComSet?sComment=Task%20ID&sIndx=1&sFc=1',
+  'the ComSet URL matches what the robot page sends: ' + good.url);
+check(good.key === 'R[1]' && good.kind === 'R', 'a lowercase type still resolves to R[1]');
+check(CS.plan('R', 1, '').error === undefined && CS.plan('R', 1, '').comment === '',
+  'clearing a name is allowed — that is how a register goes back to unnamed');
+check(!!CS.plan('R', 1, 'x'.repeat(17)).error, '17 characters is refused for a 16-character register comment');
+check(!CS.plan('DO', 1, 'x'.repeat(24)).error, '24 characters is accepted for an I/O point');
+check(!!CS.plan('R', 1, "it's").error, "an apostrophe is refused — NUMREG.VA quotes the comment");
+check(!!CS.plan('R', 1, 'a[1]').error, 'a square bracket is refused — listings bracket the comment');
+check(!!CS.plan('R', 1, 'café').error, 'non-ASCII is refused rather than encoded and hoped for');
+check(!!CS.plan('R', 0, 'x').error && !!CS.plan('R', 1.5, 'x').error && !!CS.plan('R', 10000, 'x').error,
+  'index 0, a fraction, and past the cap are all refused');
+
+// Verification reads the item back out of the file it lives in.
+check(CS.storedComment('NUMREG.VA', "  [1] = 92  'Task ID'\n", 'R', 1) === 'Task ID',
+  'a register rename is verified against NUMREG.VA');
+check(CS.storedComment('NUMREG.VA', "  [1] = 92  'Task ID'\n", 'R', 2) === null,
+  'an index missing from the file reads as null, not as an empty name');
+check(CS.storedComment('IOSTATE.DG', 'DOUT[  65] OFF  Vac-1 ON\n', 'DO', 65) === 'Vac-1 ON',
+  'an I/O rename is verified against IOSTATE.DG');
+check(CS.storedComment('IOSTATE.DG', 'DIN[   1]  ON  Auto Mode\n', 'DO', 1) === null,
+  'DI[1] and DO[1] are not confused when verifying');
 console.log('');
 if (failures) {
   console.error(failures + ' test(s) failed');

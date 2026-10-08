@@ -2,3 +2,5 @@ backups/
 node_modules/
 dist/
 robots.json
+.claude/
+settings.json

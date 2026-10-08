@@ -5,10 +5,18 @@
   var P = window.FanucParser, A = window.FanucAnalyzer;
   var L = window.FanucLinter, FL = window.FanucFlow, VA = window.FanucVA, D = window.FanucDiff;
   var STORE_KEY_V1 = 'fanuc-tp-studio.programs.v1';
-  var STORE_KEY = 'fanuc-tp-studio.programs.v2';
+  var STORE_KEY_V2 = 'fanuc-tp-studio.programs.v2';
+  /* v3: one library per robot. Each robot's programs live under their own
+   * key (suffix = the robot's IP; 'local' holds uploads and folder loads made
+   * with no robot connected), so switching robots swaps libraries instead of
+   * forcing a clear + re-import. The active library id is remembered too. */
+  var STORE_PREFIX = 'fanuc-tp-studio.programs.v3.';
+  var ACTIVE_LIB_KEY = 'fanuc-tp-studio.library.v1';
+  var LOCAL_LIB = 'local';
 
   var state = {
     programs: {},          // NAME -> { parsed, analysis, source, origin }
+    library: LOCAL_LIB,    // whose library is loaded: a robot IP, or 'local'
     selected: null,
     tab: 'code',
     editing: false,
@@ -16,61 +24,94 @@
     xref: null,
     findings: [],
     server: false,         // bridge server reachable?
-    robot: { ip: '', ftpUser: '', ftpPass: '', files: [], registers: null, rawIO: null, ioComments: null, error: null, loadedAt: null, backup: null },
+    robotImport: null,     // {total, done, added, skipped, failed, inFlight, cancel} while a bulk import runs
+    robot: { ip: '', ftpUser: '', ftpPass: '', files: [], registers: null, strregs: null, rawIO: null, ioComments: null, error: null, loadedAt: null, backup: null, notPrograms: {}, prgState: undefined },
     knownRobots: [],       // saved robots, served by the bridge (never a password)
     robotProbe: {},        // ip -> 'checking' | 'up' | 'down'
     scan: null,            // subnet sweep in progress / its last result
+    backupHome: null,      // {backupRoot, isDefault, error} — the bridge's saved home folder
+    backupPick: {},        // ip -> bool, which saved robots the next sweep covers
+    backupAll: null,       // multi-robot backup in progress / its last result
     subnets: null,         // the bridge PC's own networks, for the default CIDR
     dirExtern: null,       // register/IO label data found in an opened folder
     dirStatus: null,
     compare: null,         // { label, programs: {NAME: source}, results, open: name|null }
     pair: null,            // { a, b } two-program comparison
     split: null,           // program name shown in the right half of the Code view
+    syncSplit: false,      // side-by-side: scroll both halves together (persisted)
     upload: null,          // last robot-upload result banner
     flowIgnore: {},        // {NAME: true} utility programs hidden from Flow (persisted)
     hiddenRules: {},       // {rule: true} check rules the user muted (persisted)
     checksOpen: {},        // {rule: bool} transient expand state in the Checks tab
     xrefOpen: {},          // {itemKey: true} expanded items in Cross-reference
+    xrefFolded: {},        // {sectionId: true} sections collapsed in Cross-reference (saved)
+    xrefHideUnused: false, // Cross-reference: leave out items no program touches (saved)
     xrefFilter: '',
+    checksProg: null,      // Checks tab: show only findings touching this program
+    noteOpen: {},          // {NAME:line -> bool} gutter notes the reader has toggled
     flowFocus: null,       // block idx isolated in the control-flow graph
-    zoom: 100,             // interface scale, percent (persisted)
-    ignoreIoState: true    // Compare: skip the controller's inline I/O state (persisted)
+    flowLayout: 'chart',   // control-flow canvas: 'column' | 'chart' (persisted)
+    flowGaps: 'normal',    // 'tight' | 'normal' | 'wide' (persisted)
+    flowDetail: 'auto',    // 'auto' | 'full' | 'compact' | 'map' (persisted)
+    flowMini: true,        // show the overview strip (persisted)
+    flowHideNav: false,    // hide the library while the Flow tab is open (persisted)
+    hideNav: false,        // hide the library on every tab — the ☰ button in the header (persisted)
+    codeSize: 13,          // code font size in px (persisted)
+    ignoreIoState: true,   // Compare: skip the controller's inline I/O state (persisted)
+    ignoreLineNums: true   // Compare: skip the leading /MN line number (persisted)
   };
 
   var PREFS_KEY = 'fanuc-tp-studio.prefs.v1';
 
-  /* ---- interface zoom ----
-   * Every size in the stylesheet is in px, so scaling the shell with `zoom`
-   * is what actually shrinks all of it — code, diffs, tables, chrome — in
-   * one move, instead of a per-tab font size. */
-  var ZOOMS = [70, 80, 90, 100, 110, 125, 150];
+  /* ---- code text size ----
+   * Only the code surfaces scale: the viewer, the side-by-side/unified diffs
+   * and the editor all take their font-size from --code-size. This replaced
+   * an interface zoom that scaled the whole shell, which was never the point
+   * — the thing worth enlarging on a phone, or across a shop-floor desk, is
+   * the program text, not the chrome around it. The gutters are sized in em
+   * so they stay proportional as the text grows. */
+  var CODE_SIZES = [11, 12, 13, 14, 16, 18, 21];
+  var CODE_SIZE_DEFAULT = 13;
 
-  function applyZoom(step) {
-    var i = ZOOMS.indexOf(state.zoom);
-    if (i === -1) i = ZOOMS.indexOf(100);
-    if (step === 0) i = ZOOMS.indexOf(100);
-    else i = Math.max(0, Math.min(ZOOMS.length - 1, i + step));
-    state.zoom = ZOOMS[i];
-    paintZoom();
-    savePrefs();
-    /* The control-flow arrows are drawn from measured pixel offsets, so they
-     * have to be re-measured at the new scale. Never while the editor is
-     * open — a re-render would rebuild the textarea and drop unsaved text. */
-    if (state.tab === 'flow' && !state.editing) render();
+  function paintCodeSize() {
+    var app = document.querySelector('.app');
+    if (app) app.style.setProperty('--code-size', state.codeSize + 'px');
   }
 
-  function paintZoom() {
-    var app = document.querySelector('.app');
-    if (!app) return;
-    var z = state.zoom / 100;
-    app.style.zoom = z === 1 ? '' : String(z);
-    app.style.setProperty('--zoom', String(z));
-    var lbl = document.getElementById('btn-zoom-reset');
-    if (lbl) lbl.textContent = state.zoom + '%';
-    var out = document.getElementById('btn-zoom-out');
-    var into = document.getElementById('btn-zoom-in');
-    if (out) out.disabled = state.zoom === ZOOMS[0];
-    if (into) into.disabled = state.zoom === ZOOMS[ZOOMS.length - 1];
+  /* The − / size / + group for the Code tab's toolbar. It repaints its own
+   * label and sets the CSS variable directly rather than calling render(),
+   * because the editor shares this toolbar and a re-render would rebuild the
+   * textarea and drop unsaved text. */
+  function codeSizeControl() {
+    var minus = h('button', { class: 'btn subtle', text: '−', 'aria-label': 'Smaller code text', title: 'Smaller code text' });
+    var plus = h('button', { class: 'btn subtle', text: '+', 'aria-label': 'Larger code text', title: 'Larger code text' });
+    var level = h('button', {
+      class: 'btn subtle code-size-level',
+      title: 'Code text size — click to reset to ' + CODE_SIZE_DEFAULT + 'px'
+    });
+
+    function paint() {
+      level.textContent = state.codeSize + 'px';
+      minus.disabled = state.codeSize === CODE_SIZES[0];
+      plus.disabled = state.codeSize === CODE_SIZES[CODE_SIZES.length - 1];
+    }
+
+    function step(d) {
+      var i = CODE_SIZES.indexOf(state.codeSize);
+      if (i === -1) i = CODE_SIZES.indexOf(CODE_SIZE_DEFAULT);
+      state.codeSize = d === 0
+        ? CODE_SIZE_DEFAULT
+        : CODE_SIZES[Math.max(0, Math.min(CODE_SIZES.length - 1, i + d))];
+      paintCodeSize();
+      paint();
+      savePrefs();
+    }
+
+    minus.addEventListener('click', function () { step(-1); });
+    plus.addEventListener('click', function () { step(1); });
+    level.addEventListener('click', function () { step(0); });
+    paint();
+    return h('div', { class: 'code-size', role: 'group', 'aria-label': 'Code text size' }, [minus, level, plus]);
   }
 
   function loadPrefs() {
@@ -78,9 +119,19 @@
       var p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
       state.flowIgnore = p.flowIgnore || {};
       state.hiddenRules = p.hiddenRules || {};
-      if (ZOOMS.indexOf(p.zoom) !== -1) state.zoom = p.zoom;
+      if (CODE_SIZES.indexOf(p.codeSize) !== -1) state.codeSize = p.codeSize;
       if (typeof p.ignoreIoState === 'boolean') state.ignoreIoState = p.ignoreIoState;
       if (p.lastRobot && p.lastRobot.ip) state.lastRobot = p.lastRobot; // {ip, ftpUser}
+      if (typeof p.ignoreLineNums === 'boolean') state.ignoreLineNums = p.ignoreLineNums;
+      if (typeof p.syncSplit === 'boolean') state.syncSplit = p.syncSplit;
+      if (p.flowLayout === 'column' || p.flowLayout === 'chart') state.flowLayout = p.flowLayout;
+      if (CFG_GAPS[p.flowGaps]) state.flowGaps = p.flowGaps;
+      if (p.flowDetail === 'auto' || CFG_TIER_MAX[p.flowDetail]) state.flowDetail = p.flowDetail;
+      if (typeof p.flowMini === 'boolean') state.flowMini = p.flowMini;
+      if (typeof p.flowHideNav === 'boolean') state.flowHideNav = p.flowHideNav;
+      if (typeof p.hideNav === 'boolean') state.hideNav = p.hideNav;
+      if (p.xrefFolded && typeof p.xrefFolded === 'object') state.xrefFolded = p.xrefFolded;
+      if (typeof p.xrefHideUnused === 'boolean') state.xrefHideUnused = p.xrefHideUnused;
     } catch (e) { /* defaults */ }
     try {
       // the password never touches disk — it lives for this tab only
@@ -91,14 +142,18 @@
   function savePrefs() {
     try {
       localStorage.setItem(PREFS_KEY, JSON.stringify({
-        flowIgnore: state.flowIgnore, hiddenRules: state.hiddenRules, zoom: state.zoom,
-        ignoreIoState: state.ignoreIoState,
+        flowIgnore: state.flowIgnore, hiddenRules: state.hiddenRules, codeSize: state.codeSize,
+        ignoreIoState: state.ignoreIoState, ignoreLineNums: state.ignoreLineNums,
+        syncSplit: state.syncSplit,
+        flowLayout: state.flowLayout, flowGaps: state.flowGaps, flowDetail: state.flowDetail,
+        flowMini: state.flowMini, flowHideNav: state.flowHideNav, hideNav: state.hideNav,
+        xrefFolded: state.xrefFolded, xrefHideUnused: state.xrefHideUnused,
         lastRobot: state.lastRobot || null
       }));
     } catch (e) { /* session-only */ }
   }
 
-  function toast(msg) {
+  function toast(msg, ms) {
     var t = document.getElementById('toast');
     if (!t) {
       t = document.createElement('div');
@@ -108,7 +163,7 @@
     t.textContent = msg;
     t.classList.add('show');
     clearTimeout(toast._timer);
-    toast._timer = setTimeout(function () { t.classList.remove('show'); }, 4000);
+    toast._timer = setTimeout(function () { t.classList.remove('show'); }, ms || 4000);
   }
 
   /* ================= library ================= */
@@ -133,7 +188,6 @@
     state.xref = A.buildGlobalXref(state.programs);
     state.extern = buildExtern();
     state.findings = L.lint(state.programs, state.graph, state.xref, state.extern, { passThroughCalls: state.flowIgnore });
-
     // live names: the controller's CURRENT register/PR/IO comments, shown in
     // place of whatever stale comment the program text was exported with
     state.liveNames = null;
@@ -146,11 +200,40 @@
       if (any) state.liveNames = ln;
     }
     state.namesRev = (state.namesRev || 0) + 1; // invalidates highlight caches
+    refreshCompare();
   }
 
-  // Controllers export logs (ERRALL.LS, HIST.LS, LOGBOOK.LS…) with a .ls
-  // extension too — only files with a /PROG header are actual programs.
+  /* A loaded baseline is compared against the library as it stood at that
+   * moment. Every later import, edit or removal changes the library, so the
+   * stored verdicts have to be recomputed alongside it. Otherwise the changed
+   * list could name a program the library no longer holds, and opening that
+   * row threw on a missing .source — which aborted the rest of the render
+   * and looked like a row that simply would not open. */
+  function refreshCompare() {
+    var c = state.compare;
+    if (!c) return;
+    c.results = D.comparePrograms(c.programs, librarySources(), diffOpts());
+    if (c.open && !state.programs[c.open]) c.open = null;
+  }
+
+  // Controllers export logs and diagnostics (ERRALL.LS, HIST.LS, LOGBOOK.LS,
+  // UPDTLOG.LS, VTRNDIAG.LS…) with a .ls extension too — only files with a
+  // /PROG header are actual programs.
   function isProgramSource(src) { return /^\/PROG\b/m.test(src); }
+
+  /* A controller's file list gives names only, so the /PROG test above needs
+   * the file fetched first. These are the log and diagnostic exports by name,
+   * which lets the Robot tab keep them out of the program list before anything
+   * is read. Any other file that turns out to have no /PROG header is
+   * remembered in state.robot.notPrograms once a fetch has proved it.
+   *
+   * Matched as whole names, not a suffix pattern: a real program can easily be
+   * called something like _BGL_TASKLOG.LS, so /LOG\.LS$/ would hide code. */
+  var LOG_EXPORT_RE = /^(ERR[A-Z]*|HIST|LOGBOOK|UPDTLOG|VTRNDIAG)\.LS$/i;
+
+  function isKnownNonProgram(filename) {
+    return LOG_EXPORT_RE.test(filename) || !!state.robot.notPrograms[filename.toUpperCase()];
+  }
 
   function addProgram(source, filename, origin) {
     var parsed = P.parseLS(source, filename);
@@ -173,34 +256,141 @@
     render();
   }
 
+  function libStoreKey(id) { return STORE_PREFIX + id; }
+
+  function libLabel(id) {
+    if (id === LOCAL_LIB) return 'Local files';
+    var r = state.knownRobots.filter(function (x) { return x.ip === id; })[0];
+    return r && r.name ? r.name + ' — ' + id : id;
+  }
+
+  /* Every library that has ever been stored, plus the active one (which may
+   * not have been written yet) and 'local' (always offered). */
+  function listLibraries() {
+    var ids = [];
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf(STORE_PREFIX) === 0) ids.push(k.slice(STORE_PREFIX.length));
+      }
+    } catch (e) { /* storage unavailable */ }
+    if (ids.indexOf(state.library) === -1) ids.push(state.library);
+    if (ids.indexOf(LOCAL_LIB) === -1) ids.push(LOCAL_LIB);
+    ids.sort(function (a, b) {
+      if (a === LOCAL_LIB) return -1;
+      if (b === LOCAL_LIB) return 1;
+      return libLabel(a).localeCompare(libLabel(b));
+    });
+    return ids;
+  }
+
   function persist() {
     try {
       var out = {};
       Object.keys(state.programs).forEach(function (n) {
         out[n] = { source: state.programs[n].source, origin: state.programs[n].origin };
       });
-      localStorage.setItem(STORE_KEY, JSON.stringify(out));
+      localStorage.setItem(libStoreKey(state.library), JSON.stringify(out));
+      localStorage.setItem(ACTIVE_LIB_KEY, state.library);
     } catch (e) { /* storage unavailable — session-only mode */ }
+  }
+
+  function loadLibraryStore(id) {
+    try {
+      var raw = localStorage.getItem(libStoreKey(id));
+      if (!raw) return;
+      var data = JSON.parse(raw);
+      Object.keys(data).forEach(function (n) { addProgram(data[n].source, n + '.LS', data[n].origin); });
+    } catch (e) { /* ignore corrupt store */ }
+  }
+
+  /* Bumped whenever the loaded library is swapped out. Slow importers (robot
+   * pulls, folder reads, FileReader) capture it when they start and drop any
+   * file that lands after a switch, so one robot's programs can never bleed
+   * into another robot's library. */
+  var libGen = 0;
+
+  /* Swap the loaded library. Everything derived from the program set —
+   * selection, split view, pair diff, per-program filters — goes with it;
+   * a loaded Compare baseline keeps its own sources and is simply re-run
+   * against the new set by rebuildDerived(). Returns false if the user
+   * chose to stay (unsaved editor text). */
+  function setLibrary(id) {
+    if (id === state.library) return true;
+    if (state.editing && !confirm('Switch libraries? Unsaved editor changes will be lost.')) return false;
+    if (state.robotImport) state.robotImport.cancel = true;
+    persist();                      // save the outgoing library
+    libGen++;
+    state.library = id;
+    state.programs = {};
+    state.selected = null;
+    state.editing = false;
+    state.split = null;
+    state.pair = null;
+    state.checksProg = null;
+    loadLibraryStore(id);
+    state.selected = Object.keys(state.programs)[0] || null;
+    rebuildDerived();
+    persist();                      // records the new active library
+    return true;
   }
 
   function restore() {
     try {
-      var raw = localStorage.getItem(STORE_KEY);
-      if (!raw) {
-        // migrate v1 (plain name -> source strings)
-        var v1 = localStorage.getItem(STORE_KEY_V1);
-        if (v1) {
-          var old = JSON.parse(v1);
-          Object.keys(old).forEach(function (n) { addProgram(old[n], n + '.LS', { type: 'upload' }); });
-          localStorage.removeItem(STORE_KEY_V1);
-          persist();
+      /* One-time migration of the single shared library: each program goes
+       * to the library of the robot it came from, everything else to Local
+       * files. The app then opens on whichever split got the most programs,
+       * so the upgrade does not greet anyone with an empty sidebar. */
+      var v2 = localStorage.getItem(STORE_KEY_V2);
+      var v1 = localStorage.getItem(STORE_KEY_V1);
+      if (v2 || v1) {
+        var old = {};
+        if (v2) old = JSON.parse(v2);
+        else {
+          var o1 = JSON.parse(v1);   // v1 held plain name -> source strings
+          Object.keys(o1).forEach(function (n) { old[n] = { source: o1[n], origin: { type: 'upload' } }; });
         }
-      } else {
-        var data = JSON.parse(raw);
-        Object.keys(data).forEach(function (n) { addProgram(data[n].source, n + '.LS', data[n].origin); });
+        var byLib = {}, biggest = LOCAL_LIB, max = -1;
+        Object.keys(old).forEach(function (n) {
+          var o = old[n].origin || {};
+          var id = (o.type === 'robot' && o.ip) ? o.ip : LOCAL_LIB;
+          (byLib[id] = byLib[id] || {})[n] = old[n];
+        });
+        Object.keys(byLib).forEach(function (id) {
+          localStorage.setItem(libStoreKey(id), JSON.stringify(byLib[id]));
+          var count = Object.keys(byLib[id]).length;
+          if (count > max) { max = count; biggest = id; }
+        });
+        localStorage.setItem(ACTIVE_LIB_KEY, biggest);
+        localStorage.removeItem(STORE_KEY_V2);
+        localStorage.removeItem(STORE_KEY_V1);
+        if (Object.keys(byLib).length > 1) {
+          toast('Your library was split per robot — pick a library above the program list, or connect to a robot to open its own.');
+        }
       }
+      state.library = localStorage.getItem(ACTIVE_LIB_KEY) || LOCAL_LIB;
+      loadLibraryStore(state.library);
       state.selected = Object.keys(state.programs)[0] || null;
     } catch (e) { /* ignore corrupt store */ }
+  }
+
+  /* Controller device directories. A robot backup keeps its programs under
+   * one of these, so "MD" as a label would name every backup alike. */
+  var DEVICE_DIR_RE = /^(MD|MC|MF|FR|RD|UD1|UT1|TEMP)$/i;
+
+  /* A folder pick (webkitdirectory) tags every file with its path relative to
+   * the folder that was chosen, e.g. "R2000_BACKUP/MD/PICK1.LS". The label is
+   * the deepest folder that actually names something — device directories are
+   * skipped, so the file reads "from R2000_BACKUP" and not "from MD" — and the
+   * whole relative path goes on the hover title. A plain multi-file pick has
+   * no relative path at all, and then there is no folder to name. */
+  function folderOf(file) {
+    var parts = String(file.webkitRelativePath || '').split('/');
+    parts.pop();                                  // the file itself
+    if (!parts.length) return null;
+    var i = parts.length - 1;
+    while (i > 0 && DEVICE_DIR_RE.test(parts[i])) i--;
+    return { folder: parts[i], dir: parts.join('/') };
   }
 
   function importFiles(fileList) {
@@ -217,12 +407,17 @@
     }
     var lastName = null;
     var imported = 0, skipped = 0;
+    var gen = libGen;
     files.forEach(function (f) {
       var reader = new FileReader();
       reader.onload = function () {
         var src = String(reader.result);
-        if (isProgramSource(src)) {
-          lastName = addProgram(src, f.name, { type: 'upload' });
+        if (gen !== libGen) skipped++;   // library switched mid-read
+        else if (isProgramSource(src)) {
+          var origin = { type: 'upload' };
+          var fo = folderOf(f);
+          if (fo) { origin.folder = fo.folder; origin.dir = fo.dir; }
+          lastName = addProgram(src, f.name, origin);
           imported++;
         } else skipped++;
         if (--pending === 0) {
@@ -237,18 +432,6 @@
       };
       reader.readAsText(f);
     });
-  }
-
-  function loadSamples() {
-    if (!window.FANUC_SAMPLES) return;
-    var last = null;
-    Object.keys(window.FANUC_SAMPLES).forEach(function (n) {
-      last = addProgram(window.FANUC_SAMPLES[n], n + '.LS', { type: 'sample' });
-    });
-    state.selected = state.programs.MAIN ? 'MAIN' : last;
-    rebuildDerived();
-    persist();
-    render();
   }
 
   /* ================= bridge (server) API ================= */
@@ -288,6 +471,7 @@
         if (state.server) {
           loadKnownRobots();
           loadSubnets();
+          loadBackupHome();
           // pick up where the last page load left off: silently reconnect to
           // the robot that was selected before the refresh
           if (state.lastRobot && state.lastRobot.ip && !state.robot.ip) {
@@ -345,7 +529,7 @@
   }
 
   function loadSubnets() {
-    api('/api/net').then(function (b) {
+    return api('/api/net').then(function (b) {
       state.subnets = b.subnets || [];
       if (state.tab === 'robot' && !(state.scan && state.scan.running)) render();
     }).catch(function () { state.subnets = []; });
@@ -418,7 +602,13 @@
     if (!state.server) return;
     api('/api/robots').then(function (b) {
       state.knownRobots = b.robots || [];
-      if (state.tab === 'robot') render();
+      /* The saved list arrives after the first paint. The Robot tab shows it
+       * in full, but the sidebar picker is built from it too, so it has to be
+       * refreshed on every other tab as well — otherwise the dropdown sits
+       * on "No saved robots yet" for the whole session. Repainting just the
+       * picker keeps a burst of probe results from re-rendering everything. */
+      if (state.tab === 'robot') render(); else paintRobotPicker();
+      paintLibraryPicker();   // library labels use the saved robots' names too
       if (thenProbe !== false) probeKnownRobots();
     }).catch(function () { /* bridge without the endpoint — list just stays empty */ });
   }
@@ -451,14 +641,355 @@
       }).catch(function () {
         state.robotProbe[r.ip] = 'down';
       }).then(function () {
-        if (state.tab === 'robot') render();
+        if (state.tab === 'robot') render(); else paintRobotPicker();
       });
     });
-    if (state.knownRobots.length && state.tab === 'robot') render();
+    if (!state.knownRobots.length) return;
+    if (state.tab === 'robot') render(); else paintRobotPicker();
   }
 
-  function connectRobot(ip) {
-    state.robot = { ip: ip, ftpUser: state.robot.ftpUser, ftpPass: state.robot.ftpPass, files: [], registers: null, posregs: null, rawIO: null, ioState: null, ioComments: null, errors: undefined, error: null, loadedAt: null, backup: null };
+  /* ---- backups to the server ----
+   * The home folder lives on the bridge, not in this browser: it is a path
+   * on the bridge PC, so it is the same folder no matter which device is
+   * looking, and it survives a cleared browser. Set once, used by every
+   * backup afterwards. */
+  function loadBackupHome() {
+    return api('/api/settings').then(function (b) {
+      state.backupHome = b;
+      if (state.tab === 'robot' && !backupAllRunning()) render();
+    }).catch(function () { /* older bridge — the section just shows defaults */ });
+  }
+
+  function setRobotFolder(ip, folder) {
+    postJSON('/api/robots/folder', { ip: ip, folder: folder || '' }).then(function (b) {
+      state.knownRobots = b.robots || state.knownRobots;
+      var hit = state.knownRobots.filter(function (r) { return r.ip === ip; })[0];
+      toast(folder ? ((hit && hit.name || ip) + ' → ' + folder) : ((hit && hit.name || ip) + ' will use the bridge’s backups folder'));
+      render();
+    }).catch(function (e) { toast('Could not use that folder: ' + e.message); });
+  }
+
+  /* ---- folder picker ----
+   * A browser cannot hand a server a filesystem path — a folder input gives
+   * file names and nothing else — and the folders that matter here are the
+   * bridge PC's mapped drives and shares. So the bridge lists its own
+   * directories and this walks them. The path box stays typable on purpose:
+   * a UNC path can be pasted, and a folder that does not exist yet can be
+   * named outright, since the bridge creates it when it saves. */
+  var fpDlg = null;
+  var fpUI = null;
+  var fpState = null;
+
+  function openFolderPicker(opts) {
+    fpState = {
+      title: opts.title, hint: opts.hint || '', allowHome: !!opts.allowHome,
+      onPick: opts.onPick, path: null, dirs: [], parent: null, places: null,
+      error: null, warn: null, loading: true
+    };
+    if (!fpDlg) buildFolderPicker();
+    fpUI.title.textContent = fpState.title;
+    fpUI.hint.textContent = fpState.hint;
+    fpUI.hint.hidden = !fpState.hint;
+    fpUI.home.hidden = !fpState.allowHome;
+    fpUI.path.value = opts.start || '';
+    if (!fpDlg.open) fpDlg.showModal();
+    fpBrowse(opts.start || null);
+  }
+
+  function closeFolderPicker() {
+    fpState = null;
+    if (fpDlg && fpDlg.open) fpDlg.close();
+  }
+
+  function buildFolderPicker() {
+    fpDlg = h('dialog', { class: 'fp-dlg', 'aria-label': 'Choose a folder' });
+    var title = h('h2', { text: 'Choose a folder' });
+    var head = h('div', { class: 'fp-head' }, [
+      title,
+      h('button', { class: 'btn subtle', text: '✕', title: 'Cancel', onclick: closeFolderPicker })
+    ]);
+    var hint = h('p', { class: 'muted fp-hint' });
+    var pathIn = h('input', {
+      type: 'text', class: 'fp-path', placeholder: '\\\\server\\share\\folder',
+      title: 'Type or paste a path on the bridge PC. It does not have to exist yet — the bridge creates it.'
+    });
+    pathIn.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); fpBrowse(pathIn.value.trim() || null); }
+    });
+    var go = h('button', { class: 'btn', text: 'Go', title: 'Open this path', onclick: function () { fpBrowse(pathIn.value.trim() || null); } });
+    var msg = h('p', { class: 'fp-msg' });
+    var list = h('div', { class: 'fp-list', tabindex: '-1' });
+    var homeBtn = h('button', {
+      class: 'btn subtle', text: 'Clear — use the default folder',
+      title: 'Forget this robot’s own folder and file its backups in the bridge’s backups folder',
+      onclick: function () { commitFolderPicker(null); }
+    });
+    var useBtn = h('button', { class: 'btn primary', text: 'Use this folder', onclick: function () { commitFolderPicker(pathIn.value.trim() || (fpState && fpState.path)); } });
+    var foot = h('div', { class: 'fp-foot' }, [
+      homeBtn,
+      h('span', { style: 'flex:1' }),
+      h('button', { class: 'btn', text: 'Cancel', onclick: closeFolderPicker }),
+      useBtn
+    ]);
+    fpDlg.appendChild(head);
+    fpDlg.appendChild(hint);
+    fpDlg.appendChild(h('div', { class: 'fp-bar' }, [pathIn, go]));
+    fpDlg.appendChild(msg);
+    fpDlg.appendChild(list);
+    fpDlg.appendChild(foot);
+    /* Clicking the backdrop lands on the dialog element itself. Escape
+     * closes it natively, so fpState has to be dropped on close either way
+     * or the next open would inherit the last one's callback. */
+    fpDlg.addEventListener('click', function (e) { if (e.target === fpDlg) closeFolderPicker(); });
+    fpDlg.addEventListener('close', function () { fpState = null; });
+    document.body.appendChild(fpDlg);
+    fpUI = { title: title, hint: hint, path: pathIn, msg: msg, list: list, home: homeBtn, use: useBtn };
+  }
+
+  function commitFolderPicker(dir) {
+    var cb = fpState && fpState.onPick;
+    closeFolderPicker();
+    if (cb) cb(dir || null);
+  }
+
+  function fpBrowse(dir) {
+    if (!fpState) return;
+    fpState.loading = true;
+    fpState.error = null;
+    paintFolderPicker();
+    api('/api/fs/dirs' + (dir ? '?path=' + encodeURIComponent(dir) : '')).then(function (b) {
+      if (!fpState) return;
+      fpState.loading = false;
+      if (b.places) {
+        fpState.places = b.places;
+        fpState.path = null;
+        fpState.dirs = [];
+        fpState.parent = null;
+        fpState.warn = null;
+      } else {
+        fpState.places = null;
+        fpState.path = b.path;
+        fpState.dirs = b.dirs || [];
+        fpState.parent = b.parent;
+        fpState.warn = b.error;                 // readable, but not writable
+        fpUI.path.value = b.path;
+      }
+      paintFolderPicker();
+    }).catch(function (e) {
+      /* Stay where we were and say why: a folder that cannot be opened
+       * (a share that is down, a permission) should not also lose the
+       * place the user had already navigated to. */
+      if (!fpState) return;
+      fpState.loading = false;
+      fpState.error = e.message;
+      paintFolderPicker();
+    });
+  }
+
+  function paintFolderPicker() {
+    if (!fpState || !fpUI) return;
+    fpUI.msg.textContent = fpState.error || fpState.warn || '';
+    fpUI.msg.className = 'fp-msg' + (fpState.error ? ' bad' : fpState.warn ? ' warn' : '');
+    fpUI.msg.hidden = !(fpState.error || fpState.warn);
+    fpUI.use.disabled = fpState.loading;
+    var list = fpUI.list;
+    list.textContent = '';
+    if (fpState.loading) {
+      list.appendChild(h('div', { class: 'fp-item muted', text: 'Reading…' }));
+      return;
+    }
+    if (fpState.places) {
+      fpState.places.forEach(function (p) {
+        list.appendChild(h('button', { class: 'fp-item', onclick: function () { fpBrowse(p.path); } }, [
+          h('span', { class: 'fp-ic', text: '🖿' }),
+          h('span', { class: 'fp-label', text: p.label }),
+          h('span', { class: 'fp-sub mono', text: p.path })
+        ]));
+      });
+      if (!fpState.places.length) list.appendChild(h('div', { class: 'fp-item muted', text: 'No drives found — type a path above.' }));
+      return;
+    }
+    list.appendChild(h('button', {
+      class: 'fp-item', onclick: function () { fpBrowse(fpState.parent); }
+    }, [
+      h('span', { class: 'fp-ic', text: '↑' }),
+      h('span', { class: 'fp-label', text: fpState.parent ? '.. up to ' + fpState.parent : '.. drives and places' })
+    ]));
+    fpState.dirs.forEach(function (name) {
+      list.appendChild(h('button', {
+        class: 'fp-item', onclick: function () { fpBrowse(joinPath(fpState.path, name)); }
+      }, [
+        h('span', { class: 'fp-ic', text: '🖿' }),
+        h('span', { class: 'fp-label', text: name })
+      ]));
+    });
+    if (!fpState.dirs.length) {
+      list.appendChild(h('div', { class: 'fp-item muted', text: 'No subfolders here — “Use this folder” files backups straight into it.' }));
+    }
+  }
+
+  /* Joining is done on the client so a click can descend without waiting for
+   * a round trip to tell it the separator. Which separator is the bridge's,
+   * not this browser's — a phone pointed at a Windows bridge still has to
+   * build Windows paths — so it is taken from the path we are standing in. */
+  function joinPath(base, name) {
+    var sep = base.indexOf('\\') !== -1 && base.indexOf('/') === -1 ? '\\' : '/';
+    if (/^[A-Za-z]:$/.test(base)) return base + '\\' + name;   // "C:" alone is not a folder
+    return base.replace(/[\\/]+$/, '') + sep + name;
+  }
+
+  var backupAllAbort = null;
+  var backupAllUI = null;
+
+  function backupAllRunning() { return !!(state.backupAll && state.backupAll.running); }
+
+  /* Which robots the next sweep covers. Everything the bridge knows about is
+   * in by default except what a probe has just told us is not answering —
+   * a cell that is powered down is the normal reason a robot is missing, and
+   * pre-ticking it would only mean waiting for it to be skipped. */
+  function backupPicked() {
+    return state.knownRobots.filter(function (r) {
+      var st = state.robotProbe[r.ip];
+      var def = st !== 'down';
+      return (r.ip in state.backupPick) ? state.backupPick[r.ip] : def;
+    });
+  }
+
+  /* No ips = the ticked robots (the full sweep). A list of one is how a
+   * row's Quick backup runs: same machinery, same per-row progress. */
+  function startBackupAll(mode, ips) {
+    var picked = ips
+      ? state.knownRobots.filter(function (r) { return ips.indexOf(r.ip) !== -1; })
+      : backupPicked();
+    if (!picked.length) return;
+    cancelBackupAll();
+    var rows = {};
+    picked.forEach(function (r) { rows[r.ip] = { ip: r.ip, name: r.name, status: 'waiting' }; });
+    state.backupAll = {
+      running: true, mode: mode, total: picked.length, index: -1, current: null,
+      order: picked.map(function (r) { return r.ip; }), rows: rows,
+      file: null, dests: [], destCount: 0,
+      ok: 0, failed: 0, skipped: 0, files: 0, bytes: 0, ms: 0, error: null
+    };
+    backupAllAbort = new AbortController();
+    render();
+    fetch('/api/robots/backup-all', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: backupAllAbort.signal,
+      body: JSON.stringify({
+        ips: picked.map(function (r) { return r.ip; }),
+        mode: mode,
+        user: state.robot.ftpUser || undefined,
+        pass: state.robot.ftpPass || undefined
+      })
+    }).then(function (r) {
+      if (!r.ok) return r.json().then(function (b) { throw new Error(b.error || ('HTTP ' + r.status)); });
+      return readNdjson(r, onBackupAllEvent);
+    }).then(function () { endBackupAll(); })
+      .catch(function (e) {
+        if (e.name === 'AbortError') return;
+        if (state.backupAll) state.backupAll.error = e.message;
+        endBackupAll();
+      });
+  }
+
+  function cancelBackupAll() {
+    if (backupAllAbort) { backupAllAbort.abort(); backupAllAbort = null; }
+    if (state.backupAll) state.backupAll.running = false;
+  }
+
+  function endBackupAll() {
+    backupAllAbort = null;
+    if (state.backupAll) state.backupAll.running = false;
+    backupAllUI = null;
+    /* The sweep refreshes lastSeen on the bridge and can fill in a name a
+     * scan never got, so the saved list is worth re-reading — without
+     * re-probing every robot, which the backups just proved. */
+    loadKnownRobots(false);
+    if (state.tab === 'robot') render();
+  }
+
+  function onBackupAllEvent(ev) {
+    var ba = state.backupAll;
+    if (!ba) return;
+    var row = ev.ip ? ba.rows[ev.ip] : null;
+    if (ev.type === 'start') {
+      ba.total = ev.total;
+      ba.destCount = ev.dests;
+    } else if (ev.type === 'robot') {
+      ba.index = ev.index;
+      ba.current = ev.ip;
+      ba.file = null;
+      if (row) { row.status = 'running'; row.dest = ev.dest; if (ev.name) row.name = ev.name; }
+    } else if (ev.type === 'file') {
+      ba.file = { saved: ev.saved, total: ev.total };
+      if (row) { row.saved = ev.saved; row.fileTotal = ev.total; }
+    } else if (ev.type === 'robotDone') {
+      ba.current = null;
+      ba.file = null;
+      if (row) {
+        row.status = ev.ok ? 'done' : ev.skipped ? 'skipped' : 'failed';
+        row.folder = ev.folder;
+        row.files = ev.files;
+        row.bytes = ev.bytes;
+        row.error = ev.error;
+        row.failedFiles = ev.failed;
+        if (ev.robotName) row.name = ev.robotName;
+      }
+    } else if (ev.type === 'done') {
+      ba.ok = ev.ok; ba.failed = ev.failed; ba.skipped = ev.skipped;
+      ba.files = ev.files; ba.bytes = ev.bytes; ba.ms = ev.ms; ba.dests = ev.dests || [];
+    }
+    paintBackupAll();
+  }
+
+  /* Painted straight into the panel's own elements rather than re-rendered:
+   * a full render mid-sweep would take the caret out of the home-folder box
+   * and drop every checkbox the user was still adjusting. */
+  function paintBackupAll() {
+    var ba = state.backupAll;
+    if (!ba || !backupAllUI || !backupAllUI.status || !backupAllUI.status.isConnected) return;
+    backupAllUI.status.textContent = backupAllText(ba);
+    var pct = ba.total ? Math.round(100 * (Math.max(0, ba.index) + (ba.file && ba.file.total ? ba.file.saved / ba.file.total : 0)) / ba.total) : 0;
+    if (backupAllUI.bar) backupAllUI.bar.style.width = Math.min(100, pct) + '%';
+    if (backupAllUI.rows) {
+      ba.order.forEach(function (ip) {
+        var el = backupAllUI.rows[ip];
+        if (el) paintBackupRow(el, ba.rows[ip]);
+      });
+    }
+  }
+
+  function backupAllText(ba) {
+    if (ba.running) {
+      var at = Math.max(0, ba.index) + 1;
+      var who = ba.current ? ((ba.rows[ba.current] && ba.rows[ba.current].name) || ba.current) : '';
+      return 'Robot ' + at + ' of ' + ba.total + (who ? ' — ' + who : '') +
+        (ba.file ? ' — ' + ba.file.saved + ' of ' + ba.file.total + ' files' : ' — connecting…');
+    }
+    if (ba.error) return 'Backup sweep failed: ' + ba.error;
+    var parts = [ba.ok + ' backed up'];
+    if (ba.failed) parts.push(ba.failed + ' failed');
+    if (ba.skipped) parts.push(ba.skipped + ' skipped');
+    return parts.join(', ') + ' — ' + ba.files + ' files, ' + (ba.bytes / 1048576).toFixed(1) + ' MB' +
+      (ba.ms ? ' in ' + Math.round(ba.ms / 1000) + 's' : '');
+  }
+
+  function connectRobot(ip, opts) {
+    /* Accept a pasted browser URL — "http://10.5.6.143/" means the robot at
+     * 10.5.6.143. The scheme, any path, and a trailing slash all go. A bare
+     * ":port" suffix typed by hand survives (that is how a nonstandard FTP
+     * port is given), but a URL's port goes with the rest of the URL: it is
+     * an HTTP port, and handing it to FTP would only manufacture a failure. */
+    ip = String(ip).trim();
+    if (/^[a-z]+:\/\//i.test(ip)) {
+      ip = ip.replace(/^[a-z]+:\/\//i, '').replace(/[/?#].*$/, '').replace(/:\d+$/, '');
+    }
+    if (!ip) return;
+    // each robot works against its own stored library
+    if (!setLibrary(ip)) return;
+    state.robot = { ip: ip, ftpUser: state.robot.ftpUser, ftpPass: state.robot.ftpPass, files: [], registers: null, posregs: null, strregs: null, rawIO: null, ioState: null, ioComments: null, errors: undefined, error: null, loadedAt: null, backup: null, notPrograms: {}, prgState: undefined };
     state.tab = 'robot';
     render();
     api('/api/robot/list?ip=' + encodeURIComponent(ip) + ftpQS()).then(function (b) {
@@ -472,6 +1003,19 @@
       try { sessionStorage.setItem('fanuc-tp-studio.ftpPass', state.robot.ftpPass || ''); } catch (e) { /* optional */ }
       loadRobotRegisters();
       loadRobotPosregs();
+      loadRobotStrregs();
+      /* "Import programs" from a saved-robot row: connect (which switched
+       * the library to this robot's) and pull everything in one gesture.
+       * The Programs section is opened so the chips fill in visibly. */
+      if (opts && opts.andImport) {
+        var ls = b.files.filter(function (f) { return /\.LS$/i.test(f) && !isKnownNonProgram(f); });
+        if (!ls.length) toast('No programs listed on ' + ip + '.');
+        else if (confirmCrossSource(ls)) {
+          if (!state.secOpen) state.secOpen = {};
+          state.secOpen['robot-programs'] = true;
+          importAllFromRobot(ls);
+        }
+      }
     }).catch(function (e) {
       state.robot.error = e.message;
       render();
@@ -503,6 +1047,107 @@
     });
   }
 
+  function loadRobotStrregs() {
+    var ip = state.robot.ip;
+    api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=STRREG.VA' + ftpQS()).then(function (b) {
+      state.robot.strregs = VA.parseStrreg(b.content);
+      if (state.tab === 'robot') render();
+    }).catch(function (e) {
+      state.robot.strregs = { error: e.message };
+      if (state.tab === 'robot') render();
+    });
+  }
+
+  /* ---- renaming things on the controller ----
+   * A register's name IS its comment: R[1:Task ID] is R[1] plus the comment
+   * held in the controller's own table, and every listing the robot writes is
+   * generated from that table. So renaming is a comment write, which the
+   * bridge makes through the controller's own comment tool.
+   *
+   * The robot's own page for this saves on blur, and so does this: `change`
+   * fires when focus leaves a field whose value actually changed, which means
+   * tabbing across a table sends nothing and an untouched field is never
+   * rewritten. Enter commits, Escape puts the old name back.
+   *
+   * Only offered against a live robot through the bridge. A backup folder has
+   * no controller to write to, so its tables stay plain text — as do the I/O
+   * types the controller's comment tool does not cover (UI, UO, SI, SO, WI,
+   * WO): the bridge would refuse them, so they are never offered. */
+  var COMMENT_MAX = {
+    R: 16, PR: 16, SR: 16,
+    DI: 24, DO: 24, RI: 24, RO: 24, GI: 24, GO: 24, AI: 24, AO: 24, F: 24
+  };
+
+  function canRename(type) {
+    return !!(state.server && state.robot.ip && COMMENT_MAX[type]);
+  }
+
+  /* A table cell holding a renameable comment. `apply` writes the new text
+   * back into whichever loaded array the row came from, so the new name
+   * survives the next render without re-reading the whole file. */
+  function commentCell(type, index, current, apply) {
+    var td = h('td', { class: 'cmt-cell' });
+    var was = current || '';
+    if (!canRename(type)) { td.textContent = was; return td; }
+    var key = type + '[' + index + ']';
+    var max = COMMENT_MAX[type];
+    var inp = h('input', {
+      type: 'text', class: 'cmt-edit', value: was, maxlength: String(max),
+      placeholder: 'name…',
+      title: 'Rename ' + key + ' on the controller — up to ' + max + ' characters'
+    });
+    var note = h('span', { class: 'cmt-note' });
+    var busy = false;
+
+    function settle(cls, msg) {
+      inp.classList.remove('busy', 'ok', 'bad');
+      if (cls) inp.classList.add(cls);
+      note.textContent = msg || '';
+      if (cls === 'ok') setTimeout(function () {
+        inp.classList.remove('ok');
+        note.textContent = '';
+      }, 2500);
+    }
+
+    inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+      else if (e.key === 'Escape') { inp.value = was; inp.blur(); }
+    });
+
+    inp.addEventListener('change', function () {
+      var text = inp.value.trim();
+      if (busy || text === was) return;
+      busy = true;
+      inp.disabled = true;
+      settle('busy', 'renaming…');
+      postJSON('/api/robot/comment', {
+        ip: state.robot.ip, type: type, index: index, text: text,
+        user: state.robot.ftpUser || undefined, pass: state.robot.ftpPass || undefined
+      }).then(function (b) {
+        if (!b.ok) throw new Error(b.error || 'the controller did not take the rename');
+        was = b.comment;
+        inp.value = was;
+        apply(was);
+        rebuildDerived();          // labels feed the checks and the xref
+        settle('ok', b.verified ? 'renamed' : 'sent');
+        if (!b.verified && b.verifyError) {
+          toast('Renamed ' + key + ' — but could not read it back to confirm: ' + b.verifyError);
+        }
+      }).catch(function (e) {
+        inp.value = was;           // nothing changed on the robot, so show that
+        settle('bad', 'failed');
+        toast('Could not rename ' + key + ': ' + e.message);
+      }).then(function () {
+        busy = false;
+        inp.disabled = false;
+      });
+    });
+
+    td.appendChild(inp);
+    td.appendChild(note);
+    return td;
+  }
+
   function loadRobotErrors() {
     var ip = state.robot.ip;
     state.robot.errors = null;
@@ -512,6 +1157,22 @@
       if (state.tab === 'robot') render();
     }).catch(function (e) {
       state.robot.errors = { error: e.message };
+      if (state.tab === 'robot') render();
+    });
+  }
+
+  /* PRGSTATE.DG answers "why will the controller not let me overwrite this".
+   * Read on demand rather than on connect: it is a large file, and it only
+   * matters at the moment an edit is being refused. */
+  function loadRobotPrgState() {
+    var ip = state.robot.ip;
+    state.robot.prgState = null;
+    render();
+    api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=PRGSTATE.DG' + ftpQS()).then(function (b) {
+      state.robot.prgState = VA.parsePrgState(b.content);
+      if (state.tab === 'robot') render();
+    }).catch(function (e) {
+      state.robot.prgState = { error: e.message };
       if (state.tab === 'robot') render();
     });
   }
@@ -541,24 +1202,6 @@
       });
     });
   }
-
-  function takeBackup(mode) {
-    state.robot.backup = { running: true };
-    render();
-    fetch('/api/robot/backup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ip: state.robot.ip, mode: mode, user: state.robot.ftpUser || undefined, pass: state.robot.ftpPass || undefined })
-    }).then(function (r) { return r.json(); }).then(function (b) {
-      if (b.error) throw new Error(b.error);
-      state.robot.backup = b;
-      render();
-    }).catch(function (e) {
-      state.robot.backup = { error: e.message };
-      render();
-    });
-  }
-
   function sendToRobot(name, content, onDone) {
     fetch('/api/robot/upload', {
       method: 'POST',
@@ -572,15 +1215,20 @@
       })
     }).then(function (r) { return r.json(); }).then(function (b) {
       b.sentContent = content; // for mapping controller file-line errors back to program lines
-      state.upload = b;
+      /* A good send is news for a moment, not a banner that outlives the next
+       * edit: it goes out as a toast. A failure stays as the banner, because
+       * its controller error log and "fix line" chips are what you work from. */
       if (b.ok) {
+        state.upload = null;
+        toast(name + '.LS sent to ' + state.robot.ip + ' and verified on the robot' +
+          (b.snapshot ? ' — previous version saved in backups\\pre-upload' : '') + '.', 7000);
         // the controller regenerates register/IO comments during LS→TP→LS, so
         // pull its copy straight back — the old FileZilla re-open, automated
         importFromRobot(name + '.LS').then(function () {
-          b.refetched = true;
+          toast(name + '.LS sent and verified — library copy refreshed from the robot (comments regenerated).', 7000);
           render();
         }).catch(function () { /* library still holds what we sent */ });
-      }
+      } else state.upload = b;
       onDone(b);
     }).catch(function (e) {
       state.upload = { ok: false, name: name + '.LS', error: e.message };
@@ -588,13 +1236,16 @@
     });
   }
 
-  function uploadBanner() {
+  /* The result of the last send. The Robot tab shows it whatever is selected;
+   * the Code and editor panes pass the program they are showing, so a note
+   * about _PL_PAL_ZONE does not follow you to every other program. */
+  function uploadBanner(forProg) {
     var u = state.upload;
     if (!u) return null;
+    if (forProg && String(u.name).replace(/\.LS$/i, '').toUpperCase() !== String(forProg).toUpperCase()) return null;
     var el = h('div', { class: 'banner ' + (u.ok ? 'good' : 'bad') });
     if (u.ok) {
       el.appendChild(h('strong', { text: u.name + ' uploaded to ' + state.robot.ip + ' and verified on the robot. ' }));
-      if (u.refetched) el.appendChild(h('span', { text: 'Library copy refreshed from the robot (comments regenerated). ' }));
       if (u.snapshot) el.appendChild(h('span', { text: 'The previous version was snapshotted to ' + u.snapshot + ' before the upload.' }));
     } else {
       el.appendChild(h('strong', { text: u.name + ' — upload failed. ' }));
@@ -655,17 +1306,80 @@
       '\n\nImporting from ' + state.robot.ip + ' will REPLACE those library copies. If you want to keep both robots’ versions, take a backup of each robot instead and use the Compare tab.\n\nReplace them?');
   }
 
-  function importFromRobot(name) {
+  /* A bulk import used to be a bare forEach over every file, which was wrong
+   * in three ways: render() ran only once the last file landed, so nothing
+   * moved for the whole import and every chip turned green at the same
+   * moment; all N files were requested at once, which on a 57-program
+   * controller means 57 simultaneous requests at a web server that is not
+   * really one; and rebuildDerived() + persist() ran per program, so the
+   * whole library was re-analysed and rewritten to localStorage N times.
+   *
+   * Now: a small pool, a render after every file so the chips fill in as they
+   * arrive, and the expensive rebuild exactly once at the end. */
+  var IMPORT_CONCURRENCY = 4;
+
+  function importAllFromRobot(names) {
+    var queue = names.slice();
+    state.robotImport = {
+      total: names.length, done: 0, added: 0, skipped: 0, failed: 0,
+      inFlight: {}, cancel: false
+    };
+    render();
+
+    function next() {
+      var imp = state.robotImport;
+      if (!imp || imp.cancel || !queue.length) return Promise.resolve();
+      var name = queue.shift();
+      imp.inFlight[name.toUpperCase()] = true;
+      return importFromRobot(name, true)
+        .then(function (prog) { if (prog) imp.added++; else imp.skipped++; })
+        .catch(function () { imp.failed++; })
+        .then(function () {
+          delete imp.inFlight[name.toUpperCase()];
+          imp.done++;
+          if (state.tab === 'robot') render();
+          return next();
+        });
+    }
+
+    var runners = [];
+    var n = Math.min(IMPORT_CONCURRENCY, queue.length);
+    for (var i = 0; i < n; i++) runners.push(next());
+
+    return Promise.all(runners).then(function () {
+      var imp = state.robotImport;
+      state.robotImport = null;
+      // the costly part, once, rather than once per program
+      rebuildDerived();
+      persist();
+      if (imp) {
+        toast(imp.cancel
+          ? 'Import stopped — ' + imp.added + ' of ' + imp.total + ' imported.'
+          : 'Imported ' + imp.added + ' program' + (imp.added === 1 ? '' : 's') +
+            (imp.skipped ? ' (skipped ' + imp.skipped + ' non-program file' + (imp.skipped === 1 ? '' : 's') + ')' : '') +
+            (imp.failed ? ' — ' + imp.failed + ' failed' : '') + '.');
+      }
+      render();
+    });
+  }
+
+  function importFromRobot(name, deferRebuild) {
     var ip = state.robot.ip;
+    var gen = libGen;
     return api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=' + encodeURIComponent(name) + ftpQS())
       .then(function (b) {
+        if (gen !== libGen) return null;   // library switched while this was in flight
         if (!isProgramSource(b.content)) {
-          toast(b.name + ' is a controller log export, not a TP program — skipped.');
+          // remember it so the program list stops offering this one
+          state.robot.notPrograms[String(name).toUpperCase()] = true;
+          // during a bulk import these are counted and summarised at the end
+          if (!deferRebuild) toast(b.name + ' is a controller log export, not a TP program — skipped.');
           return null;
         }
         var prog = addProgram(b.content, b.name, { type: 'robot', ip: ip, name: b.name });
-        rebuildDerived();
-        persist();
+        /* A bulk import defers both: re-analysing the whole library and
+         * rewriting localStorage per program is the bulk of the wall clock. */
+        if (!deferRebuild) { rebuildDerived(); persist(); }
         return prog;
       });
   }
@@ -705,8 +1419,10 @@
       }
       var pending = lsFiles.length;
       var imported = 0, skipped = 0;
+      var gen = libGen;
       lsFiles.forEach(function (f) {
         api('/api/dir/file?path=' + encodeURIComponent(f.path)).then(function (file) {
+          if (gen !== libGen) { skipped++; return; }   // library switched mid-load
           if (isProgramSource(file.content)) {
             addProgram(file.content, file.name, { type: 'dir', path: file.path });
             imported++;
@@ -819,9 +1535,12 @@
 
   /* ================= syntax highlighting ================= */
 
+  /* A comment line is shown as the listing has it: "! remark" stays a remark
+   * and "//PAUSE" stays a disabled instruction — on a FANUC those are two
+   * different things, and the controller keeps the marker you wrote. */
   function highlight(line) {
     if (line.comment !== null) {
-      return '<span class="tok-cmt">! ' + esc(line.comment) + '</span>';
+      return '<span class="tok-cmt">' + esc(line.text) + '</span>';
     }
     return tokenize(esc(line.text), true);
   }
@@ -894,7 +1613,7 @@
     var m = raw.match(/^(\s*\d+:)([\s\S]*)$/);
     if (!m) return tokenize(esc(raw));
     var num = '<span class="tok-ln">' + esc(m[1]) + '</span>';
-    var cm = m[2].match(/^(\s*)(!.*)$/);
+    var cm = m[2].match(/^(\s*)((?:!|\/\/).*)$/);   // ! remark, or a //disabled instruction
     if (cm) return num + esc(cm[1]) + '<span class="tok-cmt">' + esc(cm[2]) + '</span>';
     return num + tokenize(esc(m[2]));
   }
@@ -921,22 +1640,26 @@
       var node = sel.anchorNode;
       var el = node && (node.nodeType === 3 ? node.parentElement : node);
       var tokEl = el && el.closest ? el.closest('.tok-reg, .tok-io, .tok-lbl') : null;
-      if (tokEl) {
-        var m = tokEl.textContent.match(/^(R|PR|AR|SR|DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|AI|AO|F|M|TIMER|LBL)\[\s*(\d+)/);
-        // component references (PR[20,1]) count as uses; indices may be padded (LBL[ 610])
-        if (m) itemRe = new RegExp('\\b' + m[1] + '\\[\\s*' + m[2] + '(?:\\s*,\\s*\\d+)?\\s*(?::[^\\]]*)?\\]', 'g');
-      }
+      /* Inside the editor the anchor is the <textarea>, never a token span,
+       * so there is nothing to close() on. Read the item off the selected
+       * text instead, which gives edit mode the same item-aware matching the
+       * viewer has: select R[1] and R[1:part count] lights up too. */
+      var ITEM_HEAD = /^(R|PR|AR|SR|DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|AI|AO|F|M|TIMER|LBL)\[\s*(\d+)/;
+      var m = (tokEl ? tokEl.textContent : text).match(ITEM_HEAD);
+      // component references (PR[20,1]) count as uses; indices may be padded (LBL[ 610])
+      if (m) itemRe = new RegExp('\\b' + m[1] + '\\[\\s*' + m[2] + '(?:\\s*,\\s*\\d+)?\\s*(?::[^\\]]*)?\\]', 'g');
     } else {
       text = '';
     }
     var key = itemRe ? 'item:' + itemRe.source : (text ? 'text:' + text : null);
-    if (key === occLast) return;
+    // the editor's overlay is rebuilt as you type, so its ranges go stale
+    if (key === occLast && !document.querySelector('.pane.editing')) return;
     occLast = key;
     CSS.highlights.delete('tp-occ');
     if (!key) return;
 
     var ranges = [];
-    document.querySelectorAll('#pane .codebox .src').forEach(function (srcEl) {
+    document.querySelectorAll('#pane .codebox .src, #pane .editor-hl').forEach(function (srcEl) {
       var walker = document.createTreeWalker(srcEl, NodeFilter.SHOW_TEXT);
       var tn;
       while ((tn = walker.nextNode()) && ranges.length < 2000) {
@@ -1023,6 +1746,8 @@
   function render() {
     recordNav();
     clearOccurrences(); // the DOM is rebuilt — stale highlight ranges go with it
+    if (state.tab !== 'flow') { cfg = null; cfgHideTip(); }
+    applyFlowNav();
     renderSidebar();
     renderConnect();
     renderTabs();
@@ -1034,7 +1759,8 @@
    * _SET_TASK and _TASK_SETUP, and "pick pallet" finds PICK whether "pallet"
    * is in the name or only in its comment. */
   function libMatch(name, terms) {
-    var hay = (name + ' ' + (state.programs[name].parsed.attrs.COMMENT || '')).toLowerCase();
+    var p = state.programs[name];
+    var hay = (name + ' ' + (p.parsed.attrs.COMMENT || '') + ' ' + (p.origin.dir || '')).toLowerCase();
     return terms.every(function (t) { return hay.indexOf(t) !== -1; });
   }
 
@@ -1052,7 +1778,31 @@
     return !!app && app.classList.contains('nav-open');
   }
 
+  /* Which robot's library is showing. Hidden until a second library exists,
+   * so a single-robot (or robot-less) setup never sees it. Picking one only
+   * swaps the program set — it does not connect to the robot, so a robot's
+   * programs stay browsable from the couch. Connecting is what switches it
+   * automatically. */
+  function paintLibraryPicker() {
+    var row = document.getElementById('lib-ws-row');
+    var sel = document.getElementById('lib-ws');
+    if (!row || !sel) return;
+    var ids = listLibraries();
+    row.hidden = ids.length < 2;
+    if (row.hidden) return;
+    var key = ids.map(libLabel).join(',') + '#' + state.library;
+    if (sel.getAttribute('data-key') !== key) {
+      sel.innerHTML = '';
+      ids.forEach(function (id) {
+        sel.appendChild(h('option', { value: id, text: libLabel(id) }));
+      });
+      sel.setAttribute('data-key', key);
+    }
+    sel.value = state.library;
+  }
+
   function renderSidebar() {
+    paintLibraryPicker();
     var list = document.getElementById('prog-list');
     list.innerHTML = '';
     var all = Object.keys(state.programs).sort();
@@ -1064,7 +1814,7 @@
       terms.length ? names.length + ' of ' + all.length :
       all.length + ' program' + (all.length > 1 ? 's' : '');
     if (!all.length) {
-      list.appendChild(h('div', { class: 'empty', text: 'No programs yet. Import .LS files or load the sample cell.' }));
+      list.appendChild(h('div', { class: 'empty', text: 'No programs yet. Import .LS files or open a backup folder.' }));
       return;
     }
     if (!names.length) {
@@ -1076,11 +1826,12 @@
       var meta = p.parsed.lines.length + ' lines';
       if (p.origin.type === 'robot') meta += ' · from ' + p.origin.ip;
       else if (p.origin.type === 'dir') meta += ' · on disk';
+      else if (p.origin.folder) meta += ' · from ' + p.origin.folder;
       else if (p.parsed.attrs.COMMENT) meta += ' · ' + p.parsed.attrs.COMMENT;
       var item = h('button', {
         class: 'prog-item' + (n === state.selected ? ' active' : ''),
         draggable: 'true',
-        title: 'Click to open · drag onto the code view to open side-by-side',
+        title: (p.origin.dir ? 'From ' + p.origin.dir + '/ · ' : '') + 'Click to open · drag onto the code view to open side-by-side',
         onclick: function () { state.selected = n; state.editing = false; setNav(false); render(); }
       }, [
         h('div', { class: 'name', text: n }),
@@ -1094,23 +1845,235 @@
     });
   }
 
+  /* Sidebar robot picker. It replaced a bare IP text box that could not
+   * carry FTP credentials (so a controller needing FTP auth failed as though
+   * it were unreachable), did not know the saved robot names, and duplicated
+   * the Robot tab's own field. Its second job is to show which robot you are
+   * on from any tab — without that, a Compare against the wrong controller
+   * looks perfectly plausible. */
+  var ROBOT_PICK_TAB = '__robot_tab__';
+
+  function robotPickerKey() {
+    return state.knownRobots.map(function (r) {
+      return r.ip + '|' + (r.name || '') + '|' + (state.robotProbe[r.ip] || '');
+    }).join(',') + '#' + (state.robot.ip || '');
+  }
+
+  function paintRobotPicker() {
+    var sel = document.getElementById('robot-select');
+    if (!sel) return;
+    /* Only rebuild when the list or a status dot actually changed: probes
+     * land asynchronously and re-render, and swapping the options out from
+     * under an open menu would close it mid-choice. */
+    var key = robotPickerKey();
+    if (sel.getAttribute('data-key') !== key) {
+      sel.innerHTML = '';
+      if (!state.knownRobots.length) {
+        sel.appendChild(h('option', { value: '', text: 'No saved robots yet' }));
+      } else {
+        sel.appendChild(h('option', { value: '', text: state.robot.ip ? 'Switch robot…' : 'Pick a robot…' }));
+        state.knownRobots.forEach(function (r) {
+          var st = state.robotProbe[r.ip];
+          // ● answering · ○ not answering · · still checking
+          var dot = st === 'up' ? '● ' : st === 'down' ? '○ ' : '· ';
+          sel.appendChild(h('option', {
+            value: r.ip,
+            text: dot + (r.name ? r.name + '  —  ' + r.ip : r.ip)
+          }));
+        });
+      }
+      sel.appendChild(h('option', { value: ROBOT_PICK_TAB, text: '→ Robot tab (new IP, FTP, scan)' }));
+      sel.setAttribute('data-key', key);
+    }
+    var known = state.knownRobots.some(function (r) { return r.ip === state.robot.ip; });
+    sel.value = (state.robot.ip && known) ? state.robot.ip : '';
+  }
+
   function renderConnect() {
     var hint = document.getElementById('server-hint');
+    var dot = document.getElementById('bridge-dot');
     var robotRow = document.getElementById('robot-row');
     var dirRow = document.getElementById('dir-row');
     if (!hint) return;
     if (state.server) {
       robotRow.style.display = '';
       dirRow.style.display = '';
-      hint.innerHTML = '<span class="badge ok">bridge on</span> ' + (state.dirStatus ? esc(state.dirStatus) : 'Robot + folder access ready.');
+      /* The bridge being on is the normal case — it is how the app is
+       * started — so it says so with a dot in the "Sources" heading, which
+       * is on screen anyway, and costs no vertical space of its own. The
+       * explanation is on hover; the off state is the one worth words. */
+      if (dot) {
+        dot.hidden = false;
+        dot.setAttribute('aria-label', 'Bridge on');
+        dot.title = 'Bridge on — robot by IP, folder by path, uploads, backups and scanning are available';
+      }
+      // a folder-load result is real news, so it still gets a line
+      paintRobotPicker();
+      hint.innerHTML = state.dirStatus ? esc(state.dirStatus) : '';
+      hint.hidden = !state.dirStatus;
     } else {
       robotRow.style.display = 'none';
       dirRow.style.display = 'none';
+      if (dot) dot.hidden = true;
+      hint.hidden = false;
       hint.innerHTML = 'Robot &amp; folder-path access need the bridge:<br><code>node server.js</code> then open <code>http://localhost:8642</code>. The Robot tab has details.';
     }
+    var phoneBtn = document.getElementById('btn-phone');
+    // Only the bridge serves this app to other devices; a file:// page has
+    // no address it could hand a phone.
+    if (phoneBtn) phoneBtn.hidden = !state.server;
   }
 
+  /* ================= open on a phone =================
+   * The bridge already serves the whole app to anything on the network; the
+   * only friction is typing http://<pc-ip>:8642 into a phone one-handed at a
+   * machine. A QR code on the PC screen removes it — point the camera, tap
+   * the notification, and the phone has the same app with live robot access.
+   */
+  var phoneDlg = null;
+  var phoneHost = null;      // which address is showing, kept between opens
+
+  function isLoopbackHost(host) {
+    return !host || host === 'localhost' || host === '::1' || host === '[::1]' ||
+           host === '0.0.0.0' || /^127\./.test(host);
+  }
+
+  /* The bridge ranks its interfaces for finding robots — wired first, because
+   * that is where controllers live (see localSubnets()). A phone wants very
+   * nearly the opposite: it joins the Wi-Fi, and a plant PC's wired entries
+   * are often /30 point-to-point links with room for this PC and one
+   * controller and nothing else. So the addresses get ranked again here:
+   * wireless, then wired networks big enough to hold a phone, then those
+   * tiny direct links, then the host-only and VPN adapters no phone is on. */
+  var PHONE_RANK = { wireless: 0, wired: 1, virtual: 3, overlay: 3 };
+
+  function phoneRank(s) {
+    if (s.kind === 'wired' && s.hosts < 6) return 2;
+    return PHONE_RANK[s.kind];
+  }
+
+  /* Every address a phone could reach this bridge on, best first. */
+  function phoneTargets() {
+    var proto = location.protocol === 'https:' ? 'https://' : 'http://';
+    var port = location.port ? ':' + location.port : '';
+    var out = [];
+    var seen = {};
+    function add(host, iface, note) {
+      if (!host || seen[host]) return;
+      seen[host] = true;
+      out.push({ host: host, url: proto + host + port, iface: iface, note: note || '' });
+    }
+    /* An address this very page was served on is the one address already
+     * proven to work from somewhere other than the bridge PC, so it leads.
+     * localhost never qualifies — it means "me" on whatever device reads it. */
+    if (!isLoopbackHost(location.hostname)) add(location.hostname, 'this page', '');
+    var ranked = (state.subnets || []).slice().sort(function (a, b) { return phoneRank(a) - phoneRank(b); });
+    ranked.forEach(function (s) {
+      add(s.address, s.iface, s.kind === 'wired' && s.hosts < 6
+        ? ' (a direct link with room for one other device — almost certainly a robot, not a phone)'
+        : KIND_NOTE[s.kind]);
+    });
+    return out;
+  }
+
+  function copyToClipboard(text, btn) {
+    function done(ok) {
+      btn.textContent = ok ? 'Copied' : 'Press Ctrl+C';
+      setTimeout(function () { btn.textContent = 'Copy link'; }, 1600);
+    }
+    /* navigator.clipboard needs a secure context, and the whole point of this
+     * dialog is a plain-http LAN address — so the textarea fallback is the
+     * path that actually runs most of the time, not a legacy branch. */
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
+      return;
+    }
+    /* Inside the dialog, not on <body>: everything outside an open modal
+     * dialog is inert, and an inert textarea cannot take the selection the
+     * copy command needs. */
+    var ta = h('textarea', { style: 'position:fixed;top:-1000px;opacity:0' });
+    ta.value = text;
+    phoneDlg.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    phoneDlg.removeChild(ta);
+    done(ok);
+  }
+
+  function paintPhoneDialog() {
+    var targets = phoneTargets();
+    phoneDlg.innerHTML = '';
+    var head = h('div', { class: 'phone-head' }, [
+      h('h2', { text: 'Open on your phone' }),
+      h('button', { class: 'btn subtle', text: '✕', 'aria-label': 'Close',
+                    onclick: function () { phoneDlg.close(); } })
+    ]);
+    phoneDlg.appendChild(head);
+
+    if (!targets.length) {
+      phoneDlg.appendChild(h('p', { class: 'muted', text: 'This PC reports no network address other than its own loopback, so there is nothing a phone could connect to. Check that it is on the plant network (wired or Wi‑Fi), then reopen this.' }));
+      return;
+    }
+
+    var target = null;
+    for (var i = 0; i < targets.length; i++) if (targets[i].host === phoneHost) target = targets[i];
+    if (!target) { target = targets[0]; phoneHost = target.host; }
+
+    var art = h('div', { class: 'phone-qr' });
+    try {
+      art.innerHTML = FanucQR.svg(target.url, { size: 232, label: target.url });
+    } catch (e) {
+      art.appendChild(h('p', { class: 'muted', text: 'Could not draw the code: ' + e.message }));
+    }
+    phoneDlg.appendChild(art);
+
+    phoneDlg.appendChild(h('div', { class: 'phone-url' }, [
+      h('code', { text: target.url }),
+      h('button', { class: 'btn subtle', text: 'Copy link',
+                    onclick: function () { copyToClipboard(target.url, this); } })
+    ]));
+
+    /* A plant PC usually has several networks and only the person standing
+     * there knows which one the phone's Wi-Fi lands on, so every address is
+     * offered rather than guessed at. */
+    if (targets.length > 1) {
+      var pick = h('div', { class: 'phone-pick' });
+      pick.appendChild(h('span', { class: 'muted', text: 'Address:' }));
+      targets.forEach(function (t) {
+        pick.appendChild(h('button', {
+          class: 'btn subtle opt' + (t.host === target.host ? ' active' : ''),
+          text: t.host,
+          title: t.iface + t.note,
+          onclick: function () { phoneHost = t.host; paintPhoneDialog(); }
+        }));
+      });
+      phoneDlg.appendChild(pick);
+    }
+
+    phoneDlg.appendChild(h('p', { class: 'muted phone-hint', text:
+      'Point the phone’s camera at the code. The phone has to be on the same network as this PC, and the bridge has to stay running — the phone is talking to it, not to a copy of the app.' +
+      (target.note ? ' This one is on ' + target.iface + target.note + '.' : '') }));
+  }
+
+  function openPhoneDialog() {
+    if (!phoneDlg) {
+      phoneDlg = h('dialog', { class: 'phone-dlg', 'aria-label': 'Open on your phone' });
+      // clicking the backdrop lands on the dialog element itself
+      phoneDlg.addEventListener('click', function (e) { if (e.target === phoneDlg) phoneDlg.close(); });
+      document.body.appendChild(phoneDlg);
+    }
+    /* The address list arrives with /api/net; if the ping is still in flight
+     * the dialog would open empty, so ask for it and repaint when it lands. */
+    if (!state.subnets) loadSubnets().then(function () { if (phoneDlg.open) paintPhoneDialog(); });
+    paintPhoneDialog();
+    if (!phoneDlg.open) phoneDlg.showModal();
+  }
+
+  /* Robot leads: it is where a session starts (connect, then import), and it
+   * is the one tab that works with an empty library. */
   var TABS = [
+    ['robot', 'Robot'],
     ['code', 'Code'],
     ['summary', 'Summary'],
     ['flow', 'Flow'],
@@ -1118,8 +2081,7 @@
     ['compare', 'Compare'],
     ['positions', 'Positions'],
     ['xref', 'Cross-reference'],
-    ['search', 'Search'],
-    ['robot', 'Robot']
+    ['search', 'Search']
   ];
 
   /* Ctrl+E (Studio 5000 style): cross-reference the selected text.
@@ -1176,7 +2138,7 @@
         h('p', { text: 'View, edit, check, and understand FANUC teach pendant programs. Import ASCII listing files (.LS), open a backup folder, or connect to a robot by IP (Robot tab).' }),
         h('div', { class: 'drop-hint' }, [
           h('p', { text: 'Drag .LS files anywhere in this window,' }),
-          h('p', { text: 'or use Import / Open folder / Load sample cell above.' })
+          h('p', { text: 'or use Import .LS files / Import folder above.' })
         ])
       ]));
       return;
@@ -1196,6 +2158,27 @@
 
   /* ---- code tab (view + edit + side-by-side) ---- */
 
+  /* A finding's note. The message is a full sentence of prose, so it steps
+   * out of the monospace grid into the interface font — and out of
+   * --code-size, which exists to scale program text, not paragraphs. */
+  function findingNote(progName, f) {
+    var note = h('div', { class: 'cnote' }, [
+      h('div', { class: 'cn-row' }, [
+        h('div', { class: 'cn-head' }, [
+          h('span', { class: 'badge ' + (f.severity === 'error' ? 'warn' : 'mid'), text: SEV_LABEL[f.severity] }),
+          h('span', { class: 'cn-rule', text: RULE_NAMES[f.rule] || f.rule })
+        ]),
+        h('div', { class: 'cn-msg', text: f.message })
+      ])
+    ]);
+    note.appendChild(h('button', {
+      class: 'btn subtle cn-open', text: 'All checks for ' + progName + ' →',
+      title: 'Open the Checks tab, filtered to this program',
+      onclick: function () { state.checksProg = progName; state.tab = 'checks'; render(); }
+    }));
+    return note;
+  }
+
   function buildCodeBox(p) {
     var box = h('div', { class: 'codebox' });
     // highlighting is pure per line, so cache the HTML per program object —
@@ -1203,24 +2186,95 @@
     // namesRev, either way giving a fresh cache
     if (p.hlRev !== state.namesRev) { p.hlCache = []; p.hlRev = state.namesRev; }
     var cache = p.hlCache;
+    var name = p.parsed.name;
+    var byLine = findingsByLine(name);
+    var all = findingsFor(name);
+
+    /* One finding routinely points at several lines — the handshake check
+     * names both the line that sets the output and the line that waits on the
+     * input. Every one of those lines earns a marker, but the note belongs on
+     * the first of them only; printing the same paragraph under each line read
+     * as two separate problems. A marker further down toggles that one note. */
+    var homeLine = all.map(function (f) {
+      return f.refs.reduce(function (min, r) {
+        return r.prog === name && (min === null || r.line < min) ? r.line : min;
+      }, null);
+    });
+    var notes = all.map(function (f) { return findingNote(name, f); });
+
+    /* Notes start folded. The marker and its tooltip are what the listing
+     * owes you by default — the message is a paragraph of prose, and a program
+     * reads as a program only while the lines stay next to each other. Click a
+     * marker for the note; that choice is then remembered for the session. */
+    notes.forEach(function (note, i) {
+      var key = name + '#' + all[i].rule + '@' + homeLine[i];
+      note.hidden = !state.noteOpen[key];
+      note.dataset.noteKey = key;
+    });
+
     p.parsed.lines.forEach(function (line, i) {
+      var found = byLine[line.num];
+      var worst = !found ? null
+        : found.some(function (f) { return f.severity === 'error'; }) ? 'error' : 'warn';
+      var mk = h('span', { class: 'mk' + (worst ? ' sev-' + worst : '') });
+
       var html = cache[i];
       if (html === undefined) {
         html = (line.motion ? '<span class="tok-motion">' + line.motion + '</span> ' : '') + highlight(line);
         cache[i] = html;
       }
       box.appendChild(h('div', { class: 'cline', 'data-line': line.num }, [
+        mk,
         h('span', { class: 'ln', text: line.num }),
         h('span', { class: 'src', html: html })
       ]));
+
+      notes.forEach(function (note, i) { if (homeLine[i] === line.num) box.appendChild(note); });
+
+      if (!found) return;
+
+      mk.textContent = worst === 'error' ? '●' : '▲';
+      mk.setAttribute('role', 'button');
+      mk.setAttribute('tabindex', '0');
+      mk.setAttribute('aria-label', SEV_LABEL[worst] + ' on line ' + line.num + ', click for detail');
+      mk.title = found.map(function (f) {
+        return SEV_LABEL[f.severity] + ' — ' + (RULE_NAMES[f.rule] || f.rule) + '\n' + f.message;
+      }).join('\n\n');
+
+      var mine = found.map(function (f) { return all.indexOf(f); })
+                      .filter(function (i) { return i !== -1; });
+      function toggle() {
+        // any one of them still folded means the gesture is "show me"
+        var show = mine.some(function (i) { return notes[i].hidden; });
+        mine.forEach(function (i) {
+          notes[i].hidden = !show;
+          /* Remembered against the finding rather than re-rendered: a render()
+           * here would rebuild the listing and lose the place you were reading. */
+          state.noteOpen[notes[i].dataset.noteKey] = show;
+        });
+        /* The note may be homed a line or two above the marker just clicked,
+         * so bring it into view if it isn't already. */
+        if (show && mine.length) notes[mine[0]].scrollIntoView({ block: 'nearest' });
+      }
+      mk.addEventListener('click', function (ev) { ev.stopPropagation(); toggle(); });
+      mk.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); }
+      });
     });
     box.addEventListener('click', function (ev) {
       var t = ev.target;
       if (t.classList.contains('tok-call')) {
         var name = t.getAttribute('data-call').toUpperCase();
         if (state.programs[name]) { state.selected = name; render(); }
-        return;
       }
+    });
+    /* Cross-referencing a register or I/O point is a DOUBLE click. On a
+     * single one it fired while you were only trying to place the caret or
+     * start a selection, and every stray click on an R[] threw the whole tab
+     * over to Search mid-read. Double-click is the ordinary "look this up"
+     * gesture, and Ctrl+E on a selection still does the same thing. */
+    box.addEventListener('dblclick', function (ev) {
+      var t = ev.target;
       if (t.classList.contains('tok-reg') || t.classList.contains('tok-io')) crossRefToken(t.textContent);
     });
     return box;
@@ -1237,11 +2291,72 @@
     return sel;
   }
 
+  /* Side by side: two independent code panes.
+   *
+   * Each half is its own scroller. The pane itself stops scrolling and the
+   * two code boxes scroll instead, so one program can sit on line 40 while
+   * the other sits on line 400. Before this the pane was the only scroller,
+   * which dragged both halves along together and meant scrolling well past
+   * the end of the shorter program to reach the bottom of the longer one.
+   *
+   * Sync scroll puts that lockstep back deliberately, for the case where it
+   * IS what you want: two versions of the same program. It mirrors pixels
+   * rather than lines, which comes to the same thing — both halves take
+   * their font-size from --code-size, so the line heights always match. */
   function renderSplit(pane) {
+    pane.classList.add('splitting');
+
+    var boxes = [];
+    var echo = null;   // the half whose next scroll event we caused ourselves
+
+    function mirror(src, dst) {
+      var wasTop = dst.scrollTop, wasLeft = dst.scrollLeft;
+      if (wasTop === src.scrollTop && wasLeft === src.scrollLeft) return;
+      echo = dst;
+      dst.scrollTop = src.scrollTop;
+      dst.scrollLeft = src.scrollLeft;
+      /* Writing scrollTop clamps immediately and reads back clamped, so this
+       * tells us whether the write actually moved anything. One that didn't
+       * — dst already sitting at the end of the shorter program — fires no
+       * scroll event, so there is no echo waiting to be swallowed. */
+      if (dst.scrollTop === wasTop && dst.scrollLeft === wasLeft) echo = null;
+    }
+
+    function onScroll(ev) {
+      var src = ev.currentTarget;
+      /* Mirroring dst makes dst fire a scroll event of its own. Swallow that
+       * one echo rather than mirroring it back: the round trip would drag src
+       * to wherever dst landed, and when dst holds the shorter program that
+       * means the longer half can never scroll past the shorter one's last
+       * line. This is also why the guard is one specific element and not a
+       * timer or a rAF — nothing has to fire for it to be released. */
+      if (src === echo) { echo = null; return; }
+      echo = null;
+      if (!state.syncSplit || boxes.length < 2) return;
+      mirror(src, src === boxes[0] ? boxes[1] : boxes[0]);
+    }
+
+    var cb = h('input', { type: 'checkbox' });
+    cb.checked = state.syncSplit;
+    cb.addEventListener('change', function () {
+      state.syncSplit = cb.checked;
+      savePrefs();
+      /* Snap into line the moment it is ticked, taking the left half as the
+       * reference. No render() — that would rebuild both boxes and throw
+       * away wherever you had scrolled to. */
+      if (state.syncSplit && boxes.length === 2) mirror(boxes[0], boxes[1]);
+    });
+    var syncLabel = h('label', {
+      class: 'sync-toggle',
+      title: 'Scroll both halves together, line for line — for two versions of the same program. Off by default: two different programs read better when each half moves on its own.'
+    }, [cb]);
+    syncLabel.appendChild(document.createTextNode(' Sync scroll'));
+
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Side by side' }),
       h('span', { class: 'muted', text: 'drag a program from the library onto either half to view it there' }),
       h('span', { style: 'flex:1' }),
+      syncLabel,
       h('button', { class: 'btn subtle', text: 'Close split', onclick: function () { state.split = null; render(); } })
     ]));
 
@@ -1264,7 +2379,14 @@
           onclick: function () { state.pair = { a: state.selected, b: state.split }; state.tab = 'compare'; render(); }
         })
       ]));
-      col.appendChild(p ? buildCodeBox(p) : h('p', { class: 'muted', text: 'no program' }));
+      if (p) {
+        var box = buildCodeBox(p);
+        box.addEventListener('scroll', onScroll);
+        boxes.push(box);
+        col.appendChild(box);
+      } else {
+        col.appendChild(h('p', { class: 'muted', text: 'no program' }));
+      }
       wrap.appendChild(col);
     });
     pane.appendChild(wrap);
@@ -1277,19 +2399,20 @@
     if (state.editing) return renderEditor(pane, p);
     if (state.split && state.programs[state.split]) return renderSplit(pane);
 
-    var progFindings = state.findings.filter(function (f) {
-      return f.severity !== 'info' && f.refs.some(function (r) { return r.prog === p.parsed.name; });
-    });
+    var progFindings = findingsFor(p.parsed.name);
 
     var bar = h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: p.parsed.name }),
       p.parsed.attrs.COMMENT ? h('span', { class: 'muted', text: p.parsed.attrs.COMMENT }) : null,
       progFindings.length ? h('span', {
         class: 'badge warn', text: progFindings.length + ' issue' + (progFindings.length > 1 ? 's' : ''),
-        style: 'cursor:pointer', title: 'Open the Checks tab',
-        onclick: function () { state.tab = 'checks'; render(); }
+        style: 'cursor:pointer',
+        title: 'Marked in the gutter, line ' + flaggedLines(p.parsed.name).join(', ')
+          + '. Click for the Checks tab, filtered to this program.',
+        onclick: function () { state.checksProg = p.parsed.name; state.tab = 'checks'; render(); }
       }) : null,
       h('span', { style: 'flex:1' }),
+      codeSizeControl(),
       h('button', { class: 'btn', text: 'Edit', onclick: function () { state.editing = true; render(); } }),
       h('button', {
         class: 'btn', text: 'Side-by-side', title: 'Open a second program next to this one (or drag one from the library onto the right half)',
@@ -1312,7 +2435,7 @@
       })
     ]);
     pane.appendChild(bar);
-    var banner = uploadBanner();
+    var banner = uploadBanner(p.parsed.name);
     if (banner) pane.appendChild(banner);
     pane.appendChild(buildCodeBox(p));
   }
@@ -1410,6 +2533,7 @@
       h('span', { class: 'muted', text: 'saving re-parses the program and re-runs every check — renaming /PROG renames it in the library' }),
       status,
       h('span', { style: 'flex:1' }),
+      codeSizeControl(),
       h('button', { class: 'btn primary', text: 'Save to library', onclick: function () { save(false); } }),
       (p.origin.type === 'dir' && state.server)
         ? h('button', { class: 'btn', text: 'Save to library + disk', title: p.origin.path, onclick: function () { save(true); } })
@@ -1420,7 +2544,7 @@
       h('button', { class: 'btn subtle', text: 'Cancel', onclick: function () { state.editing = false; render(); } })
     ]);
     pane.appendChild(bar);
-    var banner = uploadBanner();
+    var banner = uploadBanner(p.parsed.name);
     if (banner) pane.appendChild(banner);
     if (p.origin.type === 'robot' && !(state.server && state.robot.ip)) {
       pane.appendChild(h('p', { class: 'muted', text: 'This program was read from robot ' + p.origin.ip + '. Connect to the robot (Robot tab) to send edits back over FTP with the snapshot/auto-restore safety net.' }));
@@ -1462,10 +2586,43 @@
 
     pane.appendChild(h('div', { class: 'code-toolbar' }, [h('span', { class: 'title', text: parsed.name })]));
 
+    /* Two things change how you read everything below them: which frames the
+     * program selects, and whether the parser understood every line. Both used
+     * to sit under the narrative, so a wrong UFRAME or an unparsed line was
+     * three scrolls down — behind the counts nobody checks twice. */
+    var top = h('div', { class: 'sum-top' });
+
+    if (parsed.errors.length) {
+      var errRow = h('div', { class: 'row' }, [h('span', { class: 'badge warn', text: 'parser' })]);
+      errRow.appendChild(h('div', { class: 'txt' }, [
+        h('div', { text: parsed.errors.length + ' line' + (parsed.errors.length > 1 ? 's' : '') + ' could not be read — the counts below, Checks, and Cross-reference are all missing whatever is in them.' })
+      ].concat(parsed.errors.map(function (e) { return h('div', { class: 'muted', text: e }); }))));
+      top.appendChild(errRow);
+    }
+
+    var uf = uniq(a.uframes.map(function (u) { return u.num; }));
+    var ut = uniq(a.utools.map(function (u) { return u.num; }));
+    var frameTxt;
+    if (uf.length || ut.length) {
+      var parts = [];
+      if (uf.length) parts.push('UFRAME ' + uf.join(', '));
+      if (ut.length) parts.push('UTOOL ' + ut.join(', '));
+      frameTxt = 'Selects ' + parts.join(' · ') + '.';
+    } else {
+      frameTxt = 'Sets no UFRAME or UTOOL — it runs against whatever frame the controller (or the calling program) left active.';
+    }
+    top.appendChild(h('div', { class: 'row' }, [
+      h('span', { class: 'badge info', text: 'frames' }),
+      h('div', { class: 'txt', text: frameTxt })
+    ]));
+
+    pane.appendChild(top);
+
+    /* Line count is deliberately not a card: the library listing shows it, and
+     * LINE_COUNT repeats it in the header table below. */
     var totalMoves = Object.keys(a.motions).reduce(function (s, k) { return s + a.motions[k]; }, 0);
     var cards = h('div', { class: 'cards' });
-    [[parsed.lines.length, 'program lines'],
-     [totalMoves, 'motion instructions'],
+    [[totalMoves, 'motion instructions'],
      [a.calls.length, 'subprogram calls'],
      [Object.keys(a.io).length, 'I/O points touched'],
      [Object.keys(a.registers).length, 'registers used'],
@@ -1485,8 +2642,6 @@
     var mv = [];
     ['J', 'L', 'C'].forEach(function (k) { if (a.motions[k]) mv.push(a.motions[k] + ' ' + ({ J: 'joint', L: 'linear', C: 'circular' })[k]); });
     if (mv.length) facts.appendChild(h('li', { text: 'Motion: ' + mv.join(', ') + ' move' + (totalMoves > 1 ? 's' : '') + '.' }));
-    if (a.uframes.length) facts.appendChild(h('li', { text: 'User frames selected: ' + uniq(a.uframes.map(function (u) { return u.num; })).join(', ') + '.' }));
-    if (a.utools.length) facts.appendChild(h('li', { text: 'Tool frames selected: ' + uniq(a.utools.map(function (u) { return u.num; })).join(', ') + '.' }));
     if (a.loops.length) {
       a.loops.forEach(function (lp) {
         facts.appendChild(h('li', { text: 'Loop: line ' + lp.jumpLine + ' jumps back to LBL[' + lp.label + '] at line ' + lp.defLine + ' — this section repeats.' }));
@@ -1507,11 +2662,6 @@
     });
     tw.appendChild(tbl);
     sum.appendChild(tw);
-
-    if (parsed.errors.length) {
-      sum.appendChild(h('h3', { text: 'Parser notes' }));
-      parsed.errors.forEach(function (e) { sum.appendChild(h('p', { class: 'muted', text: e })); });
-    }
     pane.appendChild(sum);
   }
 
@@ -1538,9 +2688,6 @@
     if (a.waits.length) actions.push('synchronizes with the cell via ' + a.waits.length + ' WAIT' + (a.waits.length > 1 ? 's' : ''));
     if (a.loops.length) actions.push('repeats a section ' + (a.loops.length > 1 ? a.loops.length + ' loops' : 'in a loop'));
     if (actions.length) out.push('It ' + actions.join(', ') + '.');
-
-    var comments = p.parsed.lines.filter(function (l) { return l.comment; }).slice(0, 3).map(function (l) { return l.comment; });
-    if (comments.length) out.push('Programmer comments: ' + comments.join(' / '));
     return out;
   }
 
@@ -1686,192 +2833,1195 @@
     pane.appendChild(flowWrap);
   }
 
-  /* Block to scroll back into view after the next render — isolating a block
-   * rebuilds the pane, and losing your place in a long graph defeats the
-   * point of isolating it. */
-  var cfgScrollTo = null;
-  var cfgFocusProg = null;
+  /* ---- flow tab: the control-flow canvas -------------------------------
+   *
+   * A pan/zoom surface rather than a page-height column of cards: on a
+   * jump-heavy program the arrows only make sense once you can pull back far
+   * enough to see the shape, then go in close to read the lines.
+   *
+   *   layout   "column" keeps one stack with the jumps arcing through the
+   *            gutter; "chart" spreads branches sideways and routes every jump
+   *            at right angles down a lane of its own
+   *   detail   "auto" swaps as you zoom: every line -> headings -> a bar per
+   *            block whose height is its line count
+   *   gaps     how much room the blocks and the arrow lanes get
+   *
+   * Zoom and pan survive a re-render of the same program, so isolating a block
+   * does not lose your place.
+   */
+
+  var CFG_KMIN = 0.05, CFG_KMAX = 2.5;
+  var CFG_FIT_FLOOR = 0.12;      // below this nothing is legible; pan instead
+  var CFG_CARD_W = { chartFull: 470, chartMap: 330 };
+  var CFG_TIERS = ['full', 'compact', 'map'];
+  var CFG_TIER_MAX = { full: CFG_KMAX, compact: 0.62, map: 0.30 };
+  var NS_SVG = 'http://www.w3.org/2000/svg';
+
+  /* Room between blocks and between the lanes the arrows run down. None of it
+   * scales the text — it only decides how much air the picture gets, so a knot
+   * of overlapping jumps can be pulled apart without zooming. */
+  var CFG_GAPS = {
+    tight:  { y: { full: 5,  compact: 4,  map: 2 },  pitch: 12, colGap: 30 },
+    normal: { y: { full: 16, compact: 12, map: 6 },  pitch: 24, colGap: 60 },
+    wide:   { y: { full: 44, compact: 34, map: 16 }, pitch: 48, colGap: 120 }
+  };
+
+  var cfgView = { k: 1, x: 0, y: 0 };
+  var cfgProg = null;      // program the view belongs to
+  var cfgTier = 'full';    // resolved tier (state.flowDetail may be 'auto')
+  var cfg = null;          // the mounted view; null when the tab is elsewhere
+  var cfgTip = null;
+  var cfgHooked = false;
+
+  function cfgGaps() { return CFG_GAPS[state.flowGaps] || CFG_GAPS.normal; }
+  function cfgPitch() { return cfgGaps().pitch; }
+  function cfgChartMode() { return state.flowLayout === 'chart'; }
 
   function renderCfg(pane, p) {
     var flow = FL.buildFlow(p.parsed);
-    // isolation belongs to one program's graph — switching or editing drops it
-    if (cfgFocusProg !== p.parsed.name) { state.flowFocus = null; cfgFocusProg = p.parsed.name; }
-    var focus = state.flowFocus;
-    if (focus !== null && focus >= flow.blocks.length) focus = state.flowFocus = null;
+    var fresh = cfgProg !== p.parsed.name;
+    if (fresh) { state.flowFocus = null; cfgProg = p.parsed.name; }
+    if (state.flowFocus !== null && state.flowFocus >= flow.blocks.length) state.flowFocus = null;
 
-    /* Isolation: the focused block plus every block an arrow runs to or from.
-     * Everything else is dimmed, and so are the arrows that miss it. */
-    var related = {};
-    if (focus !== null) {
-      related[focus] = true;
-      flow.edges.forEach(function (e) {
-        if (e.from === focus && e.to !== null) related[e.to] = true;
-        if (e.to === focus) related[e.from] = true;
+    var bar = h('div', { class: 'flow-bar' });
+    var vp = h('div', { class: 'flow-vp' });
+    var canvas = h('div', { class: 'flow-canvas tier-' + cfgTier });
+    var svg = document.createElementNS(NS_SVG, 'svg');
+    svg.setAttribute('class', 'flow-svg');
+    var col = h('div', { class: 'flow-col' });
+    var mini = h('div', { class: 'flow-mini' + (state.flowMini ? '' : ' hidden') });
+    var minisvg = document.createElementNS(NS_SVG, 'svg');
+    mini.appendChild(h('span', { class: 'cap', text: 'Overview' }));
+    mini.appendChild(minisvg);
+    var hint = h('p', { class: 'flow-hint' });
+
+    canvas.appendChild(svg);
+    canvas.appendChild(col);
+    vp.appendChild(canvas);
+
+    cfg = {
+      p: p, flow: flow, cards: [], geom: [], drawn: [], chart: null,
+      lineBlock: {}, hoverEdge: null,
+      vp: vp, canvas: canvas, svg: svg, col: col, mini: mini, minisvg: minisvg, hint: hint
+    };
+
+    cfgBuildBar(bar);
+    pane.appendChild(bar);
+    pane.appendChild(hint);
+    pane.appendChild(h('div', { class: 'flow-stage' }, [vp, mini]));
+
+    cfgBuildCards();
+    cfgIndexLines();
+    cfgWire();
+    cfgPaintHint();
+
+    /* Laid out now, not on a frame: the pane is live, so the cards can be
+     * measured immediately — and a frame that never arrives (a hidden window,
+     * a skipped paint) would otherwise leave the graph with no geometry at all
+     * and nothing to re-trigger it. The frame afterwards is only a refinement,
+     * for when a web font settles late and every card changes height. */
+    cfgLayout(fresh);
+    requestAnimationFrame(function () {
+      if (!cfg || cfg.canvas !== canvas) return;   // re-rendered underneath us
+      cfgLayout(fresh);
+    });
+  }
+
+  function cfgLayout(fresh) {
+    if (fresh) cfgFit();
+    else { cfgApplyTier(cfgTier); cfgRelayout(); cfgApplyView(); cfgAfterLayout(); }
+    cfgPaintFocus();
+  }
+
+  function cfgBuildBar(bar) {
+    function grp() { var g = h('span', { class: 'grp' }); bar.appendChild(g); return g; }
+    function sel(label, title, value, opts, onpick) {
+      var s = h('select', { title: title });
+      opts.forEach(function (o) {
+        var op = h('option', { value: o[0], text: o[1] });
+        if (o[0] === value) op.selected = true;
+        s.appendChild(op);
       });
+      s.addEventListener('change', function () { onpick(s.value); });
+      return h('label', { text: label }, [s]);
     }
 
-    var ctl = h('div', { class: 'flow-ctl' }, [
-      h('p', {
-        class: 'muted',
-        text: focus === null
-          ? 'Blocks run top to bottom. Curved arrows are jumps: amber going up = loop, blue going down = skip ahead; dashed = conditional (IF / timeout / skip). Click a block to isolate its jumps, ↗ to open it in the Code tab.'
-          : 'Isolated ' + flow.blocks[focus].title + ' — only the arrows into and out of it are drawn, and the blocks they connect stay lit. Click the block again to bring the rest back.'
-      }),
-      focus === null ? null : h('button', {
-        class: 'btn subtle', text: 'Show all',
-        onclick: function () { cfgScrollTo = focus; state.flowFocus = null; render(); }
-      })
-    ]);
-    pane.appendChild(ctl);
+    var g1 = grp();
+    g1.appendChild(h('button', { class: 'btn subtle', text: '−', title: 'Zoom out (−)',
+      onclick: function () { cfgZoomTo(cfgView.k / 1.25); } }));
+    cfg.zoomRead = h('span', { class: 'flow-zoom', text: '100%' });
+    g1.appendChild(cfg.zoomRead);
+    g1.appendChild(h('button', { class: 'btn subtle', text: '+', title: 'Zoom in (+)',
+      onclick: function () { cfgZoomTo(cfgView.k * 1.25); } }));
+    g1.appendChild(h('button', { class: 'btn subtle', text: 'Fit', title: 'Fit the whole program on screen (F)',
+      onclick: cfgFit }));
+    g1.appendChild(h('button', { class: 'btn subtle', text: '1:1', title: 'Back to 100% (0)',
+      onclick: function () { cfgZoomTo(1); } }));
 
-    var wrap = h('div', { class: 'flow-wrap' + (focus === null ? '' : ' isolated') });
-    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('class', 'flow-svg');
-    wrap.appendChild(svg);
-    var col = h('div', { class: 'flow-col' });
+    var g2 = grp();
+    g2.appendChild(sel('Layout',
+      'Column keeps one stack with the jumps arcing through the gutter. Chart spreads branches sideways and routes every jump at right angles in its own lane. (C)',
+      state.flowLayout, [['column', 'column'], ['chart', 'chart']],
+      function (v) { state.flowLayout = v; savePrefs(); cfgFit(); }));
+    g2.appendChild(sel('Gaps',
+      'Room between blocks and between the lanes the arrows run down. Wider pulls a knot of overlapping jumps apart; it does not change the size of the text. (S)',
+      state.flowGaps, [['tight', 'tight'], ['normal', 'normal'], ['wide', 'wide']],
+      function (v) { state.flowGaps = v; savePrefs(); cfgRebuild(cfgAnchor()); }));
 
+    var g3 = grp();
+    g3.appendChild(sel('Detail',
+      'How much of each block is drawn. Auto swaps as you zoom: every line, then the block’s own !*** banner comment *** with what it contains and calls, then a bar per block whose height is its line count.',
+      state.flowDetail,
+      [['auto', 'auto'], ['full', 'every line'], ['compact', 'headings'], ['map', 'bars']],
+      function (v) {
+        state.flowDetail = v;
+        savePrefs();
+        var a = cfgAnchor();
+        cfgApplyTier(v === 'auto' ? cfgTierFor(cfgView.k, cfgTier) : v);
+        cfgRebuild(a);
+      }));
+    var miniLbl = h('label', { title: 'Show the overview strip beside the graph' });
+    var miniBox = h('input', { type: 'checkbox' });
+    miniBox.checked = !!state.flowMini;
+    miniBox.addEventListener('change', function () {
+      state.flowMini = miniBox.checked;
+      savePrefs();
+      cfg.mini.classList.toggle('hidden', !state.flowMini);
+      cfgDrawMini();
+    });
+    miniLbl.appendChild(miniBox);
+    miniLbl.appendChild(document.createTextNode(' Overview'));
+    g3.appendChild(miniLbl);
+
+    var g4 = grp();
+    g4.appendChild(h('button', {
+      class: 'btn subtle' + (state.flowHideNav ? ' on' : ''),
+      text: state.flowHideNav ? 'Show library' : 'Hide library',
+      title: 'Hide the program library to give the graph the whole window. Only this tab — the library comes back on Code, Search and the rest. The ☰ in the header hides it everywhere.',
+      onclick: function () {
+        state.flowHideNav = !state.flowHideNav;
+        savePrefs();
+        applyFlowNav();
+        render();
+      }
+    }));
+  }
+
+  /* ---- cards ---- */
+
+  function cfgBuildCards() {
+    var p = cfg.p, flow = cfg.flow;
+    cfg.col.innerHTML = '';
+    cfg.cards = [];
+    if (!flow.blocks.length) {
+      cfg.col.appendChild(h('p', { class: 'muted', text: 'No executable lines in ' + p.parsed.name + '.' }));
+      return;
+    }
     flow.blocks.forEach(function (b) {
-      var cls = 'flow-card ' + b.kind.replace(' ', '-');
-      if (focus !== null) cls += b.idx === focus ? ' focus' : (related[b.idx] ? ' related' : ' dimmed');
-      var card = h('div', {
-        class: cls,
-        'data-block': b.idx,
-        title: b.idx === focus ? 'Click to show every block again' : 'Click to isolate this block’s jumps'
-      });
-      card.appendChild(h('div', { class: 'fc-head' }, [
-        h('span', { class: 'fc-title', text: b.title }),
-        h('span', { class: 'fc-range', text: b.kind === 'normal' ? '' : 'lines ' + b.startNum + '–' + b.endNum }),
+      var card = h('div', { class: 'flow-card ' + b.kind.replace(' ', '-'), 'data-block': String(b.idx) });
+
+      /* b.startNum can be a blank line: buildFlow buffers the blanks and
+       * comments above a label and hands them to the block that follows. Aim
+       * the ↗ at the first line that actually says something, which is also
+       * the first row drawn in the card. */
+      var firstShown = b.lines.filter(cfgSpeaks)[0];
+      var gotoNum = firstShown ? firstShown.num : b.startNum;
+
+      var head = h('div', { class: 'fc-head' }, [
+        h('span', { class: 'fc-title' + (b.kind === 'normal' ? ' anon' : ''), text: b.title }),
+        b.kind === 'normal' ? null : h('span', { class: 'fc-range', text: 'lines ' + b.startNum + '–' + b.endNum }),
         h('span', { class: 'fc-spacer' }),
         h('button', {
-          class: 'fc-goto', text: '↗',
-          'aria-label': 'Go to code',
-          title: 'Go to code — opens ' + p.parsed.name + ' at line ' + b.startNum,
-          onclick: function (ev) { ev.stopPropagation(); gotoLine(p.parsed.name, b.startNum); }
+          class: 'fc-goto', text: '↗', 'data-ln': String(gotoNum), 'aria-label': 'Go to code',
+          title: 'Go to code — opens ' + p.parsed.name + ' at line ' + gotoNum
         })
-      ]));
+      ]);
+      card.appendChild(head);
+
+      /* Which blocks lead here. In a jump-heavy program "how does it even
+       * reach this line" is the constant question, and at full detail the
+       * arrows alone do not answer it once there are more than a handful. */
+      if (b.inbound.length) {
+        var inRow = h('div', { class: 'fc-in' }, [h('span', { class: 'fc-in-label', text: 'from' })]);
+        b.inbound.forEach(function (e) {
+          var src = flow.blocks[e.from];
+          var atLine = e.kind === 'fall' ? (src ? src.endNum : b.startNum) : e.fromLine;
+          inRow.appendChild(h('button', {
+            class: 'fc-in-chip ' + e.kind, 'data-ln': String(atLine),
+            text: (e.kind === 'fall' ? '↓ ' : '↷ ') + atLine,
+            title: (e.kind === 'fall' ? 'falls through from line ' + atLine
+              : (e.kind === 'cond' ? 'conditional jump from line ' : 'jump from line ') + atLine) +
+              (src ? ' · ' + src.title : '') + ' — click to open it in the code'
+          }));
+        });
+        card.appendChild(inRow);
+      }
+
       var body = h('div', { class: 'fc-body' });
-      b.preview.forEach(function (t) {
-        body.appendChild(h('div', { class: 'fc-line', text: t.length > 64 ? t.slice(0, 62) + '…' : t }));
+      b.lines.forEach(function (l) {
+        if (!cfgSpeaks(l)) return;
+        var row = h('div', {
+          class: 'fc-line' + (l.comment !== null ? ' cmt' : ''),
+          'data-ln': String(l.num),
+          title: 'Line ' + l.num + ' — click to open it in the code'
+        }, [
+          h('span', { class: 'fc-ln', text: String(l.num) }),
+          h('span', { class: 'fc-src', text: (l.motion ? l.motion + ' ' : '') + l.text })
+        ]);
+        body.appendChild(row);
       });
-      var extra = b.lines.filter(function (l) { return l.comment === null; }).length - b.preview.length;
-      if (extra > 0) body.appendChild(h('div', { class: 'fc-line muted', text: '… ' + extra + ' more line' + (extra > 1 ? 's' : '') }));
       card.appendChild(body);
+
+      var cap = cfgCaption(b);
+      if (cap) card.appendChild(h('div', { class: 'fc-cap', text: cap }));
+      card.appendChild(h('div', { class: 'fc-sum', text: cfgSummary(b) }));
+
       var visCalls = b.calls.filter(function (n) { return !state.flowIgnore[n]; });
       if (visCalls.length) {
         var cc = h('div', { class: 'fc-calls' });
-        visCalls.forEach(function (name) {
+        cfgCounted(visCalls).forEach(function (c) {
+          var known = !!state.programs[c.name];
           cc.appendChild(h('span', {
-            class: 'chip read', text: '→ ' + name,
-            title: state.programs[name] ? 'Open ' + name : name + ' is not in the library',
-            onclick: state.programs[name]
-              ? function (ev) { ev.stopPropagation(); state.selected = name; render(); }
-              : null
+            class: 'chip read' + (known ? '' : ' absent'),
+            text: '→ ' + c.name + (c.n > 1 ? ' ×' + c.n : ''),
+            'data-prog': known ? c.name : null,
+            title: known
+              ? 'Open ' + c.name + (c.n > 1 ? ' — called ' + c.n + ' times in this block' : '')
+              : c.name + ' is not in the library'
           }));
         });
         card.appendChild(cc);
       }
-      var missing = flow.edges.filter(function (e) { return e.from === b.idx && e.missing; });
-      missing.forEach(function (e) {
-        card.appendChild(h('div', { class: 'fc-missing', text: '⚠ jumps to ' + e.label + ' — label not defined' }));
-      });
-      card.addEventListener('click', function () {
-        cfgScrollTo = b.idx;
-        state.flowFocus = state.flowFocus === b.idx ? null : b.idx;
-        render();
-      });
-      col.appendChild(card);
-    });
-    wrap.appendChild(col);
-    pane.appendChild(wrap);
 
-    requestAnimationFrame(function () {
-      drawFlowEdges(wrap, svg, flow, focus);
-      if (cfgScrollTo !== null) {
-        var el = wrap.querySelector('.flow-card[data-block="' + cfgScrollTo + '"]');
-        cfgScrollTo = null;
-        if (el) el.scrollIntoView({ block: 'center' });
-      }
+      flow.edges.filter(function (e) { return e.from === b.idx && e.missing; })
+        .forEach(function (e) {
+          card.appendChild(h('div', { class: 'fc-missing', text: '⚠ jumps to ' + e.label + ' — label not defined' }));
+        });
+
+      cfg.cards.push(card);
+      cfg.col.appendChild(card);
     });
   }
 
-  function drawFlowEdges(wrap, svg, flow, focus) {
-    var cards = wrap.querySelectorAll('.flow-card');
-    if (!cards.length) return;
-    var W = wrap.clientWidth, Hh = wrap.scrollHeight;
-    svg.setAttribute('width', W);
-    svg.setAttribute('height', Hh);
-    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + Hh);
-    var GUTTER = cards[0].offsetLeft;
-    var ns = 'http://www.w3.org/2000/svg';
+  function cfgSpeaks(l) { return l.comment !== null || String(l.text).trim() !== ''; }
 
-    var defs = document.createElementNS(ns, 'defs');
-    [['arr-fall', 'var(--gutter)'], ['arr-fwd', 'var(--motion)'], ['arr-back', 'var(--accent)']].forEach(function (d) {
-      var mk = document.createElementNS(ns, 'marker');
-      mk.setAttribute('id', d[0]);
-      mk.setAttribute('viewBox', '0 0 10 10');
-      mk.setAttribute('refX', '9'); mk.setAttribute('refY', '5');
-      mk.setAttribute('markerWidth', '7'); mk.setAttribute('markerHeight', '7');
-      mk.setAttribute('orient', 'auto-start-reverse');
-      var pth = document.createElementNS(ns, 'path');
-      pth.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
-      pth.setAttribute('fill', d[1]);
-      mk.appendChild(pth);
-      defs.appendChild(mk);
+  /* A heading is something the programmer already wrote: TP code is full of
+   * !***Appr Conveyor*** banner comments sitting above the label they
+   * describe, and buildFlow keeps those with the block that follows them. */
+  function cfgCaption(b) {
+    // only "!" remarks make headings — a "//PAUSE" is a disabled instruction, not a title
+    var isRemark = function (l) { return l.comment !== null && !/^\/\//.test(l.text); };
+    var lead = (b.leadIn ? b.lines.slice(0, b.leadIn) : []).filter(isRemark);
+    if (!lead.length) lead = b.lines.filter(isRemark);
+    var txt = lead.slice(0, 2)
+      .map(function (l) {
+        return String(l.text).replace(/^\s*!/, '').replace(/^[\s*=_-]+/, '').replace(/[\s*=_-]+$/, '').trim();
+      })
+      .filter(function (t) { return t; });
+    return txt.length ? txt.join(' · ') : null;
+  }
+
+  /* What is inside the block — the whole heading for a block with no caption
+   * of its own, and a size cue for the ones that have one. */
+  function cfgSummary(b) {
+    var moves = 0, waits = 0, io = 0, regs = 0, jumps = 0;
+    b.lines.forEach(function (l) {
+      if (l.comment !== null || !String(l.text).trim()) return;
+      var t = String(l.text);
+      if (l.motion) moves++;
+      if (/^WAIT\b/i.test(t)) waits++;
+      if (/\bJMP\b/.test(t)) jumps++;
+      if (/^(?:WAIT|IF)\b/i.test(t)) return;   // an = in a test is not a write
+      if (/\b(?:DO|RO|GO|AO|SO|UO|F|M)\[[^\]]*\]\s*=/.test(t)) io++;
+      if (/(?:^|[^A-Z])R\[[^\]]*\]\s*=/.test(t)) regs++;
     });
-    svg.appendChild(defs);
+    var parts = [cfgPlural(b.activeCount, 'line')];
+    if (moves) parts.push(cfgPlural(moves, 'move'));
+    if (waits) parts.push(cfgPlural(waits, 'wait'));
+    if (io) parts.push(io + ' I/O');
+    if (regs) parts.push(cfgPlural(regs, 'register'));
+    if (jumps) parts.push(cfgPlural(jumps, 'jump'));
+    return parts.join(' · ');
+  }
 
-    function cardBox(idx) {
-      var c = cards[idx];
-      return { top: c.offsetTop, bottom: c.offsetTop + c.offsetHeight };
-    }
-    function onFocus(e) {
-      return focus !== null && (e.from === focus || e.to === focus);
-    }
+  function cfgPlural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
 
-    // lane assignment for jump edges: longer spans further left. When a block
-    // is isolated its own arrows take the innermost lanes, so the ones you
-    // actually want to follow run closest to the blocks.
-    var jumps = flow.edges.filter(function (e) { return e.kind !== 'fall' && e.to !== null; });
-    jumps.sort(function (a, b) { return Math.abs(b.to - b.from) - Math.abs(a.to - a.from); });
-    jumps.forEach(function (e, i) { e.lane = i % 6; });
-    if (focus !== null) {
-      var lit = jumps.filter(onFocus);
-      lit.sort(function (a, b) { return Math.abs(a.to - a.from) - Math.abs(b.to - b.from); });
-      lit.forEach(function (e, i) { e.lane = i % 6; });
-    }
-
-    // dimmed arrows first so the isolated ones are drawn over them
-    var ordered = flow.edges.slice().sort(function (a, b) {
-      return (onFocus(a) ? 1 : 0) - (onFocus(b) ? 1 : 0);
+  /* One chip per program called, not one per CALL line: a block that sets
+   * three offsets in a row was showing → _SET_OFFS three times over. */
+  function cfgCounted(names) {
+    var out = [], seen = {};
+    names.forEach(function (n) {
+      if (seen[n] === undefined) { seen[n] = out.length; out.push({ name: n, n: 1 }); }
+      else out[seen[n]].n++;
     });
+    return out;
+  }
 
-    ordered.forEach(function (e) {
-      if (e.to === null) return;
-      var lit = focus === null || onFocus(e);
-      var from = cardBox(e.from), to = cardBox(e.to);
-      var path = document.createElementNS(ns, 'path');
-      if (e.kind === 'fall') {
-        var x = GUTTER + 30;
-        path.setAttribute('d', 'M ' + x + ' ' + (from.bottom + 1) + ' L ' + x + ' ' + (to.top - 1));
-        path.setAttribute('stroke', 'var(--gutter)');
-        if (lit) path.setAttribute('marker-end', 'url(#arr-fall)');
-      } else {
-        var back = to.top < from.top;
-        var y1 = from.bottom - 14;
-        var y2 = back ? to.top + 8 : to.top + 8;
-        var xr = GUTTER - 18 - e.lane * 20;
-        path.setAttribute('d',
-          'M ' + GUTTER + ' ' + y1 +
-          ' C ' + xr + ' ' + y1 + ', ' + xr + ' ' + y2 + ', ' + GUTTER + ' ' + y2);
-        path.setAttribute('stroke', back ? 'var(--accent)' : 'var(--motion)');
-        if (lit) path.setAttribute('marker-end', back ? 'url(#arr-back)' : 'url(#arr-fwd)');
-        if (e.kind === 'cond') path.setAttribute('stroke-dasharray', '5 4');
+  function cfgIndexLines() {
+    cfg.lineBlock = {};
+    cfg.flow.blocks.forEach(function (b) {
+      b.lines.forEach(function (l) { cfg.lineBlock[l.num] = b.idx; });
+    });
+  }
+
+  /* ---- tiers and layout ---- */
+
+  function cfgTierFor(k, current) {
+    // paired thresholds, so a tier does not flicker while you scrub the wheel
+    if (k >= 0.62) return 'full';
+    if (k >= 0.55 && current === 'full') return 'full';
+    if (k >= 0.30) return 'compact';
+    if (k >= 0.26 && current === 'compact') return 'compact';
+    return 'map';
+  }
+
+  function cfgApplyTier(t) {
+    cfgTier = t;
+    cfg.canvas.className = 'flow-canvas tier-' + t + (state.flowFocus === null ? '' : ' isolated');
+    cfg.cards.forEach(function (card, i) {
+      var b = cfg.flow.blocks[i];
+      // 3.2px of height per real line, so a long block still reads as long
+      card.style.height = t === 'map'
+        ? Math.max(13, Math.min(220, b.activeCount * 3.2)) + 'px'
+        : '';
+    });
+  }
+
+  /* Which column a block belongs in.
+   *
+   * A forward jump means "skip the next few blocks", so what it skips is a
+   * branch body and belongs one column right; the jump itself becomes a short
+   * hop down the spine instead of a long arc past everything.
+   *
+   * Depth is nesting, not overlap. A chain of IFs produces spans that cross
+   * each other — block 7 skips to 9 while block 8 skips to 10 — and counting
+   * every span over a block would march the whole middle of the program off to
+   * the right one step at a time. Only a span that strictly contains another
+   * pushes it further out, and only the longest jump out of any one block
+   * counts, because a dispatcher with eight IF…JMPs is offering eight
+   * alternatives, not eight nested branches. */
+  var CFG_MAX_COL = 4;
+
+  function cfgColumns() {
+    var d = [], i;
+    for (i = 0; i < cfg.flow.blocks.length; i++) d.push(0);
+    var longest = {};
+    cfg.flow.edges.forEach(function (e) {
+      if (e.to === null || e.kind === 'fall' || e.to <= e.from + 1) return;
+      if (longest[e.from] === undefined || e.to > longest[e.from]) longest[e.from] = e.to;
+    });
+    var spans = Object.keys(longest).map(function (from) {
+      return { lo: +from + 1, hi: longest[from] - 1 };
+    });
+    spans.forEach(function (sp) {
+      sp.depth = 0;
+      spans.forEach(function (o) {
+        if (o === sp) return;
+        if (o.lo <= sp.lo && o.hi >= sp.hi && (o.lo < sp.lo || o.hi > sp.hi)) sp.depth++;
+      });
+    });
+    spans.forEach(function (sp) {
+      for (var k = sp.lo; k <= sp.hi; k++) if (sp.depth + 1 > d[k]) d[k] = sp.depth + 1;
+    });
+    return d.map(function (v) { return Math.min(v, CFG_MAX_COL); });
+  }
+
+  /* Place the blocks and record geom[] in canvas coordinates. The side gutters
+   * are sized from the arrows that actually need them, so no arrow ever runs
+   * off the canvas however wide the gaps are set. */
+  function cfgRelayout() {
+    if (!cfg.cards.length) { cfg.geom = []; return; }
+    var gy = cfgGaps().y[cfgTier];
+    var pitch = cfgPitch();
+    var padL, padR;
+
+    if (cfgChartMode()) {
+      cfg.col.classList.add('chart');
+      var cw = cfgTier === 'map' ? CFG_CARD_W.chartMap : CFG_CARD_W.chartFull;
+      var cols = cfgColumns();
+      var lanes = cfgAssignLanes(cols);
+      var nCols = Math.max.apply(null, cols) + 1;
+
+      /* Each gap carries two channels: the forward jumps leaving the column on
+       * its left and the backward jumps arriving at the column on its right.
+       * Size it for exactly those — sizing every gap for the worst channel in
+       * the program is what pushes the canvas out to thousands of pixels on a
+       * program with one dispatcher. */
+      var colX = [0], c;
+      for (c = 0; c + 1 < nCols; c++) {
+        colX.push(colX[c] + cw + Math.max(cfgGaps().colGap,
+          44 + ((lanes.fwd[c] || 0) + (lanes.back[c + 1] || 0)) * pitch));
       }
-      path.setAttribute('fill', 'none');
-      path.setAttribute('stroke-width', lit && focus !== null ? '2.4' : '1.6');
-      if (!lit) path.setAttribute('opacity', '0.12');
-      svg.appendChild(path);
+      cfg.chart = { cols: cols, colX: colX, cw: cw };
+      padL = 44 + (lanes.back[0] || 0) * pitch;
+      padR = 44 + (lanes.fwd[nCols - 1] || 0) * pitch;
+
+      // width first, then heights — a card's height depends on its width
+      cfg.cards.forEach(function (cd, i) {
+        cd.style.width = cw + 'px';
+        cd.style.left = colX[cols[i]] + 'px';
+        cd.style.top = '0px';
+      });
+      var y = 0;
+      cfg.geom = cfg.cards.map(function (cd, i) {
+        var hh = cd.offsetHeight;
+        cd.style.top = y + 'px';
+        var g = { x: colX[cols[i]], y: y, w: cw, h: hh };
+        y += hh + gy;
+        return g;
+      });
+      cfg.col.style.height = Math.max(0, y - gy) + 'px';
+      cfg.col.style.width = (colX[nCols - 1] + cw) + 'px';
+    } else {
+      cfg.chart = null;
+      cfg.col.classList.remove('chart');
+      cfg.cards.forEach(function (cd) { cd.style.width = ''; cd.style.left = ''; cd.style.top = ''; });
+      cfg.col.style.height = '';
+      cfg.col.style.width = '';
+      cfg.col.style.gap = gy + 'px';
+      cfg.geom = [];
+      padL = 44 + (cfgAssignLanes(null).back[0] || 0) * pitch;
+      padR = 24;
+    }
+
+    cfg.canvas.style.paddingLeft = padL + 'px';
+    cfg.canvas.style.paddingRight = padR + 'px';
+
+    if (cfgChartMode()) {
+      // .flow-col is positioned in chart mode, so its own offset is the origin
+      var bx = cfg.col.offsetLeft, by = cfg.col.offsetTop;
+      cfg.geom.forEach(function (g) { g.x += bx; g.y += by; });
+    } else {
+      // in column mode a card's own offsets are already canvas-relative
+      cfg.geom = cfg.cards.map(function (cd) {
+        return { x: cd.offsetLeft, y: cd.offsetTop, w: cd.offsetWidth, h: cd.offsetHeight };
+      });
+    }
+  }
+
+  /* Every jump gets a vertical lane to run down. Lanes are handed out by
+   * interval colouring, so two jumps share one only when their spans do not
+   * overlap — an index-modulo-N lane drops unrelated arrows on top of each
+   * other, which is most of what makes a gutter look like a knot. A forward
+   * jump uses the channel right of the rightmost column it touches, a backward
+   * jump the one left of the leftmost, so a loop and a skip can never be drawn
+   * over each other. */
+  function cfgAssignLanes(cols) {
+    var jumps = cfg.flow.edges.filter(function (e) { return e.kind !== 'fall' && e.to !== null; });
+    if (!cols) {                          // column layout: one shared gutter
+      return { fwd: {}, back: { 0: cfgColourLanes(jumps.map(cfgSpan)) } };
+    }
+    var gf = {}, gb = {}, fwd = {}, back = {};
+    jumps.forEach(function (e) {
+      var a = cols[e.from], b = cols[e.to];
+      if (e.to > e.from) (gf[Math.max(a, b)] = gf[Math.max(a, b)] || []).push(cfgSpan(e));
+      else (gb[Math.min(a, b)] = gb[Math.min(a, b)] || []).push(cfgSpan(e));
     });
+    Object.keys(gf).forEach(function (g) { fwd[g] = cfgColourLanes(gf[g]); });
+    Object.keys(gb).forEach(function (g) { back[g] = cfgColourLanes(gb[g]); });
+    return { fwd: fwd, back: back };
+  }
+
+  function cfgSpan(e) { return { e: e, t: Math.min(e.from, e.to), b: Math.max(e.from, e.to) }; }
+
+  function cfgColourLanes(items) {
+    items.sort(function (a, b) { return a.t - b.t || a.b - b.b; });
+    var ends = [];
+    items.forEach(function (it) {
+      for (var i = 0; i < ends.length; i++) {
+        if (ends[i] <= it.t) { ends[i] = it.b; it.e.lane = i; return; }
+      }
+      it.e.lane = ends.length;
+      ends.push(it.b);
+    });
+    return ends.length;
+  }
+
+  /* Changing tier or layout changes every card's position, so the block you
+   * were reading would jump away. Pin it: remember which block sits under the
+   * viewport centre and where inside it, then put that spot back. */
+  function cfgAnchor() {
+    if (!cfg || !cfg.geom.length) return null;
+    var cy = cfg.vp.clientHeight / 2;
+    var worldY = (cy - cfgView.y) / cfgView.k;
+    for (var i = 0; i < cfg.geom.length; i++) {
+      if (worldY < cfg.geom[i].y + cfg.geom[i].h || i === cfg.geom.length - 1) {
+        return {
+          idx: i,
+          frac: cfg.geom[i].h ? Math.max(0, Math.min(1, (worldY - cfg.geom[i].y) / cfg.geom[i].h)) : 0,
+          cy: cy
+        };
+      }
+    }
+    return null;
+  }
+
+  function cfgRebuild(anchor) {
+    cfgApplyTier(cfgTier);
+    cfgRelayout();
+    if (anchor && cfg.geom[anchor.idx]) {
+      cfgView.y = anchor.cy - (cfg.geom[anchor.idx].y + anchor.frac * cfg.geom[anchor.idx].h) * cfgView.k;
+    }
+    cfgApplyView();
+    cfgAfterLayout();
+  }
+
+  function cfgAfterLayout() {
+    cfgHush();
+    cfgDrawEdges();
+    cfgDrawMini();
+  }
+
+  /* At the bars tier a 13px block is 2px of screen at 15% zoom, and the title
+   * inside it is noise. Hide it when it cannot render at a readable size — the
+   * overview strip and the hover read-out cover reading at that range. */
+  function cfgHush() {
+    if (cfgTier !== 'map') {
+      cfg.cards.forEach(function (c) { c.classList.remove('hushed'); });
+      return;
+    }
+    cfg.cards.forEach(function (c, i) {
+      c.classList.toggle('hushed', (cfg.geom[i] ? cfg.geom[i].h : 0) * cfgView.k < 9);
+    });
+  }
+
+  /* ---- arrows ---- */
+
+  /* markerUnits defaults to strokeWidth, which multiplies the head by the
+   * line — and the width already carries the zoom compensation, so a
+   * highlighted arrow ended up wearing a head several times the size of a
+   * plain one. Size it in user units and scale it by the zoom alone, so every
+   * head is a constant 7px on screen whatever the arrow is doing. */
+  function cfgMarker(id, color, inv) {
+    var mk = document.createElementNS(NS_SVG, 'marker');
+    mk.setAttribute('id', id);
+    mk.setAttribute('viewBox', '0 0 10 10');
+    mk.setAttribute('refX', '9'); mk.setAttribute('refY', '5');
+    mk.setAttribute('markerUnits', 'userSpaceOnUse');
+    mk.setAttribute('markerWidth', (7 * inv).toFixed(2));
+    mk.setAttribute('markerHeight', (7 * inv).toFixed(2));
+    mk.setAttribute('orient', 'auto-start-reverse');
+    var p = document.createElementNS(NS_SVG, 'path');
+    p.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+    p.setAttribute('fill', color);
+    mk.appendChild(p);
+    return mk;
+  }
+
+  function cfgOnFocus(e) {
+    return state.flowFocus !== null && (e.from === state.flowFocus || e.to === state.flowFocus);
+  }
+
+  /* Shape and colour only. Width, fade and arrowhead are decided in one pass
+   * afterwards, because hovering an arrow changes them for every arrow at once
+   * and redrawing the geometry on mousemove would be waste. */
+  function cfgRegister(path, e, markerId) {
+    var inv = 1 / Math.max(0.35, cfgView.k);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke-linejoin', 'round');
+    if (e.kind === 'cond') {
+      path.setAttribute('stroke-dasharray', (5 * inv).toFixed(1) + ' ' + (4 * inv).toFixed(1));
+    }
+    var idx = cfg.drawn.length;
+    cfg.drawn.push({ e: e, path: path, marker: 'url(#' + markerId + ')' });
+    cfg.gVis.appendChild(path);
+
+    /* A hairline is not something you can reliably point at, so every arrow
+     * gets an invisible fat twin to catch the cursor. They all live in a layer
+     * above the visible ones, where hit-testing finds them first. */
+    var hit = document.createElementNS(NS_SVG, 'path');
+    hit.setAttribute('d', path.getAttribute('d'));
+    hit.setAttribute('fill', 'none');
+    hit.setAttribute('stroke', 'transparent');
+    hit.setAttribute('stroke-width', (11 * inv).toFixed(2));
+    hit.setAttribute('data-edge', String(idx));
+    cfg.gHit.appendChild(hit);
+  }
+
+  /* Point at an arrow and it is the only one drawn solid, with the blocks at
+   * both ends outlined — which is the whole question a jump-heavy program
+   * raises: where does this one go? */
+  function cfgEmphasise() {
+    var inv = 1 / Math.max(0.35, cfgView.k);
+    var hot = cfg.hoverEdge !== null && cfg.drawn[cfg.hoverEdge] ? cfg.drawn[cfg.hoverEdge].e : null;
+
+    cfg.cards.forEach(function (c) { c.classList.remove('hot'); });
+
+    cfg.drawn.forEach(function (d, i) {
+      var lit = hot ? i === cfg.hoverEdge : (state.flowFocus === null || cfgOnFocus(d.e));
+      var strong = hot ? lit : (lit && state.flowFocus !== null);
+      // the fade on everything else carries the emphasis — the lit arrow only
+      // needs a nudge, not to go fat
+      d.path.setAttribute('stroke-width', ((strong ? 1.7 : 1.3) * inv).toFixed(2));
+      d.path.setAttribute('opacity', lit ? '1' : '0.1');
+      if (lit) d.path.setAttribute('marker-end', d.marker);
+      else d.path.removeAttribute('marker-end');
+    });
+
+    if (hot) {
+      if (cfg.cards[hot.from]) cfg.cards[hot.from].classList.add('hot');
+      if (cfg.cards[hot.to]) cfg.cards[hot.to].classList.add('hot');
+    }
+  }
+
+  function cfgSetHoverEdge(i) {
+    if (!cfg || i === cfg.hoverEdge) return;
+    cfg.hoverEdge = i;
+    if (cfg.drawn.length) cfgEmphasise();
+  }
+
+  function cfgDrawEdges() {
+    cfg.svg.innerHTML = '';
+    cfg.drawn = [];
+    if (!cfg.geom.length) return;
+    var W = cfg.canvas.offsetWidth, H = cfg.canvas.offsetHeight;
+    cfg.svg.setAttribute('width', W); cfg.svg.setAttribute('height', H);
+    cfg.svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+
+    var inv = 1 / Math.max(0.35, cfgView.k);
+    var defs = document.createElementNS(NS_SVG, 'defs');
+    defs.appendChild(cfgMarker('fc-arr-fall', 'var(--gutter)', inv));
+    defs.appendChild(cfgMarker('fc-arr-fwd', 'var(--motion)', inv));
+    defs.appendChild(cfgMarker('fc-arr-back', 'var(--accent)', inv));
+    cfg.svg.appendChild(defs);
+
+    cfg.gVis = document.createElementNS(NS_SVG, 'g');
+    cfg.gHit = document.createElementNS(NS_SVG, 'g');
+    cfg.gHit.setAttribute('class', 'hits');
+    cfg.svg.appendChild(cfg.gVis);
+    cfg.svg.appendChild(cfg.gHit);
+
+    cfgAssignLanes(cfg.chart ? cfg.chart.cols : null);
+
+    // dimmed arrows first, so the isolated ones draw over them
+    cfg.flow.edges.slice()
+      .sort(function (a, b) { return (cfgOnFocus(a) ? 1 : 0) - (cfgOnFocus(b) ? 1 : 0); })
+      .forEach(function (e) {
+        if (e.to === null || !cfg.geom[e.from] || !cfg.geom[e.to]) return;
+        if (cfgChartMode()) cfgChartEdge(e);
+        else cfgColumnEdge(e);
+      });
+    cfgEmphasise();
+  }
+
+  /* column layout: a spine in the gutter for fall-through, beziers for jumps */
+  function cfgColumnEdge(e) {
+    var a = cfg.geom[e.from], b = cfg.geom[e.to];
+    var GUT = a.x;
+    var path = document.createElementNS(NS_SVG, 'path');
+    var mk;
+    if (e.kind === 'fall') {
+      var x = GUT - 8;
+      path.setAttribute('d', 'M ' + x + ' ' + (a.y + a.h + 1) + ' L ' + x + ' ' + (b.y - 1));
+      path.setAttribute('stroke', 'var(--gutter)');
+      mk = 'fc-arr-fall';
+    } else {
+      var back = b.y < a.y;
+      var y1 = Math.max(a.y + 2, a.y + a.h - 14);
+      var y2 = b.y + Math.min(8, b.h / 2);
+      var xr = GUT - 22 - (e.lane || 0) * cfgPitch();
+      path.setAttribute('d', 'M ' + GUT + ' ' + y1 +
+        ' C ' + xr + ' ' + y1 + ', ' + xr + ' ' + y2 + ', ' + GUT + ' ' + y2);
+      path.setAttribute('stroke', back ? 'var(--accent)' : 'var(--motion)');
+      mk = back ? 'fc-arr-back' : 'fc-arr-fwd';
+    }
+    cfgRegister(path, e, mk);
+  }
+
+  /* chart layout: right-angle routing. Fall-through drops out of the bottom
+   * and into the top of the next block; a jump leaves the side of its block,
+   * runs down a lane clear of every column it passes, and comes back in at the
+   * side of its target. */
+  function cfgChartEdge(e) {
+    var a = cfg.geom[e.from], b = cfg.geom[e.to];
+    var path = document.createElementNS(NS_SVG, 'path');
+
+    if (e.kind === 'fall') {
+      var ax = a.x + 30, bx = b.x + 30;
+      var y1 = a.y + a.h + 1, y2 = b.y - 1;
+      path.setAttribute('d', Math.abs(ax - bx) < 1
+        ? 'M ' + ax + ' ' + y1 + ' L ' + ax + ' ' + y2
+        : cfgElbow([[ax, y1], [ax, (y1 + y2) / 2], [bx, (y1 + y2) / 2], [bx, y2]], 8));
+      path.setAttribute('stroke', 'var(--gutter)');
+      cfgRegister(path, e, 'fc-arr-fall');
+      return;
+    }
+
+    var back = e.to < e.from;
+    var lane = e.lane || 0, pitch = cfgPitch();
+    var x0, x1, xc;
+    if (back) {
+      x0 = a.x; x1 = b.x;
+      xc = Math.min(a.x, b.x) - 22 - lane * pitch;
+    } else {
+      x0 = a.x + a.w; x1 = b.x + b.w;
+      xc = Math.max(a.x + a.w, b.x + b.w) + 22 + lane * pitch;
+    }
+    var ya = a.y + Math.max(10, a.h - 14);      // leaves at the jump line
+    var yb = b.y + Math.min(10, b.h / 2);       // arrives at the top of the target
+    path.setAttribute('d', cfgElbow([[x0, ya], [xc, ya], [xc, yb], [x1, yb]], 8));
+    path.setAttribute('stroke', back ? 'var(--accent)' : 'var(--motion)');
+    cfgRegister(path, e, back ? 'fc-arr-back' : 'fc-arr-fwd');
+  }
+
+  /* Orthogonal polyline with rounded corners: right angles read as a wiring
+   * diagram, and the rounding stops them looking like stair steps. */
+  function cfgElbow(pts, r) {
+    var d = 'M ' + pts[0][0] + ' ' + pts[0][1];
+    for (var i = 1; i < pts.length - 1; i++) {
+      var prev = pts[i - 1], p = pts[i], next = pts[i + 1];
+      var rr = Math.min(r,
+        (Math.abs(p[0] - prev[0]) + Math.abs(p[1] - prev[1])) / 2,
+        (Math.abs(next[0] - p[0]) + Math.abs(next[1] - p[1])) / 2);
+      var inDx = cfgSign(p[0] - prev[0]), inDy = cfgSign(p[1] - prev[1]);
+      var outDx = cfgSign(next[0] - p[0]), outDy = cfgSign(next[1] - p[1]);
+      d += ' L ' + (p[0] - inDx * rr) + ' ' + (p[1] - inDy * rr);
+      d += ' Q ' + p[0] + ' ' + p[1] + ' ' + (p[0] + outDx * rr) + ' ' + (p[1] + outDy * rr);
+    }
+    var last = pts[pts.length - 1];
+    return d + ' L ' + last[0] + ' ' + last[1];
+  }
+
+  function cfgSign(v) { return v > 0 ? 1 : v < 0 ? -1 : 0; }
+
+  /* ---- the view ---- */
+
+  function cfgApplyView() {
+    cfg.canvas.style.transform = 'translate(' + cfgView.x.toFixed(1) + 'px,' + cfgView.y.toFixed(1) +
+      'px) scale(' + cfgView.k.toFixed(4) + ')';
+    if (cfg.zoomRead) cfg.zoomRead.textContent = Math.round(cfgView.k * 100) + '%';
+    cfgMiniViewport();
+  }
+
+  function cfgZoomTo(k, cx, cy) {
+    if (!cfg) return;
+    k = Math.max(CFG_KMIN, Math.min(CFG_KMAX, k));
+    if (k === cfgView.k) return;
+    if (cx === undefined) { cx = cfg.vp.clientWidth / 2; cy = cfg.vp.clientHeight / 2; }
+    var wx = (cx - cfgView.x) / cfgView.k, wy = (cy - cfgView.y) / cfgView.k;
+    cfgView.k = k;
+    cfgView.x = cx - wx * k;
+    cfgView.y = cy - wy * k;
+    cfgApplyView();
+
+    var want = state.flowDetail === 'auto' ? cfgTierFor(cfgView.k, cfgTier) : state.flowDetail;
+    if (want !== cfgTier) { var a = cfgAnchor(); cfgApplyTier(want); cfgRebuild(a); }
+    else { cfgHush(); cfgScheduleEdges(); }
+  }
+
+  /* Only the stroke width depends on zoom, so redrawing the arrows can wait
+   * for the wheel to settle. */
+  var cfgEdgeTimer = null;
+  function cfgScheduleEdges() {
+    clearTimeout(cfgEdgeTimer);
+    cfgEdgeTimer = setTimeout(function () { if (cfg) cfgDrawEdges(); }, 90);
+  }
+
+  function cfgCentre(k) {
+    var cw = cfg.canvas.offsetWidth, ch = cfg.canvas.offsetHeight;
+    cfgView.k = k;
+    cfgView.x = cw * k < cfg.vp.clientWidth ? (cfg.vp.clientWidth - cw * k) / 2 : 8;
+    cfgView.y = ch * k < cfg.vp.clientHeight ? (cfg.vp.clientHeight - ch * k) / 2 : 8;
+    cfgApplyView();
+  }
+
+  function cfgFitScale() {
+    var cw = cfg.canvas.offsetWidth, ch = cfg.canvas.offsetHeight;
+    if (!cw || !ch) return 1;
+    return Math.max(CFG_FIT_FLOOR, Math.min(1,
+      Math.min((cfg.vp.clientWidth - 16) / cw, (cfg.vp.clientHeight - 16) / ch)));
+  }
+
+  /* Fitting and auto-detail chase each other: a coarser tier makes the program
+   * fit, which raises the zoom, which asks for a finer tier again. So solve it
+   * as a fixed point — try a tier, measure, stop when the zoom that tier fits
+   * at is the zoom that tier belongs to. If two tiers trade places, keep the
+   * coarser one and hold the zoom at its ceiling, so "auto" never lands in a
+   * state its own rule disagrees with. */
+  function cfgFit() {
+    if (!cfg || !cfg.cards.length) return;
+    if (state.flowDetail !== 'auto') {
+      cfgApplyTier(state.flowDetail);
+      cfgRelayout();
+      cfgCentre(cfgFitScale());
+    } else {
+      var t = cfgTier, k = 1, seen = [];
+      for (var pass = 0; pass < 4; pass++) {
+        cfgApplyTier(t);
+        cfgRelayout();
+        k = cfgFitScale();
+        var want = cfgTierFor(k, t);
+        if (want === t) break;
+        if (seen.indexOf(want) !== -1) {          // oscillating — take the coarser
+          t = CFG_TIERS[Math.max(CFG_TIERS.indexOf(want), CFG_TIERS.indexOf(t))];
+          cfgApplyTier(t);
+          cfgRelayout();
+          k = Math.min(cfgFitScale(), CFG_TIER_MAX[t]);
+          break;
+        }
+        seen.push(t);
+        t = want;
+      }
+      cfgCentre(Math.min(k, CFG_TIER_MAX[t]));
+    }
+    cfgAfterLayout();
+  }
+
+  /* ---- pointer ---- */
+
+  function cfgCapture(el, id, on) {
+    try { if (on) el.setPointerCapture(id); else el.releasePointerCapture(id); }
+    catch (e) { /* not capturable */ }
+  }
+
+  function cfgUpTo(target, cls, stop) {
+    var t = target;
+    while (t && t !== stop) {
+      if (t.classList && t.classList.contains(cls)) return t;
+      t = t.parentNode;
+    }
+    return null;
+  }
+
+  function cfgAttrAt(target, name, stop) {
+    var t = target;
+    while (t && t !== stop) {
+      if (t.getAttribute) {
+        var v = t.getAttribute(name);
+        if (v !== null) return v;
+      }
+      t = t.parentNode;
+    }
+    return null;
+  }
+
+  function cfgWire() {
+    var vp = cfg.vp, canvas = cfg.canvas;
+    var drag = null, press = null;
+
+    vp.addEventListener('wheel', function (ev) {
+      ev.preventDefault();
+      var dy = ev.deltaY * (ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? vp.clientHeight : 1);
+      if (ev.shiftKey) {                        // shift+wheel scrolls, for reading
+        cfgView.y -= dy;
+        cfgApplyView();
+        return;
+      }
+      // ctrlKey arrives from a trackpad pinch: same gesture, finer steps
+      var rate = ev.ctrlKey ? 0.010 : 0.0022;
+      var r = vp.getBoundingClientRect();
+      cfgZoomTo(cfgView.k * Math.exp(-dy * rate), ev.clientX - r.left, ev.clientY - r.top);
+    }, { passive: false });
+
+    /* A left drag pans only from the background: inside a block the browser is
+     * left alone so the program text can be selected. The middle button pans
+     * from anywhere, including across a block. */
+    vp.addEventListener('pointerdown', function (ev) {
+      var hit = cfgUpTo(ev.target, 'flow-card', canvas);
+      if (ev.button === 1 || (ev.button === 0 && !hit)) {
+        // no autoscroll cursor, and no selection started underneath — without
+        // this a pan sweeps a selection across every block it passes over
+        ev.preventDefault();
+        drag = { x: ev.clientX, y: ev.clientY, ox: cfgView.x, oy: cfgView.y, moved: 0, hit: hit };
+        cfgCapture(vp, ev.pointerId, true);
+        vp.classList.add('panning');
+        cfgHideTip();
+        cfgSetHoverEdge(null);
+        return;
+      }
+      if (ev.button === 0) {
+        press = {
+          card: hit,
+          ln: cfgAttrAt(ev.target, 'data-ln', canvas),
+          prog: cfgAttrAt(ev.target, 'data-prog', canvas),
+          x: ev.clientX, y: ev.clientY
+        };
+      }
+    });
+
+    vp.addEventListener('pointermove', function (ev) {
+      if (drag) {
+        var dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+        drag.moved = Math.max(drag.moved, Math.abs(dx) + Math.abs(dy));
+        cfgView.x = drag.ox + dx;
+        cfgView.y = drag.oy + dy;
+        cfgApplyView();
+        return;
+      }
+      // a press that turns into a drag is the user selecting text, not a click
+      if (press && Math.abs(ev.clientX - press.x) + Math.abs(ev.clientY - press.y) > 4) press = null;
+      var onEdge = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-edge');
+      cfgSetHoverEdge(onEdge === null || onEdge === undefined ? null : parseInt(onEdge, 10));
+      cfgHoverTip(ev);
+    });
+
+    vp.addEventListener('pointerup', function (ev) {
+      if (drag) {
+        var wasClick = drag.moved < 4, hit = drag.hit;
+        drag = null;
+        vp.classList.remove('panning');
+        cfgCapture(vp, ev.pointerId, false);
+        /* Pointer capture retargets this event to the viewport, so the block
+         * has to come from the press, not from ev.target. */
+        if (wasClick) cfgSetFocus(hit);
+        return;
+      }
+      if (!press) return;
+      var pr = press;
+      press = null;
+      // most specific first: a → chip, then a line or the ↗, then the block
+      if (pr.prog) { state.selected = pr.prog; render(); }
+      else if (pr.ln !== null) gotoLine(cfg.p.parsed.name, parseInt(pr.ln, 10));
+      else cfgSetFocus(pr.card);
+    });
+
+    vp.addEventListener('pointercancel', function () {
+      drag = null; press = null; vp.classList.remove('panning');
+    });
+    vp.addEventListener('pointerleave', function () {
+      cfgHideTip();
+      cfgSetHoverEdge(null);
+    });
+
+    var miniDrag = false;
+    cfg.mini.addEventListener('pointerdown', function (ev) {
+      ev.preventDefault();            // no text selection while scrubbing
+      miniDrag = true;
+      cfgCapture(cfg.mini, ev.pointerId, true);
+      cfgMiniSeek(ev);
+    });
+    cfg.mini.addEventListener('pointermove', function (ev) { if (miniDrag) cfgMiniSeek(ev); });
+    cfg.mini.addEventListener('pointerup', function (ev) {
+      miniDrag = false;
+      cfgCapture(cfg.mini, ev.pointerId, false);
+    });
+
+    // the viewport is user-resizable, and the overview is scaled to its height
+    if (window.ResizeObserver) {
+      new ResizeObserver(function () { if (cfg && cfg.vp === vp) cfgDrawMini(); }).observe(vp);
+    }
+  }
+
+  /* Isolation: the clicked block plus every block an arrow runs to or from.
+   * Everything else recedes, and so do the arrows that miss it. Handled in
+   * place rather than through render(), so the zoom and pan stay put. */
+  function cfgSetFocus(card) {
+    if (!cfg) return;
+    if (!card) state.flowFocus = null;
+    else {
+      var idx = parseInt(card.getAttribute('data-block'), 10);
+      state.flowFocus = state.flowFocus === idx ? null : idx;
+    }
+    cfgPaintFocus();
+    cfgDrawEdges();
+    cfgPaintHint();
+  }
+
+  function cfgPaintFocus() {
+    var focus = state.flowFocus;
+    var related = {};
+    if (focus !== null) {
+      related[focus] = true;
+      cfg.flow.edges.forEach(function (e) {
+        if (e.from === focus && e.to !== null) related[e.to] = true;
+        if (e.to === focus) related[e.from] = true;
+      });
+    }
+    cfg.canvas.classList.toggle('isolated', focus !== null);
+    cfg.cards.forEach(function (c, i) {
+      c.classList.remove('focus', 'related', 'dimmed');
+      if (focus === null) return;
+      c.classList.add(i === focus ? 'focus' : (related[i] ? 'related' : 'dimmed'));
+    });
+  }
+
+  function cfgPaintHint() {
+    if (!cfg) return;
+    cfg.hint.innerHTML = '';
+    var focus = state.flowFocus;
+    cfg.hint.appendChild(document.createTextNode(focus === null
+      ? 'Wheel zooms, dragging the background pans (or middle-drag anywhere), shift+wheel scrolls. Amber arrows go up — a loop; blue go down — a skip; dashed is conditional. Hover an arrow to trace it, click a block to isolate its jumps, ↗ or a line to open the code.'
+      : 'Isolated ' + cfg.flow.blocks[focus].title + ' — only the arrows into and out of it are drawn, and the blocks they connect stay lit. '));
+    if (focus !== null) {
+      cfg.hint.appendChild(h('button', {
+        class: 'btn subtle', text: 'Show all',
+        onclick: function () { cfgSetFocus(null); }
+      }));
+    }
+  }
+
+  /* The read-out answers "what am I looking at" when the blocks are 3px tall.
+   * Screen-sized, so zoom never touches it. */
+  function cfgHoverTip(ev) {
+    var c = cfgUpTo(ev.target, 'flow-card', cfg.canvas);
+    if (!c || cfgTier === 'full') { cfgHideTip(); return; }
+    var b = cfg.flow.blocks[parseInt(c.getAttribute('data-block'), 10)];
+    if (!cfgTip) { cfgTip = h('div', { class: 'flow-tip' }); document.body.appendChild(cfgTip); }
+    cfgTip.innerHTML = '';
+    var cap = cfgCaption(b);
+    cfgTip.appendChild(h('div', { class: 't', text: b.title + (cap ? '  ' + cap : '') }));
+    cfgTip.appendChild(h('div', { class: 'r', text: 'lines ' + b.startNum + '–' + b.endNum + ' · ' + cfgSummary(b) }));
+    cfgTip.appendChild(h('pre', {
+      text: b.lines.filter(cfgSpeaks).slice(0, 8).map(function (l) {
+        return l.num + '  ' + (l.motion ? l.motion + ' ' : '') + l.text;
+      }).join('\n')
+    }));
+    cfgTip.style.display = 'block';
+    cfgTip.style.left = Math.max(4, Math.min(window.innerWidth - cfgTip.offsetWidth - 8, ev.clientX + 14)) + 'px';
+    cfgTip.style.top = Math.max(4, Math.min(window.innerHeight - cfgTip.offsetHeight - 8, ev.clientY + 14)) + 'px';
+  }
+
+  function cfgHideTip() { if (cfgTip) cfgTip.style.display = 'none'; }
+
+  /* ---- overview strip ---- */
+
+  function cfgDrawMini() {
+    if (!cfg) return;
+    cfg.minisvg.innerHTML = '';
+    cfg.miniGeom = null;
+    if (!state.flowMini || !cfg.geom.length) return;
+    var mw = cfg.mini.clientWidth, mh = cfg.mini.clientHeight;
+    if (!mw || !mh) return;
+    cfg.minisvg.setAttribute('viewBox', '0 0 ' + mw + ' ' + mh);
+
+    var padT = 22, padL = 10;
+    var contentW = cfg.canvas.offsetWidth, contentH = cfg.canvas.offsetHeight;
+    /* Separate scales on the two axes: the strip is a schematic, not a scale
+     * drawing, and these programs are far taller than they are wide. */
+    var wide = cfgChartMode();
+    var sy = (mh - padT - 10) / contentH;
+    var sx = wide ? (mw - padL - 62) / contentW : 0;
+    cfg.miniGeom = { sx: sx, sy: sy, padT: padT, padL: padL, wide: wide, contentW: contentW, contentH: contentH };
+
+    var g = document.createElementNS(NS_SVG, 'g');
+    var lastLabelY = -99;
+    cfg.geom.forEach(function (gm, i) {
+      var b = cfg.flow.blocks[i];
+      var y = padT + gm.y * sy, hgt = Math.max(1.2, gm.h * sy);
+      var r = document.createElementNS(NS_SVG, 'rect');
+      r.setAttribute('x', (wide ? padL + gm.x * sx : padL + 2).toFixed(2));
+      r.setAttribute('y', y.toFixed(2));
+      r.setAttribute('width', (wide ? Math.max(3, gm.w * sx) : 34).toFixed(2));
+      r.setAttribute('height', hgt.toFixed(2));
+      r.setAttribute('rx', '1.5');
+      r.setAttribute('fill', b.kind.indexOf('stop') !== -1 ? 'var(--write)'
+        : b.kind === 'label' ? 'var(--accent)' : 'var(--gutter)');
+      r.setAttribute('opacity', b.kind === 'normal' ? '0.45' : '0.85');
+      g.appendChild(r);
+
+      /* Landmarks get a name at true screen size — this is the part that stays
+       * readable when the canvas itself is down at 12%. */
+      if (b.kind.indexOf('label') === 0 && y - lastLabelY > 11) {
+        var t = document.createElementNS(NS_SVG, 'text');
+        t.setAttribute('x', (wide ? mw - 58 : padL + 41).toFixed(1));
+        t.setAttribute('y', (y + Math.min(hgt, 8)).toFixed(2));
+        t.setAttribute('font-size', '9.5');
+        t.setAttribute('font-family', 'IBM Plex Mono, monospace');
+        t.setAttribute('fill', 'var(--faint)');
+        t.textContent = b.title.replace(/^LBL\[(\d+)\]\s*/, '$1 ').slice(0, wide ? 7 : 15);
+        g.appendChild(t);
+        lastLabelY = y;
+      }
+    });
+    cfg.minisvg.appendChild(g);
+
+    var vpr = document.createElementNS(NS_SVG, 'rect');
+    vpr.setAttribute('class', 'vpr');
+    vpr.setAttribute('fill', 'var(--accent)'); vpr.setAttribute('fill-opacity', '0.14');
+    vpr.setAttribute('stroke', 'var(--accent)'); vpr.setAttribute('stroke-width', '1');
+    vpr.setAttribute('rx', '2');
+    cfg.minisvg.appendChild(vpr);
+    cfgMiniViewport();
+  }
+
+  /* The box says which part of the program is on screen. Zoomed right out the
+   * visible region is larger than the program, so clamp it to the strip —
+   * otherwise it runs off both ends and reads as no box at all. */
+  function cfgMiniViewport() {
+    if (!cfg || !cfg.miniGeom) return;
+    var mg = cfg.miniGeom;
+    var vpr = cfg.minisvg.querySelector('.vpr');
+    if (!vpr) return;
+    var y0 = mg.padT + (-cfgView.y / cfgView.k) * mg.sy;
+    var y1 = y0 + (cfg.vp.clientHeight / cfgView.k) * mg.sy;
+    y0 = Math.max(mg.padT - 2, y0);
+    y1 = Math.min(mg.padT + mg.contentH * mg.sy + 2, y1);
+    vpr.setAttribute('y', y0.toFixed(2));
+    vpr.setAttribute('height', Math.max(2, y1 - y0).toFixed(2));
+    if (mg.wide) {
+      var x0 = mg.padL + (-cfgView.x / cfgView.k) * mg.sx;
+      var x1 = x0 + (cfg.vp.clientWidth / cfgView.k) * mg.sx;
+      x0 = Math.max(mg.padL - 2, x0);
+      x1 = Math.min(mg.padL + mg.contentW * mg.sx + 2, x1);
+      vpr.setAttribute('x', x0.toFixed(2));
+      vpr.setAttribute('width', Math.max(3, x1 - x0).toFixed(2));
+    } else {
+      vpr.setAttribute('x', (mg.padL - 2).toFixed(2));
+      vpr.setAttribute('width', '42');
+    }
+  }
+
+  function cfgMiniSeek(ev) {
+    if (!cfg || !cfg.miniGeom) return;
+    var mg = cfg.miniGeom;
+    var r = cfg.mini.getBoundingClientRect();
+    cfgView.y = cfg.vp.clientHeight / 2 - ((ev.clientY - r.top - mg.padT) / mg.sy) * cfgView.k;
+    if (mg.wide && mg.sx > 0) {
+      cfgView.x = cfg.vp.clientWidth / 2 - ((ev.clientX - r.left - mg.padL) / mg.sx) * cfgView.k;
+    }
+    cfgApplyView();
+  }
+
+  /* ---- keyboard, and the library-hiding class ---- */
+
+  function cfgKey(ev) {
+    if (state.tab !== 'flow' || !cfg) return false;
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName)) return false;
+    if (ev.ctrlKey || ev.metaKey || ev.altKey) return false;
+    if (ev.key === '+' || ev.key === '=') { cfgZoomTo(cfgView.k * 1.25); return true; }
+    if (ev.key === '-' || ev.key === '_') { cfgZoomTo(cfgView.k / 1.25); return true; }
+    if (ev.key === '0') { cfgZoomTo(1); return true; }
+    if (ev.key === 'f' || ev.key === 'F') { cfgFit(); return true; }
+    if (ev.key === 'c' || ev.key === 'C') {
+      state.flowLayout = cfgChartMode() ? 'column' : 'chart';
+      savePrefs();
+      render();
+      return true;
+    }
+    if (ev.key === 's' || ev.key === 'S') {
+      var opts = ['tight', 'normal', 'wide'];
+      state.flowGaps = opts[(opts.indexOf(state.flowGaps) + 1) % opts.length];
+      savePrefs();
+      render();
+      return true;
+    }
+    if (ev.key === 'Escape' && state.flowFocus !== null) { cfgSetFocus(null); return true; }
+    return false;
+  }
+
+  /* Two ways to lose the 250px library. The header's ☰ hides it on every tab
+   * (state.hideNav). The Flow tab has its own, because the graph is wide and
+   * the library is the difference between reading it and panning constantly,
+   * while on every other tab the library is how a program gets picked. */
+  function applyFlowNav() {
+    var app = document.querySelector('.app');
+    if (!app) return;
+    var hidden = !!state.hideNav || (state.tab === 'flow' && !!state.flowHideNav);
+    app.classList.toggle('nav-hidden', hidden);
+    var btn = document.getElementById('btn-nav');
+    if (btn) {
+      btn.classList.toggle('on', !!state.hideNav);
+      btn.title = state.hideNav ? 'Show the program library (hidden on every tab)' : 'Hide the program library on every tab';
+    }
+  }
+
+  /* Above the phone breakpoint the sidebar sits in the grid, so ☰ toggles the
+   * saved hide; below it the sidebar is a drawer, and ☰ opens that instead. */
+  function toggleNav() {
+    if (window.matchMedia && window.matchMedia('(max-width: 760px)').matches) { setNav(!navOpen()); return; }
+    state.hideNav = !state.hideNav;
+    savePrefs();
+    applyFlowNav();
   }
 
   /* ---- checks tab ---- */
@@ -1896,10 +4046,64 @@
     return state.findings.filter(function (f) { return !state.hiddenRules[f.rule]; });
   }
 
+  /* The problems one program is answerable for: what the "N issues" badge
+   * counts, and what the Code view marks in the gutter. Info-level notes stay
+   * out — they are observations, not things to go and fix — and a muted check
+   * stays out too, so hiding a check in the Checks tab also stops it marking
+   * up the listing. (The badge used to read state.findings directly and went
+   * on counting checks you had hidden.) */
+  function findingsFor(name) {
+    return visibleFindings().filter(function (f) {
+      return f.severity !== 'info' && f.refs.some(function (r) { return r.prog === name; });
+    });
+  }
+
+  /* line number -> the findings pointing at it, within one program */
+  function findingsByLine(name) {
+    var byLine = {};
+    findingsFor(name).forEach(function (f) {
+      f.refs.forEach(function (r) {
+        if (r.prog !== name) return;
+        var list = byLine[r.line] || (byLine[r.line] = []);
+        if (list.indexOf(f) === -1) list.push(f);
+      });
+    });
+    return byLine;
+  }
+
+  function flaggedLines(name) {
+    return Object.keys(findingsByLine(name))
+      .map(Number)
+      .sort(function (a, b) { return a - b; });
+  }
+
   function renderChecks(pane) {
+    /* A program the filter named can leave the library under it (removed, or
+     * the library cleared), which would otherwise leave the tab stuck showing
+     * nothing with no way to tell why. */
+    if (state.checksProg && !state.programs[state.checksProg]) state.checksProg = null;
+    var only = state.checksProg;
+
+    var picker = h('select', { class: 'prog-select', title: 'Show only the findings that touch one program' });
+    picker.appendChild(h('option', { value: '', text: 'All programs' }));
+    Object.keys(state.programs).sort().forEach(function (n) {
+      var o = h('option', { value: n, text: n });
+      if (n === only) o.selected = true;
+      picker.appendChild(o);
+    });
+    picker.addEventListener('change', function () {
+      state.checksProg = picker.value || null;
+      render();
+    });
+
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Program checks' }),
-      h('span', { class: 'muted', text: 'grouped by check — collapse a group, or Hide it to mute that check everywhere' })
+      picker,
+      only ? h('span', {
+        class: 'chip read', text: 'showing only ' + only + ' ' + '✕',
+        title: 'Show every program again',
+        onclick: function () { state.checksProg = null; render(); }
+      }) : h('span', { class: 'muted', text: 'grouped by check — collapse a group, or Hide it to mute that check everywhere' })
     ]));
 
     if (!Object.keys(state.programs).length) {
@@ -1908,6 +4112,11 @@
     }
 
     var visible = visibleFindings();
+    if (only) {
+      visible = visible.filter(function (f) {
+        return f.refs.some(function (r) { return r.prog === only; });
+      });
+    }
     var counts = { error: 0, warn: 0, info: 0 };
     visible.forEach(function (f) { counts[f.severity]++; });
     var cards = h('div', { class: 'cards' });
@@ -1935,7 +4144,11 @@
     }
 
     if (!visible.length) {
-      pane.appendChild(h('p', { text: hidden.length ? 'Nothing to show — every remaining check is clean.' : 'No issues found. Jumps all land on defined labels, every register and I/O point used has a label, and all called programs are present.' }));
+      pane.appendChild(h('p', {
+        text: only ? 'Nothing flagged in ' + only + '.'
+          : hidden.length ? 'Nothing to show — every remaining check is clean.'
+          : 'No issues found. Jumps all land on defined labels, every register and I/O point used has a label, and all called programs are present.'
+      }));
       return;
     }
 
@@ -1981,8 +4194,15 @@
           var row = h('div', { class: 'cg-row' });
           row.appendChild(h('div', { class: 'cg-msg', text: f.message }));
           var refs = h('div', { class: 'cg-refs' });
-          f.refs.slice(0, 12).forEach(function (r) { refs.appendChild(chip(r, f.severity === 'error' ? 'write' : 'read')); });
-          if (f.refs.length > 12) refs.appendChild(h('span', { class: 'muted', text: ' +' + (f.refs.length - 12) + ' more' }));
+          /* Filtered, a cross-program finding (a CALL to a missing program,
+           * say) would otherwise spend its twelve chips on other programs and
+           * never show the line you came here for. Lead with this program's
+           * lines and account for the rest in words. */
+          var shown = only ? f.refs.filter(function (r) { return r.prog === only; }) : f.refs;
+          var elsewhere = f.refs.length - shown.length;
+          shown.slice(0, 12).forEach(function (r) { refs.appendChild(chip(r, f.severity === 'error' ? 'write' : 'read')); });
+          if (shown.length > 12) refs.appendChild(h('span', { class: 'muted', text: ' +' + (shown.length - 12) + ' more' }));
+          if (elsewhere) refs.appendChild(h('span', { class: 'muted', text: ' \u00b7 ' + elsewhere + ' more in other programs' }));
           row.appendChild(refs);
           body.appendChild(row);
         });
@@ -2051,6 +4271,19 @@
       class: 'btn subtle', text: 'Collapse all',
       onclick: function () { state.xrefOpen = {}; render(); }
     }));
+    // Unused items only exist when controller data is loaded — every register
+    // the robot holds, not just the ones programs mention — and that is also
+    // when they get in the way, so the toggle is saved with the preferences.
+    var unusedCb = h('input', { type: 'checkbox' });
+    unusedCb.checked = !state.xrefHideUnused;
+    unusedCb.addEventListener('change', function () {
+      state.xrefHideUnused = !unusedCb.checked;
+      savePrefs();
+      draw();
+    });
+    bar.appendChild(h('label', { title: 'Registers, PRs and I/O points that no program in the library reads or writes' }, [
+      unusedCb, document.createTextNode(' Show unused')
+    ]));
     pane.appendChild(bar);
 
     var wrap = h('div', { class: 'xref' });
@@ -2107,23 +4340,36 @@
       var haveValues = !!(state.extern && state.extern.registers && state.extern.registers.length);
       var havePRValues = !!(state.extern && state.extern.posregs && state.extern.posregs.length);
       var sections = [
-        ['Registers R[n]' + (haveValues ? ' — all controller registers, with values' : ''), registerEntries()],
-        ['Position registers PR[n]' + (havePRValues ? ' — with controller values' : ''), posregEntries()],
+        ['Registers R[n]' + (haveValues ? ' — all controller registers, with values' : ''), registerEntries(), 'regs'],
+        ['Position registers PR[n]' + (havePRValues ? ' — with controller values' : ''), posregEntries(), 'prs'],
         ['I/O points', Object.keys(x.io).sort(function (a, b) {
           var ta = x.io[a], tb = x.io[b];
           return ta.type === tb.type ? ta.index - tb.index : ta.type.localeCompare(tb.type);
-        }).map(function (k) { return { key: k, label: x.io[k].label, refs: x.io[k].refs }; })],
-        ['Timers', entriesOf(x.timers, function (n) { return 'TIMER[' + n + ']'; })]
+        }).map(function (k) { return { key: k, label: x.io[k].label, refs: x.io[k].refs }; }), 'io'],
+        ['Timers', entriesOf(x.timers, function (n) { return 'TIMER[' + n + ']'; }), 'timers']
       ];
       sections.forEach(function (sec) {
         var entries = sec[1].filter(function (e) {
+          if (state.xrefHideUnused && !e.refs.length) return false;
           if (!q) return true;
           return e.key.toLowerCase().indexOf(q) !== -1 ||
             (e.label || '').toLowerCase().indexOf(q) !== -1 ||
             (e.value !== undefined && String(e.value).indexOf(q) !== -1);
         });
         if (!entries.length) return;
-        wrap.appendChild(h('h3', { text: sec[0] + ' (' + entries.length + ')' }));
+        // a filter is a request to see matches, so it looks past a fold
+        var folded = !q && !!state.xrefFolded[sec[2]];
+        var sh = h('button', { class: 'xs-head' + (folded ? ' folded' : ''), title: folded ? 'Expand this section' : 'Collapse this section' }, [
+          h('span', { class: 'xi-caret', text: folded ? '▸' : '▾' }),
+          h('span', { text: sec[0] + ' (' + entries.length + ')' })
+        ]);
+        sh.addEventListener('click', function () {
+          if (state.xrefFolded[sec[2]]) delete state.xrefFolded[sec[2]]; else state.xrefFolded[sec[2]] = true;
+          savePrefs();
+          draw();
+        });
+        wrap.appendChild(sh);
+        if (folded) return;
         entries.forEach(function (e) {
           var open = !!state.xrefOpen[e.key];
           var reads = 0, writes = 0;
@@ -2161,37 +4407,225 @@
 
   /* ---- search tab ---- */
 
-  var searchOpts = { caseSensitive: false, wholeWord: false, regex: false };
+  var searchOpts = { caseSensitive: false, wholeWord: false, regex: false, replace: false };
 
   /* Build a matcher(text) -> {index, length} | null for the query.
-   * A bare item like "R[10]" or "DO[104]" also matches its labeled form
-   * ("R[10:pallet slot]"), which is how the code actually reads. */
+   *
+   * An item query is recognised from the type and index alone, so it does not
+   * have to be finished: "R[40", "R[40:", "R[40]" and "R[40:box count]" are
+   * all item searches for R 40. That matters because the results update as
+   * you type — the old form only recognised a closed "R[40]", so every
+   * keystroke before the bracket ran as plain text and swept up PR[40],
+   * AR[40], SR[40] and R[400]. A plain substring can never separate them:
+   * "PR[40:box base]" literally contains "R[40:box base]".
+   *
+   * The type guard is what does the work. R, PR, AR and SR all end in R, so
+   * matching R requires a non-letter in front of it; the same guard is now
+   * applied to every type rather than just R.
+   *
+   * Anything typed after the colon narrows by label, matched anywhere inside
+   * it, so "R[40:box" finds "R[40:box count]" while still excluding PR.
+   */
+  /* Escape a literal for use inside a RegExp. */
+  function escapeRe(t) { return String(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+  var ITEM_TYPES = 'R|PR|AR|SR|DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|AI|AO|F|M|TIMER|LBL';
+  var ITEM_QUERY = new RegExp(
+    '^\\s*(' + ITEM_TYPES + ')\\s*\\[\\s*(\\d+)\\s*' +   // type and index
+    '(?:,\\s*(\\d+)\\s*)?' +                             // optional component, PR[20,1]
+    '(?::\\s*([^\\]]*?)\\s*)?' +                         // optional label fragment
+    '\\]?\\s*$', 'i');                                   // closing bracket optional
+
   function buildMatcher(q) {
     var flags = searchOpts.caseSensitive ? 'g' : 'gi';
     var re = null;
-    var item = q.match(/^(R|PR|DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|AI|AO|F|M|TIMER|LBL|AR)\[(\d+)\]$/i);
-    if (item && !searchOpts.regex) {
+    var item = searchOpts.regex ? null : q.match(ITEM_QUERY);
+    if (item) {
       var type = item[1].toUpperCase();
-      var guard = type === 'R' ? '(?:^|[^A-Z])' : '\\b';
-      re = new RegExp(guard + '(' + type + '\\[\\s*' + item[2] + '\\s*(?::[^\\]]*)?\\])', 'g');
-      return function (text) {
+      var comp = item[3] ? ',\\s*' + item[3] + '\\s*' : '(?:\\s*,\\s*\\d+\\s*)?';
+      var label = item[4]
+        ? ':[^\\]]*' + escapeRe(item[4]) + '[^\\]]*'
+        : '(?::[^\\]]*)?';
+      re = new RegExp('(?:^|[^A-Za-z])(' + type + '\\[\\s*' + item[2] + '\\s*' + comp + label + '\\])', flags);
+      var itemMatch = function (text) {
         re.lastIndex = 0;
         var m = re.exec(text);
         return m ? { index: m.index + m[0].indexOf(m[1]), length: m[1].length } : null;
       };
+      // keep the character before the item (it is context, not the match)
+      itemMatch.replaceAll = function (text, repl) {
+        return text.replace(re, function (m0, m1) { return m0.slice(0, m0.indexOf(m1)) + repl; });
+      };
+      itemMatch.positions = function (text) {
+        var out = [], m;
+        re.lastIndex = 0;
+        while ((m = re.exec(text)) !== null) out.push({ index: m.index + m[0].indexOf(m[1]), length: m[1].length });
+        return out;
+      };
+      return itemMatch;
     }
     if (searchOpts.regex) {
       try { re = new RegExp(q, flags); } catch (e) { return { error: 'Invalid regex: ' + e.message }; }
     } else {
-      var escd = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      var escd = escapeRe(q);
       if (searchOpts.wholeWord) escd = '\\b' + escd + '\\b';
       re = new RegExp(escd, flags);
     }
-    return function (text) {
+    var plainMatch = function (text) {
       re.lastIndex = 0;
       var m = re.exec(text);
       return m ? { index: m.index, length: m[0].length || 1 } : null;
     };
+    // a function replacement, so "$1" or "$&" typed into the box stays literal
+    plainMatch.replaceAll = function (text, repl) { return text.replace(re, function () { return repl; }); };
+    plainMatch.positions = function (text) {
+      var out = [], m;
+      re.lastIndex = 0;
+      while ((m = re.exec(text)) !== null) {
+        out.push({ index: m.index, length: m[0].length || 1 });
+        if (!m[0].length) re.lastIndex++;
+      }
+      return out;
+    };
+    return plainMatch;
+  }
+
+  /* Library-wide find and replace. The hits come from the search matcher run
+   * over each parsed line's raw row, so a replacement is written back exactly
+   * where the listing had it. Two kinds of hit start unticked: a comment
+   * (which the robot never executes) and a hit that is the target of an
+   * assignment, since "R[30]=..." becoming "1500=..." will not translate.
+   * The edit lands in the library only; sending to the robot or writing to
+   * disk stays per program, the same as an editor save. */
+  function replaceTargetsAssignment(raw, match) {
+    // any match on the line, not just the first: IF (R[30]<10),R[30]=(10)
+    return match.positions(raw).some(function (m) { return /^\s*=(?!=)/.test(raw.slice(m.index + m.length)); });
+  }
+
+  function applyReplacements(hits) {
+    var byProg = {}, undo = {};
+    hits.forEach(function (hh) {
+      if (!byProg[hh.prog]) byProg[hh.prog] = [];
+      byProg[hh.prog].push({ fileLine: hh.line.fileLine, count: hh.line.raw.split('\n').length, text: hh.after });
+    });
+    var progs = Object.keys(byProg).sort();
+    progs.forEach(function (n) {
+      var p = state.programs[n];
+      undo[n] = p.source;
+      var src = P.applyLineEdits(p.source, byProg[n]);
+      var parsed = P.parseLS(src, n + '.LS');
+      state.programs[n] = { parsed: parsed, analysis: A.analyzeProgram(parsed), source: src, origin: p.origin };
+    });
+    rebuildDerived();
+    persist();
+    state.replaced = { count: hits.length, progs: progs, undo: undo, sent: {}, busy: null };
+  }
+
+  /* Upload one changed program from the banner, behind the same "checks found
+   * errors, send anyway?" gate as the editor's Save + send. The outcome is
+   * kept on the banner row, so a run of sends reads as a checklist. */
+  function sendReplaced(name, onDone) {
+    var r = state.replaced, p = state.programs[name];
+    if (!r || !p || r.busy || !(state.server && state.robot.ip)) { if (onDone) onDone(false); return; }
+    var blocking = state.findings.filter(function (f) {
+      return f.severity === 'error' && f.refs.some(function (x) { return x.prog === name; });
+    });
+    if (blocking.length && !confirm('Checks found ' + blocking.length + ' error(s) in ' + name + ' that will likely fail translation on the robot:\n\n' +
+      blocking.map(function (f) { return '• ' + f.message; }).join('\n') + '\n\nSend anyway? (The robot version is snapshotted and auto-restored if translation fails.)')) {
+      r.sent[name] = { skipped: true };
+      render();
+      if (onDone) onDone(false);
+      return;
+    }
+    r.busy = name;
+    r.sent[name] = { busy: true };
+    render();
+    sendToRobot(name, p.source, function (b) {
+      if (state.replaced === r) { r.busy = null; r.sent[name] = b; }
+      render();
+      if (onDone) onDone(!!b.ok);
+    });
+  }
+
+  /* One after another, never in parallel: the bridge holds one FTP session
+   * per upload and the controller translates one file at a time. A failure
+   * or a declined "send anyway" stops the run where it is. */
+  function sendAllReplaced() {
+    var r = state.replaced;
+    if (!r || r.busy) return;
+    var todo = r.progs.filter(function (n) { return !(r.sent[n] && r.sent[n].ok); });
+    if (!todo.length) return;
+    if (!confirm('Send ' + todo.length + ' program' + (todo.length === 1 ? '' : 's') + ' to robot ' + state.robot.ip + ' over FTP, one after another?\n\n' +
+      todo.join(', ') + '\n\nEach is snapshotted on the controller first and auto-restored if the translation is rejected. A failure stops the run so you can look at it.')) return;
+    (function next(i) {
+      if (i >= todo.length || state.replaced !== r) return;
+      sendReplaced(todo[i], function (ok) { if (ok) next(i + 1); });
+    })(0);
+  }
+
+  function undoReplacements() {
+    var r = state.replaced;
+    if (!r) return;
+    Object.keys(r.undo).forEach(function (n) {
+      var p = state.programs[n];
+      if (!p) return;
+      var parsed = P.parseLS(r.undo[n], n + '.LS');
+      state.programs[n] = { parsed: parsed, analysis: A.analyzeProgram(parsed), source: r.undo[n], origin: p.origin };
+    });
+    rebuildDerived();
+    persist();
+    state.replaced = null;
+  }
+
+  function replacedBanner() {
+    var r = state.replaced;
+    if (!r) return null;
+    var el = h('div', { class: 'banner good' });
+    el.appendChild(h('strong', { text: 'Replaced ' + r.count + ' occurrence' + (r.count === 1 ? '' : 's') + ' in ' + r.progs.length + ' program' + (r.progs.length === 1 ? '' : 's') + ' — in the library only. ' }));
+    var canSend = !!(state.server && state.robot.ip);
+    el.appendChild(h('span', { text: canSend
+      ? 'Every check has been re-run on the new text. Send each program to ' + state.robot.ip + ' from here, or all of them in turn; each upload is snapshotted and verified, and auto-restored if the controller rejects it.'
+      : 'Nothing has gone to the robot or to disk. Connect to a robot on the Robot tab to send these from here, or open each program and use Edit → Save to library + disk. Every check has been re-run on the new text.' }));
+    var list = h('div', { class: 'banner-errs' });
+    var unsent = 0, anySent = false;
+    r.progs.forEach(function (n) {
+      var s = r.sent[n];
+      var row = h('div', { class: 'replaced-row' });
+      row.appendChild(h('span', {
+        class: 'chip read', text: n, title: 'Open ' + n + ' in the Code tab',
+        onclick: function () { state.selected = n; state.tab = 'code'; state.editing = false; render(); }
+      }));
+      if (s && s.busy) row.appendChild(h('span', { class: 'muted', text: 'uploading to ' + state.robot.ip + '…' }));
+      else if (s && s.ok) { anySent = true; row.appendChild(h('span', { class: 'badge ok', text: 'on robot' })); }
+      else if (s && s.skipped) row.appendChild(h('span', { class: 'muted', text: 'not sent — checks found errors' }));
+      else if (s) {
+        row.appendChild(h('span', { class: 'badge warn', text: 'failed' }));
+        row.appendChild(h('span', { class: 'muted', text: (s.error || 'unknown error') + (s.restored ? ' — previous version restored on the robot' : '') }));
+      }
+      if (!(s && s.ok)) unsent++;
+      if (canSend && !(s && s.ok)) row.appendChild(btn({
+        class: 'btn', text: s && !s.busy ? 'Retry' : 'Send',
+        title: 'Upload ' + n + '.LS to ' + state.robot.ip + ' over FTP',
+        onclick: function () { sendReplaced(n); }
+      }));
+      list.appendChild(row);
+    });
+    el.appendChild(list);
+    if (canSend && unsent > 1) el.appendChild(btn({
+      class: 'btn primary', text: 'Send all ' + unsent + ' to robot',
+      title: 'Upload the changed programs one after another',
+      onclick: sendAllReplaced
+    }));
+    el.appendChild(btn({
+      class: 'btn', text: 'Undo',
+      title: anySent ? 'Put the previous text back in the library — the robot keeps what was already sent' : 'Put the previous text of every changed program back',
+      onclick: function () { undoReplacements(); render(); }
+    }));
+    el.appendChild(btn({ class: 'btn subtle', text: 'Dismiss', onclick: function () { state.replaced = null; render(); } }));
+    return el;
+
+    // every control in the banner waits while an upload is in flight
+    function btn(attrs) { var b = h('button', attrs); b.disabled = !!r.busy; return b; }
   }
 
   function renderSearch(pane) {
@@ -2199,7 +4633,7 @@
     var input = h('input', { type: 'search', placeholder: 'Find in all files… e.g. R[10], DO[104], CALL PICK, pallet' });
     input.value = state.searchQuery || '';
     bar.appendChild(input);
-    [['caseSensitive', 'Aa', 'Match case'], ['wholeWord', '|w|', 'Whole word'], ['regex', '.*', 'Regular expression']].forEach(function (o) {
+    [['caseSensitive', 'Aa', 'Match case'], ['wholeWord', '|w|', 'Whole word'], ['regex', '.*', 'Regular expression'], ['replace', '⇄', 'Find and replace across the library']].forEach(function (o) {
       bar.appendChild(h('button', {
         class: 'btn opt' + (searchOpts[o[0]] ? ' active' : ''),
         text: o[1], title: o[2],
@@ -2207,14 +4641,40 @@
       }));
     });
     pane.appendChild(bar);
-    pane.appendChild(h('p', { class: 'muted', text: 'Tip: select any item in the code and press Ctrl+E to cross-reference it here. Clicking a register or I/O token in the Code view does the same.' }));
+
+    var replIn = null, applyBtn = null;
+    if (searchOpts.replace) {
+      var rbar = h('div', { class: 'search-bar replace-bar' });
+      replIn = h('input', { type: 'text', placeholder: 'Replace with… (leave empty to delete the matched text)' });
+      replIn.value = state.replaceWith || '';
+      applyBtn = h('button', { class: 'btn primary', text: 'Replace', disabled: 'disabled' });
+      rbar.appendChild(replIn);
+      rbar.appendChild(applyBtn);
+      pane.appendChild(rbar);
+      pane.appendChild(h('p', { class: 'muted', text: 'Each hit shows the line as it will read afterwards. Tick or untick lines before replacing — comments and assignment targets (R[30]=…) start unticked. Replacing edits the library and re-runs the checks; it never touches the robot or disk by itself.' }));
+    } else {
+      pane.appendChild(h('p', { class: 'muted', text: 'Tip: select any item in the code and press Ctrl+E to cross-reference it here. Clicking a register or I/O token in the Code view does the same.' }));
+    }
+    var done = replacedBanner();
+    if (done) pane.appendChild(done);
     var results = h('div');
     pane.appendChild(results);
 
     function run() {
       state.searchQuery = input.value;
+      if (replIn) state.replaceWith = replIn.value;
       results.innerHTML = '';
       var q = input.value.trim();
+      var replacing = !!replIn;
+      var repl = replacing ? replIn.value : null;
+      var ticked = [];
+      function refreshApply() {
+        if (!applyBtn) return;
+        var n = ticked.filter(function (t) { return t.cb.checked; }).length;
+        applyBtn.disabled = !n;
+        applyBtn.textContent = n ? 'Replace ' + n + ' selected' : 'Replace';
+      }
+      refreshApply();
       if (q.length < 2) {
         results.appendChild(h('p', { class: 'muted', text: 'Type at least two characters to search every line of every program in the library.' }));
         return;
@@ -2232,7 +4692,7 @@
           var m = match(full);
           if (!m) return;
           count++;
-          if (shown < 400) { hits.push({ line: line, full: full, m: m, commented: line.comment !== null }); shown++; }
+          if (shown < 400) { hits.push({ prog: n, line: line, full: full, m: m, commented: line.comment !== null }); shown++; }
         });
         if (!hits.length) return;
         results.appendChild(h('div', { class: 'hit-group' }, [
@@ -2241,22 +4701,55 @@
         ]));
         hits.forEach(function (hh) {
           var hit = h('div', { class: 'hit' + (hh.commented ? ' commented' : '') });
+          if (replacing) {
+            // the replacement is made in the raw row, which is what gets written back
+            var rm = match(hh.line.raw);
+            hh.after = rm ? match.replaceAll(hh.line.raw, repl) : hh.line.raw;
+            var why = null;
+            if (!rm || hh.after === hh.line.raw || !hh.line.fileLine) why = 'no change';
+            else if (hh.commented) why = 'comment';
+            else if (repl.indexOf('[') === -1 && replaceTargetsAssignment(hh.line.raw, match)) why = 'assignment target';
+            var cb = h('input', { type: 'checkbox', title: why ? 'Unticked: ' + why : 'Replace on this line' });
+            cb.checked = !why;
+            if (why === 'no change') cb.disabled = true;
+            cb.addEventListener('change', refreshApply);
+            ticked.push({ cb: cb, hit: hh });
+            hit.appendChild(cb);
+            if (why) hit.classList.add('skip');
+          }
           hit.appendChild(h('span', {
             class: 'where', text: n + ':' + hh.line.num,
             onclick: function () { gotoLine(n, hh.line.num); }
           }));
           var txt = h('span', { class: 'text' });
           txt.innerHTML = esc(hh.full.slice(0, hh.m.index)) + '<mark>' + esc(hh.full.substr(hh.m.index, hh.m.length)) + '</mark>' + esc(hh.full.slice(hh.m.index + hh.m.length));
+          if (replacing && hh.after !== hh.line.raw) {
+            txt.appendChild(h('span', { class: 'after', text: '\n→ ' + hh.after.replace(/^\s*\d+\s*:\s?/, '').replace(/\s*;\s*$/, '') }));
+          }
           hit.appendChild(txt);
           if (hh.commented) hit.appendChild(h('span', { class: 'muted', text: 'comment' }));
+          else if (replacing && why) hit.appendChild(h('span', { class: 'muted', text: why }));
           results.appendChild(hit);
         });
       });
-      results.insertBefore(h('p', { class: 'muted', text: count ? count + ' match' + (count > 1 ? 'es' : '') + ' across the library' + (count > 400 ? ' (showing first 400)' : '') : 'No matches.' }), results.firstChild);
+      refreshApply();
+      results.insertBefore(h('p', { class: 'muted', text: count ? count + ' match' + (count > 1 ? 'es' : '') + ' across the library' + (count > 400 ? ' (showing first 400' + (replacing ? ' — narrow the search to replace the rest' : '') + ')' : '') : 'No matches.' }), results.firstChild);
+
+      if (applyBtn) applyBtn.onclick = function () {
+        var chosen = ticked.filter(function (t) { return t.cb.checked; }).map(function (t) { return t.hit; });
+        if (!chosen.length) return;
+        var progs = {};
+        chosen.forEach(function (hh) { progs[hh.prog] = true; });
+        var np = Object.keys(progs).length;
+        if (!confirm('Replace ' + chosen.length + ' occurrence' + (chosen.length === 1 ? '' : 's') + ' of "' + q + '" with "' + repl + '" in ' + np + ' program' + (np === 1 ? '' : 's') + '?\n\nThis edits the library copy only. Undo is offered afterwards.')) return;
+        applyReplacements(chosen);
+        render();
+      };
     }
     input.addEventListener('input', run);
+    if (replIn) replIn.addEventListener('input', run);
     run();
-    input.focus();
+    if (replIn && input.value) replIn.focus(); else input.focus();
   }
 
   /* ---- compare tab ---- */
@@ -2267,7 +4760,9 @@
     return out;
   }
 
-  function diffOpts() { return { ignoreIoState: state.ignoreIoState }; }
+  function diffOpts() {
+    return { ignoreIoState: state.ignoreIoState, ignoreLineNums: state.ignoreLineNums };
+  }
 
   function setBaseline(label, programs) {
     state.compare = {
@@ -2279,31 +4774,34 @@
     render();
   }
 
+  /* One "ignore this kind of noise" checkbox for the Compare toolbar. Both
+   * settings feed diffOpts(), so flipping either has to recompute the stored
+   * baseline verdicts, which were decided under the old setting. */
+  function ignoreToggle(key, label, title) {
+    var cb = h('input', { type: 'checkbox' });
+    cb.checked = state[key];
+    cb.addEventListener('change', function () {
+      state[key] = cb.checked;
+      savePrefs();
+      refreshCompare();   // the stored verdicts were decided under the old setting
+      render();
+    });
+    var lab = h('label', { title: title }, [cb]);
+    lab.appendChild(document.createTextNode(' ' + label));
+    return lab;
+  }
+
   function renderCompare(pane) {
-    /* Tab-level toolbar: the I/O-state option governs both sections below, so
-     * it lives out here rather than inside one of them, where collapsing that
+    /* Tab-level toolbar: these options govern both sections below, so they
+     * live out here rather than inside one of them, where collapsing that
      * section would hide a control still affecting the other. */
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Compare' }),
       h('span', { style: 'flex:1' }),
-      (function () {
-        var cb = h('input', { type: 'checkbox' });
-        cb.checked = state.ignoreIoState;
-        cb.addEventListener('change', function () {
-          state.ignoreIoState = cb.checked;
-          savePrefs();
-          // the baseline verdicts were computed under the old setting
-          if (state.compare) {
-            state.compare.results = D.comparePrograms(state.compare.programs, librarySources(), diffOpts());
-          }
-          render();
-        });
-        var lab = h('label', {
-          title: 'With the controller\u2019s I/O-state display on, a listing reads DO[65:OFF:Vac-1 ON] instead of DO[65:Vac-1 ON]. That state is live machine data, not program content, so ignoring it stops every such line showing as a change against a backup taken with the display off.'
-        }, [cb]);
-        lab.appendChild(document.createTextNode(' Ignore inline I/O state'));
-        return lab;
-      })()
+      ignoreToggle('ignoreLineNums', 'Ignore line numbers',
+        'Every /MN line is written "12:  <instruction> ;", so inserting or deleting one line renumbers every line below it. Those lines are identical program content, so ignoring the number leaves just the real edit highlighted instead of the whole rest of the program.'),
+      ignoreToggle('ignoreIoState', 'Ignore inline I/O state',
+        'With the controller\u2019s I/O-state display on, a listing reads DO[65:OFF:Vac-1 ON] instead of DO[65:Vac-1 ON]. That state is live machine data, not program content, so ignoring it stops every such line showing as a change against a backup taken with the display off.')
     ]));
 
     // -- two-program compare (Notepad++ Compare-plugin style) --
@@ -2430,13 +4928,21 @@
           h('span', { class: 'diff-adds', text: '+' + ch.adds }),
           h('span', { class: 'diff-dels', text: '\u2212' + ch.dels })
         ]));
-        if (isOpen) pane.appendChild(renderDiffBody(c.programs[ch.name], state.programs[ch.name].source, false, ch.name + ' \u2014 backup', ch.name + ' \u2014 current'));
+        if (isOpen) {
+          var cur = state.programs[ch.name];
+          pane.appendChild(cur
+            ? renderDiffBody(c.programs[ch.name], cur.source, false, ch.name + ' \u2014 backup', ch.name + ' \u2014 current')
+            : h('p', { class: 'muted', text: ch.name + ' is in the baseline but no longer in the library \u2014 reload the baseline to refresh this list.' }));
+        }
       });
     }
     progList('New since the baseline', r.added, 'added');
     progList('In the baseline but missing now', r.removed, 'removed');
-    progList(state.ignoreIoState
-      ? 'No code changes (header dates / sizes, or inline I/O state only)'
+    var ignored = [];
+    if (state.ignoreLineNums) ignored.push('line numbers');
+    if (state.ignoreIoState) ignored.push('inline I/O state');
+    progList(ignored.length
+      ? 'No code changes (header dates / sizes, or ' + ignored.join(' / ') + ' only)'
       : 'Header-only changes (dates / sizes \u2014 code identical)', r.headerOnly, 'header');
   }
 
@@ -2491,17 +4997,30 @@
 
   /* ---- robot tab ---- */
 
+  var KIND_NOTE = {
+    wired: '',
+    wireless: ' (wireless)',
+    virtual: ' (a virtual adapter — only this PC and its VMs are on it)',
+    overlay: ' (a VPN overlay — controllers will not be on it)'
+  };
+
   /* Find controllers on the network. Deliberately a button and never
    * automatic: a subnet sweep looks like a port scan to an IDS, and that is
    * not something an app should start on a plant network by itself. */
   function scanPanel() {
     var wrap = h('div', { class: 'scan-panel' });
     var sc = state.scan;
-    var suggested = (state.subnets && state.subnets.length) ? state.subnets[0].cidr : '';
+    /* The bridge ranks its own interfaces, wired first — see localSubnets().
+     * The best one prefills the box; the rest are one-click buttons beside
+     * it, because only the person at the machine knows which network the
+     * controllers are actually on. */
+    var best = (state.subnets && state.subnets.length) ? state.subnets[0] : null;
+    var suggested = best ? best.cidr : '';
     var cidrIn = h('input', {
       type: 'text', class: 'scan-cidr',
       placeholder: suggested || '192.168.0.0/24',
-      title: 'Address range to sweep, up to 1024 addresses (a /22)'
+      title: 'Address range to sweep, up to 1024 addresses (a /22)' +
+        (best ? '. Prefilled from this PC’s ' + best.iface + ' address, ' + best.address : '')
     });
     cidrIn.value = (sc && sc.cidr) || suggested;
 
@@ -2511,7 +5030,7 @@
       row.appendChild(h('button', { class: 'btn', text: 'Cancel', onclick: function () { cancelScan(); render(); } }));
     } else {
       row.appendChild(h('button', {
-        class: 'btn', text: 'Scan for robots',
+        class: 'btn', text: 'Scan',
         title: 'Try port 80 on every address in the range, then confirm which are FANUC controllers',
         onclick: function () {
           var c = cidrIn.value.trim();
@@ -2523,7 +5042,8 @@
       state.subnets.slice(0, 4).forEach(function (n) {
         row.appendChild(h('button', {
           class: 'btn subtle opt', text: n.cidr,
-          title: n.iface + ' — ' + n.address,
+          title: n.iface + ' — this PC is ' + n.address + KIND_NOTE[n.kind] +
+            (n.narrowed ? '. Its real mask is wider than a /22, so this is the /24 around this PC' : ''),
           onclick: function () { cidrIn.value = n.cidr; }
         }));
       });
@@ -2539,52 +5059,188 @@
     return wrap;
   }
 
-  /* Robots this bridge has connected to before: click one to connect, with a
-   * live dot from the short probe. The username comes back with the entry;
-   * the password never does, so it is typed (or left blank) each time. */
-  function savedRobots(ipIn, userIn) {
-    var wrap = h('div', { class: 'saved-robots' });
+  /* Saved robots and the multi-robot backup, one section. Each row IS the
+   * robot: click the name to connect (the username comes back with the
+   * entry; the password never does, so it is typed — or left blank — each
+   * time), tick it to include it in the next backup sweep, and its folder
+   * and live sweep result sit on the same line. This replaced two separate
+   * sections that each listed every saved robot in its own way. */
+  function savedRobotsPanel(ipIn, userIn) {
+    var wrap = h('div', { class: 'backup-all' });
+    var running = backupAllRunning();
+    var home = state.backupHome;
+
     if (!state.knownRobots.length) {
-      wrap.appendChild(h('p', { class: 'muted', text: 'Robots you connect to are saved here — this bridge remembers them for every device pointed at it (never the password).' }));
+      wrap.appendChild(h('p', { class: 'muted', text: 'Robots you connect to are saved here — this bridge remembers them for every device pointed at it (never the password). Scan the range above, and every controller it finds can be connected to or backed up from here.' }));
       return wrap;
     }
-    var head = h('div', { class: 'sr-head' }, [
+
+    wrap.appendChild(h('div', { class: 'sr-head' }, [
       h('span', { class: 'eyebrow', text: 'Saved robots' }),
       h('button', {
         class: 'btn subtle', text: '↻ re-check',
         title: 'Probe every saved robot again',
         onclick: function () { probeKnownRobots(); render(); }
       })
-    ]);
-    wrap.appendChild(head);
+    ]));
+
+    var picked = backupPicked();
+    var pickedIps = {};
+    picked.forEach(function (r) { pickedIps[r.ip] = true; });
+    var homeDir = (home && home.backupRoot) || null;
+
+    /* A real table: with a folder path, two buttons and a live result per
+     * robot, aligned columns are what keeps six rows scannable. Narrow
+     * screens scroll the table sideways inside its own wrapper rather than
+     * the page. */
+    var table = h('table', { class: 'sr-table' });
+    table.appendChild(h('thead', {}, [h('tr', {}, [
+      h('th', { text: '✓', title: 'Ticked robots are included in the full-backup sweep' }),
+      h('th', {}),
+      h('th', { text: 'Robot' }),
+      h('th', { text: 'Address' }),
+      h('th', { text: 'Backup folder' }),
+      h('th', {}),
+      h('th', {}),
+      h('th', {})
+    ])]));
+    var tbody = h('tbody', {});
+    var rowEls = {};
     state.knownRobots.forEach(function (r) {
       var st = state.robotProbe[r.ip] || 'checking';
-      var row = h('div', { class: 'sr-row' + (r.ip === state.robot.ip ? ' current' : '') });
-      row.appendChild(h('span', {
-        class: 'sr-dot ' + st,
-        title: st === 'up' ? 'answering on port 80' : st === 'down' ? 'not answering' : 'checking…'
-      }));
-      row.appendChild(h('button', {
-        class: 'sr-name',
-        text: r.name || r.ip,
-        title: 'Connect to ' + r.ip,
+      var label = r.name || r.ip;
+      var cb = h('input', { type: 'checkbox', title: 'Include ' + label + ' in the next backup sweep' });
+      cb.checked = !!pickedIps[r.ip];
+      cb.disabled = running;
+      cb.addEventListener('change', function () {
+        state.backupPick[r.ip] = cb.checked;
+        render();
+      });
+      function seedCreds() {
+        ipIn.value = r.ip;
+        if (r.ftpUser) { userIn.value = r.ftpUser; state.robot.ftpUser = r.ftpUser; }
+      }
+      /* The folder is one control, not a field plus a browse button: the
+       * path itself is the button, and clicking it opens the bridge's
+       * folder picker. Every robot files where its cell belongs on the
+       * server; one that has not been given a folder yet falls back to the
+       * bridge's own backups\ directory, and the button says so. */
+      var folderBtn = h('button', {
+        class: 'bp-folder' + (r.folder ? ' set' : ''),
+        text: r.folder ? shortPath(r.folder) : 'set folder…',
+        title: (r.folder
+          ? label + '’s backups go in ' + r.folder
+          : label + ' has no folder yet — backups go to the bridge’s own backups folder' + (homeDir ? ' (' + homeDir + ')' : '')) +
+          '. Click to choose one.',
         onclick: function () {
-          ipIn.value = r.ip;
-          if (r.ftpUser) { userIn.value = r.ftpUser; state.robot.ftpUser = r.ftpUser; }
-          connectRobot(r.ip);
+          openFolderPicker({
+            title: 'Backup folder for ' + label,
+            hint: 'Where ' + label + '’s dated backup folders are created. Its own project folder on the server, if that is where this cell belongs.',
+            start: r.folder || homeDir || '',
+            allowHome: !!r.folder,
+            onPick: function (p) { setRobotFolder(r.ip, p); }
+          });
         }
-      }));
-      if (r.name) row.appendChild(h('span', { class: 'sr-ip mono', text: r.ip }));
-      row.appendChild(h('span', { class: 'sr-seen', text: lastSeenText(r.lastSeen) }));
-      row.appendChild(h('span', { style: 'flex:1' }));
-      if (st === 'down') row.appendChild(h('span', { class: 'muted', text: 'not answering' }));
-      row.appendChild(h('span', {
-        class: 'seq-hide', text: '✕',
-        title: 'Forget ' + (r.name || r.ip),
-        onclick: function () { forgetRobot(r.ip); }
-      }));
-      wrap.appendChild(row);
+      });
+      folderBtn.disabled = running;
+      /* Connect + pull every program, one gesture — the same import the
+       * Programs section offers, reached without opening it. */
+      var impBtn = h('button', {
+        class: 'btn bp-quick', text: 'Import programs',
+        title: st === 'down'
+          ? label + ' is not answering'
+          : 'Connect to ' + label + ' and read every program on it into its library',
+        onclick: function () {
+          seedCreds();
+          connectRobot(r.ip, { andImport: true });
+        }
+      });
+      impBtn.disabled = running || st === 'down' || !!state.robotImport;
+      /* One robot, right now, no connecting: the same sweep machinery with
+       * a list of one, so progress and the result land on this row the same
+       * way they do during a full sweep. */
+      var quickBtn = h('button', {
+        class: 'btn bp-quick', text: 'Quick backup',
+        title: st === 'down'
+          ? label + ' is not answering — nothing to back up'
+          : '.LS + .VA from ' + label + ' into a dated _quick folder — no need to connect first',
+        onclick: function () { startBackupAll('quick', [r.ip]); }
+      });
+      quickBtn.disabled = running || st === 'down';
+      var res = h('span', { class: 'bp-result' });
+      if (state.backupAll && state.backupAll.rows[r.ip]) paintBackupRow(res, state.backupAll.rows[r.ip]);
+      rowEls[r.ip] = res;
+      /* The status dot carries the "last seen" reading as its tooltip — a
+       * whole column for a timestamp nobody scans was width the folder
+       * paths wanted. */
+      var seen = lastSeenText(r.lastSeen);
+      tbody.appendChild(h('tr', { class: r.ip === state.robot.ip ? 'current' : '' }, [
+        h('td', {}, [cb]),
+        h('td', {}, [h('span', {
+          class: 'sr-dot ' + st,
+          title: (st === 'up' ? 'Answering on port 80' : st === 'down' ? 'Not answering' : 'Checking…') +
+            (seen ? ' · last seen ' + seen : '')
+        })]),
+        h('td', {}, [h('button', {
+          class: 'sr-name', text: label,
+          title: 'Connect to ' + r.ip,
+          onclick: function () { seedCreds(); connectRobot(r.ip); }
+        })]),
+        h('td', {}, [h('span', { class: 'sr-ip mono', text: r.ip })]),
+        h('td', {}, [folderBtn]),
+        h('td', { class: 'sr-actions' }, [impBtn, quickBtn]),
+        h('td', {}, [res]),
+        h('td', {}, [h('span', {
+          class: 'seq-hide', text: '✕',
+          title: 'Forget ' + label,
+          onclick: function () { forgetRobot(r.ip); }
+        })])
+      ]));
     });
+    table.appendChild(tbody);
+    wrap.appendChild(h('div', { class: 'sr-scroll' }, [table]));
+
+    /* ---- the full-backup sweep of the ticked robots ---- */
+    var btnRow = h('p', {});
+    if (running) {
+      btnRow.appendChild(h('button', {
+        class: 'btn', text: 'Stop',
+        title: 'Finish nothing further — the robots already backed up keep their folders',
+        onclick: function () { cancelBackupAll(); render(); }
+      }));
+    } else {
+      var n = picked.length;
+      var full = h('button', {
+        class: 'btn primary',
+        text: 'Backup ' + n + (n === 1 ? ' robot' : ' robots') + ' (full)',
+        title: 'Every file on MD: from each ticked robot, one after another, each into its own folder',
+        onclick: function () { startBackupAll('full'); }
+      });
+      full.disabled = !n;
+      btnRow.appendChild(full);
+    }
+    wrap.appendChild(btnRow);
+
+    var bar = h('div', { class: 'scan-bar' }, [h('div', { class: 'scan-bar-fill' })]);
+    var status = h('span', {
+      class: 'muted',
+      text: state.backupAll ? backupAllText(state.backupAll)
+        : 'One robot at a time, each into a dated folder in its own destination. A controller that is not answering is skipped after three seconds and named in the list, so a powered-down cell cannot stall the rest.'
+    });
+    if (running) wrap.appendChild(bar);
+    wrap.appendChild(h('div', {}, [status]));
+    backupAllUI = { status: status, bar: bar.firstChild, rows: rowEls };
+
+    if (state.backupAll && !state.backupAll.running && !state.backupAll.error) {
+      var dests = state.backupAll.dests || [];
+      var p = h('p', { class: 'muted' }, [document.createTextNode(dests.length > 1 ? 'Filed into ' + dests.length + ' folders: ' : 'Filed into ')]);
+      dests.forEach(function (d, i) {
+        if (i) p.appendChild(document.createTextNode(', '));
+        p.appendChild(h('span', { class: 'mono', text: d }));
+      });
+      p.appendChild(document.createTextNode('. Any of these dated folders loads as a baseline in the Compare tab.'));
+      if (dests.length) wrap.appendChild(p);
+    }
     return wrap;
   }
 
@@ -2598,6 +5254,39 @@
     if (hrs < 24) return hrs + (hrs === 1 ? ' hour ago' : ' hours ago');
     var days = Math.round(hrs / 24);
     return days + (days === 1 ? ' day ago' : ' days ago');
+  }
+
+  /* Server paths run long — "S:\827-039 Wire Stripper Assembly\Robot" does
+   * not belong on a row beside a robot name. The tail is what identifies the
+   * folder to the person who chose it, so the middle is what goes. */
+  function shortPath(p) {
+    if (p.length <= 34) return p;
+    var parts = p.split(/[\\/]/).filter(Boolean);
+    var tail = parts.slice(-2).join(p.indexOf('\\') !== -1 ? '\\' : '/');
+    return '…' + (p.indexOf('\\') !== -1 ? '\\' : '/') + (tail.length > 34 ? tail.slice(-33) : tail);
+  }
+
+  /* The per-robot result, written into the row's own span so a sweep can
+   * report each controller as it finishes without a re-render. */
+  function paintBackupRow(el, row) {
+    if (!el || !row) return;
+    el.className = 'bp-result ' + row.status;
+    if (row.status === 'running') {
+      el.textContent = row.fileTotal ? row.saved + ' / ' + row.fileTotal + ' files' : 'connecting…';
+    } else if (row.status === 'done') {
+      el.textContent = '✓ ' + row.files + ' files' +
+        (row.failedFiles && row.failedFiles.length ? ' (' + row.failedFiles.length + ' unreadable)' : '');
+      el.title = row.folder || '';
+    } else if (row.status === 'skipped') {
+      el.textContent = 'skipped';
+      el.title = row.error || '';
+    } else if (row.status === 'failed') {
+      el.textContent = 'failed';
+      el.title = row.error || '';
+    } else {
+      el.textContent = '';
+      el.title = '';
+    }
   }
 
   function renderRobot(pane) {
@@ -2620,7 +5309,7 @@
         ol.appendChild(li);
       });
       box.appendChild(ol);
-      box.appendChild(h('p', { class: 'muted', text: 'The bridge only ever READS from robots — programs, NUMREG.VA register values, I/O configuration. Writing to a controller is deliberately not supported.' }));
+      box.appendChild(h('p', { class: 'muted', text: 'The bridge mostly READS from robots — programs, register values, I/O. It writes only where you ask it to and it can check the result: sending a .LS back, and renaming a register or I/O point. Nothing it does can move a robot.' }));
       pane.appendChild(box);
       return;
     }
@@ -2641,7 +5330,11 @@
     form.appendChild(h('button', { class: 'btn primary', text: state.robot.ip ? 'Reconnect' : 'Connect', onclick: function () { state.robot.ftpUser = userIn.value.trim(); state.robot.ftpPass = passIn.value; if (ipIn.value.trim()) connectRobot(ipIn.value.trim()); } }));
     pane.appendChild(form);
     pane.appendChild(scanPanel());
-    pane.appendChild(savedRobots(ipIn, userIn));
+    /* Above the connection-dependent sections on purpose: connecting and
+     * backing up the robots a scan found are whole jobs on their own, and
+     * neither must sit behind "connect to one of them first". */
+    pane.appendChild(savedRobotsPanel(ipIn, userIn));
+
     var banner = uploadBanner();
     if (banner) pane.appendChild(banner);
 
@@ -2651,35 +5344,62 @@
       return;
     }
     if (!state.robot.ip) {
-      pane.appendChild(h('p', { class: 'muted', text: 'Enter the controller IP. The bridge reads the program list, register values (NUMREG.VA) and I/O configuration from the robot — read-only.' }));
+      pane.appendChild(h('p', { class: 'muted', text: 'Enter the controller IP. The bridge reads the program list, register values (NUMREG.VA) and I/O configuration from the robot. Registers and I/O points can be renamed in place once connected.' }));
       return;
     }
 
-    // program files
-    var lsFiles = state.robot.files.filter(function (f) { return /\.LS$/i.test(f); });
-    var secProgs = secHead('Programs on ' + state.robot.ip + ' (' + lsFiles.length + ')', 'robot-programs');
+    // program files — log exports carry a .LS extension too, and offering
+    // them here only ever produced a chip that could not be imported
+    var allLs = state.robot.files.filter(function (f) { return /\.LS$/i.test(f); });
+    var lsFiles = allLs.filter(function (f) { return !isKnownNonProgram(f); });
+    var logFiles = allLs.filter(isKnownNonProgram);
+    var secProgs = secHead('Programs on ' + state.robot.ip + ' (' + lsFiles.length + ')', 'robot-programs', false);
     pane.appendChild(secProgs.el);
     if (!secProgs.open) { /* collapsed */ } else if (lsFiles.length) {
-      var actions = h('p', {}, [
-        h('button', {
+      var imp = state.robotImport;
+      var actions = h('p', {});
+      if (imp) {
+        var pct = imp.total ? Math.round((imp.done / imp.total) * 100) : 0;
+        var bar = h('div', { class: 'import-bar' }, [
+          h('span', { style: 'width:' + pct + '%' })
+        ]);
+        actions.appendChild(bar);
+        var line = h('div', { class: 'import-line' }, [
+          h('span', { text: 'Importing ' + imp.done + ' of ' + imp.total + '… ' }),
+          h('span', { class: 'muted', text: '(' + imp.added + ' in' +
+            (imp.skipped ? ', ' + imp.skipped + ' skipped' : '') +
+            (imp.failed ? ', ' + imp.failed + ' failed' : '') + ')' }),
+          h('span', { text: ' ' }),
+          h('button', {
+            class: 'btn subtle', text: 'Stop',
+            title: 'Stop after the files already in flight',
+            onclick: function () { if (state.robotImport) state.robotImport.cancel = true; render(); }
+          })
+        ]);
+        actions.appendChild(line);
+      } else {
+        actions.appendChild(h('button', {
           class: 'btn', text: 'Import all ' + lsFiles.length + ' programs',
+          title: 'Read every listed program off the controller, ' + IMPORT_CONCURRENCY + ' at a time',
           onclick: function () {
             if (!confirmCrossSource(lsFiles)) return;
-            var pending = lsFiles.length;
-            lsFiles.forEach(function (f) {
-              importFromRobot(f).catch(function () {}).then(function () { if (--pending === 0) render(); });
-            });
+            importAllFromRobot(lsFiles);
           }
-        })
-      ]);
+        }));
+      }
       pane.appendChild(actions);
       var fl = h('div', { class: 'robot-files' });
       lsFiles.forEach(function (f) {
         var name = f.replace(/\.LS$/i, '');
+        var busy = imp && imp.inFlight[f.toUpperCase()];
+        var here = !!state.programs[name];
+        /* Three states, so a bulk import reads as motion rather than a wall
+         * of red that turns green all at once when it finishes. */
         fl.appendChild(h('span', {
-          class: 'chip ' + (state.programs[name] ? 'read' : 'write'),
-          text: f + (state.programs[name] ? ' ✓' : ''),
-          title: state.programs[name] ? 'in library — click to re-import' : 'click to import',
+          class: 'chip ' + (busy ? 'loading' : here ? 'read' : 'write'),
+          text: f + (busy ? ' …' : here ? ' ✓' : ''),
+          title: busy ? 'reading from the controller…'
+            : here ? 'in library — click to re-import' : 'click to import',
           onclick: function () {
             if (!confirmCrossSource([f])) return;
             importFromRobot(f).then(function (n) { if (n) { state.selected = n; render(); } });
@@ -2687,49 +5407,185 @@
         }));
       });
       pane.appendChild(fl);
+      if (logFiles.length) {
+        pane.appendChild(h('p', {
+          class: 'muted',
+          text: 'Not listed (controller logs and diagnostics, not programs): ' + logFiles.join(', ') +
+            '. The error history below reads ERRALL.LS directly.'
+        }));
+      }
     } else if (state.robot.loadedAt) {
       pane.appendChild(h('p', { class: 'muted', text: 'No .LS files listed. Some controllers need ASCII upload support for .LS on MD:. The file list found: ' + (state.robot.files.join(', ') || 'nothing') }));
     } else {
       pane.appendChild(h('p', { class: 'muted', text: 'Reading…' }));
     }
 
-    // backup
-    var secBk = secHead('Backups', 'robot-backups');
-    pane.appendChild(secBk.el);
-    var bk = state.robot.backup;
-    var today = new Date().toISOString().slice(0, 10);
-    if (secBk.open) {
-    pane.appendChild(h('p', { class: 'muted', text: 'Saved to backups/<robot-name-or-ip>_' + today + '_NN on the bridge PC — NN increments automatically for multiple backups on the same day, and quick backups get a _quick suffix. The robot name is read from the controller when it answers over HTTP.' }));
-    pane.appendChild(h('p', {}, [
-      h('button', {
-        class: 'btn primary', text: (bk && bk.running) ? 'Backing up…' : 'Full backup',
-        title: 'Every file on MD:',
-        onclick: (bk && bk.running) ? null : function () { takeBackup('full'); }
-      }),
-      document.createTextNode(' '),
-      h('button', {
-        class: 'btn', text: (bk && bk.running) ? '…' : 'Quick backup (.LS + .VA)',
-        title: 'Just programs and variable files — fast, ideal right before making changes',
-        onclick: (bk && bk.running) ? null : function () { takeBackup('quick'); }
-      })
-    ]));
-    if (bk && bk.error) pane.appendChild(h('p', {}, [h('span', { class: 'badge warn', text: 'backup failed' }), h('span', { class: 'muted', text: ' ' + bk.error })]));
-    if (bk && bk.ok) {
+    /* The per-connection Backups section used to live here; backing up —
+     * quick from the robot's row, full from the sweep button — is the saved
+     * list's job now, connected or not. */
+
+    /* ---- program / task state ----
+     * Why an edit gets refused. Read on demand: PRGSTATE.DG is a big file and
+     * it is only interesting when the controller is saying no. */
+    var ps = state.robot.prgState;
+    var psOk = ps && !ps.error ? ps : null;
+    var lockedNames = psOk ? Object.keys(psOk.locked) : [];
+    var secPs = secHead('Program state (PRGSTATE.DG)' +
+      (psOk ? ' — ' + (lockedNames.length
+        ? lockedNames.length + ' program' + (lockedNames.length > 1 ? 's' : '') + ' in use'
+        : 'nothing in use') : ''),
+      'robot-prgstate', false);
+    pane.appendChild(secPs.el);
+    if (secPs.open) {
+      pane.appendChild(h('p', { class: 'muted', text: 'A controller refuses to overwrite a program that has a live task — and a PAUSED task is still live, only ABORT releases it. Every program on a live task’s routine stack is held, not just the one the cursor is in, which is why an edit can be refused for a program that looks idle.' }));
       pane.appendChild(h('p', {}, [
-        h('span', { class: 'badge ok', text: (bk.mode === 'quick' ? 'quick ' : '') + 'backup complete' }),
-        h('span', { text: ' ' + bk.files + ' files (' + (bk.bytes / 1024).toFixed(0) + ' KB) → ' }),
-        h('span', { class: 'mono', text: bk.folder })
+        h('button', {
+          class: 'btn subtle',
+          text: (ps !== undefined && ps !== null) ? 'Refresh from robot' : 'Read from robot',
+          onclick: loadRobotPrgState
+        })
       ]));
-      if (bk.failed && bk.failed.length) pane.appendChild(h('p', { class: 'muted', text: 'Could not read: ' + bk.failed.join(', ') }));
-      pane.appendChild(h('p', { class: 'muted', text: 'To diff a robot against this backup later: Compare tab → load this folder as the baseline.' }));
+      if (ps === null) {
+        pane.appendChild(h('p', { class: 'muted', text: 'Reading…' }));
+      } else if (ps && ps.error) {
+        pane.appendChild(h('p', { class: 'muted', text: 'Could not read PRGSTATE.DG: ' + ps.error }));
+      } else if (psOk) {
+        if (lockedNames.length) {
+          pane.appendChild(h('h3', { text: 'Held by a live task — an edit will be refused' }));
+          var lw = h('div', { class: 'robot-files' });
+          lockedNames.sort().forEach(function (n) {
+            var lt = psOk.locked[n];
+            lw.appendChild(h('span', {
+              class: 'chip write',
+              text: n,
+              title: lt
+                ? 'task ' + lt.name + ' is ' + lt.state + (lt.line ? ' at line ' + lt.line + ' of ' + lt.routine : '')
+                : 'a task is attached to this program'
+            }));
+          });
+          pane.appendChild(lw);
+        } else {
+          pane.appendChild(h('p', { class: 'muted', text: 'No program is held by a live task right now — edits should be accepted.' }));
+        }
+
+        pane.appendChild(h('h3', { text: 'Tasks' }));
+        var tskWrap = h('div', { class: 'table-wrap' });
+        var tskTbl = h('table', { class: 'attr-table' });
+        var tskHead = h('tr');
+        ['#', 'Task', 'State', 'At', 'Routine stack'].forEach(function (c) {
+          tskHead.appendChild(h('th', { text: c }));
+        });
+        tskTbl.appendChild(tskHead);
+        psOk.tasks.forEach(function (t) {
+          var live = t.state === 'RUNNING' || t.state === 'PAUSED' || t.state === 'HELD';
+          var row = h('tr');
+          row.appendChild(h('td', { text: String(t.n) }));
+          row.appendChild(h('td', { class: 'mono', text: t.name }));
+          row.appendChild(h('td', {}, [h('span', { class: 'badge ' + (live ? 'warn' : 'ok'), text: t.state })]));
+          row.appendChild(h('td', { class: 'mono', text: t.program ? t.program + ':' + t.line : '' }));
+          row.appendChild(h('td', {
+            class: 'mono',
+            text: t.stack.map(function (f) { return f.program + ':' + f.line; }).join('  <  ')
+          }));
+          tskTbl.appendChild(row);
+        });
+        tskWrap.appendChild(tskTbl);
+        pane.appendChild(tskWrap);
+
+        if (psOk.programs.length) {
+          pane.appendChild(h('h3', { text: 'Programs on the controller (' + psOk.programs.length + ')' }));
+          var pBar = h('div', { class: 'search-bar' });
+          var pIn = h('input', { type: 'search', placeholder: 'Filter… e.g. _pk, protected, in use' });
+          pBar.appendChild(pIn);
+          pane.appendChild(pBar);
+          var pWrap = h('div', { class: 'table-wrap' });
+          pane.appendChild(pWrap);
+          var drawPrgs = function () {
+            var q = pIn.value.trim().toLowerCase();
+            pWrap.innerHTML = '';
+            var tbl = h('table', { class: 'attr-table' });
+            var hr = h('tr');
+            ['Program', 'Type', 'Task', 'Protection', 'Lines', 'Comment', 'Last modified'].forEach(function (c) {
+              hr.appendChild(h('th', { text: c }));
+            });
+            tbl.appendChild(hr);
+            var shown = 0;
+            psOk.programs.forEach(function (pr) {
+              var held = pr.task && pr.task.toLowerCase() !== 'no';
+              var prot = /on/i.test(pr.protection || '');
+              var hay = (pr.name + ' ' + (pr.comment || '') + ' ' + (pr.type || '') +
+                (held ? ' in use' : ' free') + (prot ? ' protected' : '')).toLowerCase();
+              if (q && hay.indexOf(q) === -1) return;
+              if (++shown > 400) return;
+              var r = h('tr');
+              r.appendChild(h('td', { class: 'mono', text: pr.name }));
+              r.appendChild(h('td', { text: pr.type || '' }));
+              r.appendChild(h('td', {}, [held
+                ? h('span', { class: 'badge warn', text: 'in use' })
+                : h('span', { class: 'muted', text: 'free' })]));
+              r.appendChild(h('td', { text: pr.protection || '' }));
+              r.appendChild(h('td', { class: 'n', text: pr.lines === undefined ? '' : String(pr.lines) }));
+              r.appendChild(h('td', { text: pr.comment || '' }));
+              r.appendChild(h('td', { text: pr.modified || '' }));
+              tbl.appendChild(r);
+            });
+            pWrap.appendChild(tbl);
+            if (!shown) pWrap.appendChild(h('p', { class: 'muted', text: 'No programs match.' }));
+          };
+          pIn.addEventListener('input', drawPrgs);
+          drawPrgs();
+        }
+      }
     }
-    } // end backups section
+
+    /* ---- live pendant (iPendant mirror) ----
+     * The controller serves its own pendant UI, which is the only way to
+     * reach the screens it never exports as a file. Execution History is the
+     * one that matters: its trace buffer lives in controller memory and
+     * appears in no backup, no MD: file and no system variable.
+     *
+     * These open a real window rather than an inline frame. Framing was tried
+     * and does not work: the page loads but sticks on "Logging in to
+     * controller" forever, because its login handshake needs a top-level
+     * context. The controller's own home page opens them with window.open
+     * too, at these same sizes.
+     *
+     * Opening one registers an interactive login on the controller (TPIF-137
+     * names the PC that connected), so the window has a Logout button and it
+     * is worth using. */
+    var PENDANT_VIEWS = [
+      ['/frh/jcgtp/cgtp.stm', 1024, 800, 'iPendant',
+        'The full pendant UI — Execution History and every other menu. This drives the real controller.'],
+      ['/frh/jcgtp/echo.stm', 692, 620, 'Display only',
+        'Mirrors whatever the physical pendant is showing. You cannot navigate it from here.'],
+      ['/frh/jcgtp/sop.stm', 1024, 800, 'Soft operator panel',
+        'The operator panel: cycle start, hold, alarm reset.']
+    ];
+    var secPen = secHead('Live pendant (iPendant)', 'robot-pendant', false);
+    pane.appendChild(secPen.el);
+    if (secPen.open) {
+      pane.appendChild(h('p', { class: 'muted', text: 'The controller serves its own pendant UI, so screens it never writes to a file are still reachable — Execution History among them. Each opens in its own window, because the pendant’s login does not complete inside an embedded frame.' }));
+      var penRow = h('p', {});
+      PENDANT_VIEWS.forEach(function (v) {
+        var url = 'http://' + state.robot.ip.split(':')[0] + v[0];
+        penRow.appendChild(h('button', {
+          class: 'btn', text: v[3], title: v[4] + '  ·  ' + url,
+          onclick: function () {
+            window.open(url, 'fanuc-pendant-' + v[3].replace(/[^a-z]/gi, ''),
+              'width=' + v[1] + ',height=' + v[2] + ',resizable=yes,scrollbars=yes');
+          }
+        }));
+        penRow.appendChild(document.createTextNode(' '));
+      });
+      pane.appendChild(penRow);
+      pane.appendChild(h('p', { class: 'muted', text: 'Two things worth knowing: the window talks straight to ' + state.robot.ip + ', so this device has to be able to reach the robot itself — fine on the plant network, but a phone reaching only the bridge from off-site will not load it. And opening one registers an interactive login on the controller, so use the pendant’s own Logout button when you are done rather than just closing the window.' }));
+    }
 
     // error history
     var errs = state.robot.errors;
     var errsOk = errs && !errs.error ? errs : null;
     var actCount = errsOk ? errsOk.filter(function (e2) { return e2.active; }).length : 0;
-    var secErr = secHead('Error history (ERRALL.LS)' + (errsOk ? ' — ' + errsOk.length + (actCount ? ' · ' + actCount + ' active' : '') : ''), 'robot-errors');
+    var secErr = secHead('Error history (ERRALL.LS)' + (errsOk ? ' — ' + errsOk.length + (actCount ? ' · ' + actCount + ' active' : '') : ''), 'robot-errors', false);
     pane.appendChild(secErr.el);
     if (secErr.open) {
       pane.appendChild(h('p', {}, [
@@ -2777,7 +5633,7 @@
 
     // registers
     var regs = state.robot.registers;
-    var secRegs = secHead('Registers (NUMREG.VA)' + (regs && !regs.error ? ' — ' + regs.length : ''), 'robot-regs');
+    var secRegs = secHead('Registers (NUMREG.VA)' + (regs && !regs.error ? ' — ' + regs.length : ''), 'robot-regs', false);
     pane.appendChild(secRegs.el);
     if (!secRegs.open) { /* collapsed */ } else {
     pane.appendChild(h('p', {}, [h('button', { class: 'btn subtle', text: 'Refresh from robot', onclick: loadRobotRegisters })]));
@@ -2808,7 +5664,7 @@
           tbl.appendChild(h('tr', {}, [
             h('td', { class: 'n', text: 'R[' + r.index + ']' }),
             h('td', { class: 'n', text: String(r.value) }),
-            h('td', { text: r.comment }),
+            commentCell('R', r.index, r.comment, function (text) { r.comment = text; }),
             used
           ]));
         });
@@ -2822,11 +5678,24 @@
 
     // position registers
     var prs = state.robot.posregs;
-    var prsOk = prs && !prs.error ? prs.filter(function (r) { return r.rep !== 'uninitialized' || r.comment; }) : null;
-    var secPR = secHead('Position registers (POSREG.VA)' + (prsOk ? ' — ' + prsOk.length : ''), 'robot-posregs');
+    // Empty PRs (uninitialized, no comment) are hidden by default — a
+    // controller has hundreds — but "show empty" lists them, because naming
+    // one is the first step in putting it to use.
+    var prsAll = prs && !prs.error ? prs : null;
+    var prsOk = prsAll ? prsAll.filter(function (r) { return state.showEmptyPR || r.rep !== 'uninitialized' || r.comment; }) : null;
+    var secPR = secHead('Position registers (POSREG.VA)' + (prsOk ? ' — ' + prsOk.length : ''), 'robot-posregs', false);
     pane.appendChild(secPR.el);
     if (secPR.open) {
-      pane.appendChild(h('p', {}, [h('button', { class: 'btn subtle', text: 'Refresh from robot', onclick: loadRobotPosregs })]));
+      var emptyCount = prsAll ? prsAll.filter(function (r) { return r.group === 1 && r.rep === 'uninitialized' && !r.comment; }).length : 0;
+      var emptyCb = h('input', { type: 'checkbox' });
+      emptyCb.checked = !!state.showEmptyPR;
+      emptyCb.addEventListener('change', function () { state.showEmptyPR = emptyCb.checked; render(); });
+      pane.appendChild(h('p', { class: 'robot-tools' }, [
+        h('button', { class: 'btn subtle', text: 'Refresh from robot', onclick: loadRobotPosregs }),
+        prsAll ? h('label', { title: 'List uninitialized PRs that have no comment yet, so one can be named before it is taught' }, [
+          emptyCb, document.createTextNode(' Show ' + emptyCount + ' empty PR' + (emptyCount === 1 ? '' : 's'))
+        ]) : null
+      ]));
       if (!prs) pane.appendChild(h('p', { class: 'muted', text: 'Reading…' }));
       else if (prs.error) pane.appendChild(h('p', { class: 'muted', text: 'Could not read POSREG.VA: ' + prs.error }));
       else {
@@ -2852,7 +5721,10 @@
             if (xr) xr.refs.slice(0, 6).forEach(function (ref) { used.appendChild(chip(ref, ref.write ? 'write' : 'read')); });
             tbl.appendChild(h('tr', {}, [
               h('td', { class: 'n', text: key }),
-              h('td', { text: r.comment }),
+              commentCell('PR', r.index, r.comment, function (text) {
+                // one comment per PR index — the per-group rows all share it
+                prs.forEach(function (pr) { if (pr.index === r.index) pr.comment = text; });
+              }),
               h('td', { class: 'n', text: r.rep === 'joint' ? 'joint' : r.rep === 'cartesian' ? 'xyzwpr' + (r.config ? ' · ' + r.config : '') : '—' }),
               h('td', { class: 'n', text: vals }),
               used
@@ -2863,12 +5735,54 @@
         };
         prIn.addEventListener('input', drawPRs);
         drawPRs();
-        pane.appendChild(h('p', { class: 'muted', text: 'Uninitialized, uncommented PRs are hidden. Cartesian values are mm/deg; joint values are axis degrees.' }));
+        pane.appendChild(h('p', { class: 'muted', text: (state.showEmptyPR
+          ? 'Empty PRs are listed — type a name in the Comment column to claim one; it is written to the controller when you leave the field. '
+          : 'Uninitialized, uncommented PRs are hidden — tick "Show empty PRs" to name one. ')
+          + 'Cartesian values are mm/deg; joint values are axis degrees.' }));
+      }
+    }
+
+    // string registers — SR[n] carries the text an alarm or a message is built
+    // from, and its comment is its name. Listed only when the controller
+    // actually has them: without the string-register option there is no
+    // STRREG.VA, and a missing option is not a fault worth a red section.
+    var srs = state.robot.strregs;
+    if (srs && !srs.error && srs.length) {
+      var secSR = secHead('String registers (STRREG.VA) — ' + srs.length, 'robot-strregs', false);
+      pane.appendChild(secSR.el);
+      if (secSR.open) {
+        pane.appendChild(h('p', {}, [h('button', { class: 'btn subtle', text: 'Refresh from robot', onclick: loadRobotStrregs })]));
+        var srBar = h('div', { class: 'search-bar' });
+        var srIn = h('input', { type: 'search', placeholder: 'Filter string registers by number, name, or text…' });
+        srBar.appendChild(srIn);
+        pane.appendChild(srBar);
+        var srWrap = h('div', { class: 'table-wrap' });
+        pane.appendChild(srWrap);
+        var drawSRs = function () {
+          var q = srIn.value.trim().toLowerCase();
+          srWrap.innerHTML = '';
+          var tbl = h('table', { class: 'xref-table' });
+          tbl.appendChild(h('tr', {}, [h('th', { text: 'SR' }), h('th', { text: 'Comment' }), h('th', { text: 'Value' })]));
+          var shown = 0;
+          srs.forEach(function (r) {
+            if (q && ('sr[' + r.index + '] ' + r.comment + ' ' + r.value).toLowerCase().indexOf(q) === -1) return;
+            shown++;
+            tbl.appendChild(h('tr', {}, [
+              h('td', { class: 'n', text: 'SR[' + r.index + ']' }),
+              commentCell('SR', r.index, r.comment, function (text) { r.comment = text; }),
+              h('td', { text: r.value })
+            ]));
+          });
+          srWrap.appendChild(tbl);
+          if (!shown) srWrap.appendChild(h('p', { class: 'muted', text: 'No string registers match.' }));
+        };
+        srIn.addEventListener('input', drawSRs);
+        drawSRs();
       }
     }
 
     // I/O — live state from IOSTATE.DG, grouped by type
-    var secIO = secHead('Live I/O (IOSTATE.DG)' + (state.robot.ioState ? ' — ' + state.robot.ioState.length + ' points' : ''), 'robot-io');
+    var secIO = secHead('Live I/O (IOSTATE.DG)' + (state.robot.ioState ? ' — ' + state.robot.ioState.length + ' points' : ''), 'robot-io', false);
     pane.appendChild(secIO.el);
     if (!secIO.open) return;
     pane.appendChild(h('p', {}, [
@@ -2890,7 +5804,12 @@
         tbl.appendChild(h('tr', {}, [
           h('td', { class: 'n', text: key }),
           h('td', {}, [h('span', { class: p.state === 'ON' ? 'tok-on mono' : (p.state === 'OFF' ? 'tok-off mono' : 'mono'), text: p.state })]),
-          h('td', { text: p.comment }),
+          commentCell(p.type, p.index, p.comment, function (text) {
+            p.comment = text;
+            // ioComments is the labeled-only view the checks read, so a point
+            // that just gained or lost a name has to move in or out of it
+            state.robot.ioComments = state.robot.ioState.filter(function (pt) { return pt.comment; });
+          }),
           used
         ]));
       }
@@ -3040,6 +5959,7 @@
         e.preventDefault();
         crossRefToken(selectedText());
       }
+      if (cfgKey(e)) { e.preventDefault(); return; }
       if (e.key === 'Escape' && navOpen()) {
         setNav(false);
         var nb = document.getElementById('btn-nav');
@@ -3047,11 +5967,8 @@
       }
     });
 
-    document.getElementById('btn-zoom-out').addEventListener('click', function () { applyZoom(-1); });
-    document.getElementById('btn-zoom-in').addEventListener('click', function () { applyZoom(1); });
-    document.getElementById('btn-zoom-reset').addEventListener('click', function () { applyZoom(0); });
 
-    document.getElementById('btn-nav').addEventListener('click', function () { setNav(!navOpen()); });
+    document.getElementById('btn-nav').addEventListener('click', toggleNav);
     document.getElementById('nav-scrim').addEventListener('click', function () { setNav(false); });
     document.getElementById('btn-import').addEventListener('click', function () {
       document.getElementById('file-input').click();
@@ -3059,24 +5976,52 @@
     document.getElementById('btn-folder').addEventListener('click', function () {
       document.getElementById('folder-input').click();
     });
-    document.getElementById('btn-samples').addEventListener('click', loadSamples);
+    document.getElementById('btn-phone').addEventListener('click', openPhoneDialog);
     document.getElementById('lib-filter').addEventListener('input', renderSidebar);
     document.getElementById('btn-clear').addEventListener('click', function () {
       if (!Object.keys(state.programs).length) return;
-      if (!confirm('Remove all programs from the library? Your original files are untouched.')) return;
+      if (!confirm('Remove all programs from the ' + libLabel(state.library) + ' library? Other robots’ libraries and your original files are untouched.')) return;
       state.programs = {};
       state.selected = null;
       rebuildDerived();
       persist();
       render();
     });
-    document.getElementById('btn-robot').addEventListener('click', function () {
-      var ip = document.getElementById('robot-ip').value.trim();
-      if (ip) connectRobot(ip);
+    document.getElementById('lib-ws').addEventListener('change', function () {
+      var v = this.value;
+      if (!v || v === state.library) return;
+      if (!setLibrary(v)) { this.value = state.library; return; }
+      render();
+    });
+    document.getElementById('robot-select').addEventListener('change', function () {
+      var v = this.value;
+      if (v === ROBOT_PICK_TAB) { state.tab = 'robot'; render(); return; }
+      if (!v) return;
+      var saved = state.knownRobots.filter(function (r) { return r.ip === v; })[0];
+      /* connectRobot() carries ftpUser/ftpPass over from the current
+       * state.robot, so seed them first. The username comes back with the
+       * saved entry; the password never does, by design — a robot that
+       * needs one has to be connected from the Robot tab. */
+      state.robot.ftpUser = (saved && saved.ftpUser) || '';
+      state.robot.ftpPass = '';
+      connectRobot(v);
     });
     document.getElementById('btn-dir').addEventListener('click', function () {
       var d = document.getElementById('dir-path').value.trim();
       if (d) openDirectory(d);
+    });
+    document.getElementById('btn-dir-browse').addEventListener('click', function () {
+      var pathIn = document.getElementById('dir-path');
+      openFolderPicker({
+        title: 'Open a folder of programs',
+        hint: 'Every .LS in the folder loads into the library — a robot backup folder, typically.',
+        start: pathIn.value.trim() || '',
+        onPick: function (p) {
+          if (!p) return;
+          pathIn.value = p;
+          openDirectory(p);
+        }
+      });
     });
 
     ['dragover', 'dragenter'].forEach(function (t) {
@@ -3110,7 +6055,7 @@
     if (buildTag && window.FANUC_STUDIO_BUILD) buildTag.textContent = window.FANUC_STUDIO_BUILD;
 
     loadPrefs();
-    paintZoom();
+    paintCodeSize();
     restore();
     rebuildDerived();
     render();

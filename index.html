@@ -15,6 +15,7 @@
 <div class="app">
   <header class="header">
     <button class="btn subtle nav-toggle" id="btn-nav" aria-label="Program library"
+            title="Hide the program library on every tab"
             aria-expanded="false" aria-controls="sidebar">☰</button>
     <div class="brand">
       <span class="mark">FANUC TP</span>
@@ -22,15 +23,11 @@
       <span class="muted build" id="build-tag"></span>
     </div>
     <div class="spacer"></div>
-    <div class="zoom" role="group" aria-label="Interface size">
-      <button class="btn subtle" id="btn-zoom-out" aria-label="Smaller" title="Smaller">−</button>
-      <button class="btn subtle zoom-level" id="btn-zoom-reset" title="Interface size — click to reset to 100%">100%</button>
-      <button class="btn subtle" id="btn-zoom-in" aria-label="Larger" title="Larger">+</button>
-    </div>
     <div class="header-actions">
+      <button class="btn" id="btn-phone" hidden
+              title="Show a QR code for this bridge’s address — scan it to open the app on a phone or tablet">Phone</button>
       <button class="btn primary" id="btn-import">Import .LS files</button>
-      <button class="btn" id="btn-folder">Open folder</button>
-      <button class="btn" id="btn-samples">Load sample cell</button>
+      <button class="btn" id="btn-folder">Import folder</button>
     </div>
     <input type="file" id="file-input" accept=".ls,.LS,.txt" multiple hidden>
     <input type="file" id="folder-input" webkitdirectory multiple hidden>
@@ -43,14 +40,16 @@
   <aside class="sidebar" id="sidebar">
     <div class="section-head">
       <span class="eyebrow">Sources</span>
+      <span class="bridge-dot" id="bridge-dot" role="img" hidden></span>
     </div>
     <div class="connect">
       <div class="row" id="robot-row">
-        <input id="robot-ip" type="text" placeholder="Robot IP">
-        <button class="btn" id="btn-robot">Connect</button>
+        <select id="robot-select"
+                title="Robots this bridge has saved. Pick one to connect — its saved FTP user comes with it. A new IP, an FTP password, or a subnet scan live on the Robot tab."></select>
       </div>
       <div class="row" id="dir-row">
         <input id="dir-path" type="text" placeholder="Local folder path">
+        <button class="btn" id="btn-dir-browse" title="Browse the bridge PC’s folders — its drives, mapped network drives included">…</button>
         <button class="btn" id="btn-dir">Open</button>
       </div>
       <div class="hint muted" id="server-hint"></div>
@@ -58,6 +57,10 @@
     <div class="section-head">
       <span class="eyebrow">Program library</span>
       <span class="muted" id="lib-count"></span>
+    </div>
+    <div class="lib-ws" id="lib-ws-row" hidden>
+      <select id="lib-ws"
+              title="Each robot keeps its own program library. Picking one here only changes which library is shown — connecting to a robot switches to its library automatically."></select>
     </div>
     <div class="lib-filter">
       <input id="lib-filter" type="search" placeholder="Filter programs…"
@@ -82,7 +85,7 @@
 <script src="js/flow.js"></script>
 <script src="js/vaparse.js"></script>
 <script src="js/diff.js"></script>
-<script src="js/samples.js"></script>
+<script src="js/qr.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

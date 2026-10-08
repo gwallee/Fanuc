@@ -64,7 +64,7 @@
       switch (section) {
         case 'attr': parseAttrLine(trimmed, result); break;
         case 'appl': if (trimmed) result.appl.push(trimmed); break;
-        case 'mn':   parseBodyLine(raw, result); break;
+        case 'mn':   parseBodyLine(raw, result, i + 1); break;
         case 'pos':  posBuffer.push(raw); break;
       }
     }
@@ -94,7 +94,10 @@
     if (c) result.attrs[c[1].toUpperCase()] = c[2].trim();
   }
 
-  function parseBodyLine(raw, result) {
+  /* fileLine is the 1-based line of `raw` in the cleaned source, so an edit
+   * made to a parsed line can be written back to the right place. A wrapped
+   * instruction keeps the fileLine of its first row; its raw spans the rest. */
+  function parseBodyLine(raw, result, fileLine) {
     // "   5:J P[1:home] 100% FINE ;"  |  "  12:  IF R[1]<3,JMP LBL[1] ;"
     var m = raw.match(/^\s*(\d+)\s*:(.*)$/);
     if (!m) {
@@ -126,7 +129,22 @@
     if (/^!/.test(text)) comment = text.replace(/^!\s*/, '');
     if (/^\/\//.test(text)) comment = text.replace(/^\/\/\s*/, '');
 
-    result.lines.push({ num: num, motion: motion, text: text, raw: raw, comment: comment });
+    result.lines.push({ num: num, motion: motion, text: text, raw: raw, comment: comment, fileLine: fileLine || null });
+  }
+
+  /* Write edited body lines back into a source listing. Each edit names the
+   * fileLine a parsed line started on, how many file rows its raw spanned
+   * (1 unless the instruction wrapped) and the new raw text, which may itself
+   * hold newlines. Rows are replaced from the bottom up so earlier fileLines
+   * stay valid, and the listing keeps whichever line ending it arrived with. */
+  function applyLineEdits(source, edits) {
+    var eol = /\r\n/.test(source) ? '\r\n' : '\n';
+    var rows = source.split(/\r\n|\r|\n/);
+    edits.slice().sort(function (a, b) { return b.fileLine - a.fileLine; }).forEach(function (e) {
+      var args = [e.fileLine - 1, e.count || 1].concat(String(e.text).split('\n'));
+      rows.splice.apply(rows, args);
+    });
+    return rows.join(eol);
   }
 
   function flushPositions(bufferLines, result) {
@@ -190,7 +208,7 @@
     return { raw: t.trim(), progLine: m ? parseInt(m[1], 10) : null };
   }
 
-  var api = { parseLS: parseLS, unwrapMd: unwrapMd, mapFileLine: mapFileLine };
+  var api = { parseLS: parseLS, unwrapMd: unwrapMd, mapFileLine: mapFileLine, applyLineEdits: applyLineEdits };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucParser = api;
 })(typeof window !== 'undefined' ? window : globalThis);
