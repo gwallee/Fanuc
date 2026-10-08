@@ -1627,3 +1627,24 @@ h3.sec-toggle:hover { color: var(--accent); }
   .code-pane .editor-wrap { min-height: 55vh; }
 }
 .code-pane .pane-head .title { font-size: 13px; }
+
+/* ---- installed app without a title bar (Window Controls Overlay) ----
+ * The header doubles as the title bar: it is the drag handle, it reserves
+ * room for the floating minimize/maximize/close buttons, and everything
+ * clickable inside it opts back out of dragging. */
+@media (display-mode: window-controls-overlay) {
+  .header {
+    -webkit-app-region: drag;
+    app-region: drag;
+    min-height: env(titlebar-area-height, 33px);
+    padding-left: calc(18px + env(titlebar-area-x, 0px));
+    padding-right: calc(18px + (100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)));
+  }
+  .header .btn,
+  .header button,
+  .header input,
+  .header .code-size {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+}
