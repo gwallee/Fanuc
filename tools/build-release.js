@@ -24,7 +24,8 @@ const OUT = path.join(DIST, 'FanucStudio-portable-win-x64.zip');
 
 const APP_FILES = [
   'index.html', 'server.js', 'README.md', 'Start FANUC Studio.bat', 'start.sh',
-  'css', 'js', 'lib'
+  'manifest.webmanifest', 'sw.js', 'FANUC Studio.ico',
+  'css', 'js', 'lib', 'icons'
 ];
 
 function sh(cmd, opts) {
@@ -71,6 +72,10 @@ fs.writeFileSync(path.join(STAGE, 'READ ME FIRST.txt'), [
   '3. If Windows Firewall asks about Node, allow it on Private networks',
   '   (needed for robot access and for using the app from your phone at',
   '   http://<this-pc-ip>:8642).',
+  '',
+  'Install as an app (own window, taskbar icon): with the bridge running,',
+  'open http://localhost:8642 in Chrome or Edge and click the install icon',
+  'in the address bar. Click the small ^ in its title bar to hide it.',
   '',
   'Offline file viewing only? Double-clicking index.html also works,',
   'without the bridge (no robot access that way).',
