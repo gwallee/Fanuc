@@ -68,7 +68,8 @@
     activeDoc: null,       // doc in the left (or only) half of the Code view
     splitDoc: null,        // doc docked on the right, or null
     editSide: null,        // 'left' | 'right' — which split half is an editor
-    dataFilter: {}         // data-view filter text, per doc id — survives re-renders
+    dataFilter: {},        // data-view filter text, per doc id — survives re-renders
+    theme: 'auto'          // 'auto' (follow the system) | 'light' | 'dark' (persisted)
   };
 
   var PREFS_KEY = 'fanuc-tp-studio.prefs.v1';
@@ -82,6 +83,25 @@
    * so they stay proportional as the text grows. */
   var CODE_SIZES = [11, 12, 13, 14, 16, 18, 21];
   var CODE_SIZE_DEFAULT = 13;
+
+  /* ---- theme ----
+   * 'auto' leaves the choice to prefers-color-scheme; forcing it just sets
+   * data-theme on <html>, which the stylesheet already honors. */
+  var THEME_ORDER = ['auto', 'dark', 'light'];
+  var THEME_FACE = { auto: '◐ Auto', dark: '🌙 Dark', light: '☀ Light' };
+
+  function paintTheme() {
+    var root = document.documentElement;
+    if (state.theme === 'light' || state.theme === 'dark') root.setAttribute('data-theme', state.theme);
+    else root.removeAttribute('data-theme');
+    var btn = document.getElementById('btn-theme');
+    if (btn) {
+      btn.textContent = THEME_FACE[state.theme] || THEME_FACE.auto;
+      btn.title = state.theme === 'auto'
+        ? 'Theme follows Windows/browser dark mode — click for always dark'
+        : 'Theme: always ' + state.theme + ' — click to switch';
+    }
+  }
 
   function paintCodeSize() {
     var app = document.querySelector('.app');
@@ -132,6 +152,7 @@
       if (CODE_SIZES.indexOf(p.codeSize) !== -1) state.codeSize = p.codeSize;
       if (typeof p.ignoreIoState === 'boolean') state.ignoreIoState = p.ignoreIoState;
       if (p.lastRobot && p.lastRobot.ip) state.lastRobot = p.lastRobot; // {ip, ftpUser}
+      if (p.theme === 'light' || p.theme === 'dark' || p.theme === 'auto') state.theme = p.theme;
       if (typeof p.ignoreLineNums === 'boolean') state.ignoreLineNums = p.ignoreLineNums;
       if (typeof p.syncSplit === 'boolean') state.syncSplit = p.syncSplit;
       if (p.flowLayout === 'column' || p.flowLayout === 'chart') state.flowLayout = p.flowLayout;
@@ -158,7 +179,7 @@
         flowLayout: state.flowLayout, flowGaps: state.flowGaps, flowDetail: state.flowDetail,
         flowMini: state.flowMini, flowHideNav: state.flowHideNav, hideNav: state.hideNav,
         xrefFolded: state.xrefFolded, xrefHideUnused: state.xrefHideUnused,
-        lastRobot: state.lastRobot || null
+        lastRobot: state.lastRobot || null, theme: state.theme
       }));
     } catch (e) { /* session-only */ }
   }
@@ -6615,7 +6636,14 @@
     var buildTag = document.getElementById('build-tag');
     if (buildTag && window.FANUC_STUDIO_BUILD) buildTag.textContent = window.FANUC_STUDIO_BUILD;
 
+    document.getElementById('btn-theme').addEventListener('click', function () {
+      state.theme = THEME_ORDER[(THEME_ORDER.indexOf(state.theme) + 1) % THEME_ORDER.length];
+      paintTheme();
+      savePrefs();
+    });
+
     loadPrefs();
+    paintTheme();
     paintCodeSize();
     restore();
     rebuildDerived();
