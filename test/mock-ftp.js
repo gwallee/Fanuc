@@ -3,6 +3,9 @@
  *   DELETES the file — exactly what a failed LS→TP translation does.
  * - opts.deviceRoot: root the server at the device list (fr:, mc:, md:, ...)
  *   like a real controller — files are reachable only after CWD md:.
+ * - opts.unreadable: names that NLST lists but RETR refuses. A real
+ *   controller has files it will name and then not hand over, and a backup
+ *   has to survive one and carry on rather than abandoning the robot.
  */
 'use strict';
 const net = require('net');
@@ -48,7 +51,9 @@ function startMockFtp(port, files, opts) {
         case 'NLST': {
           send('150 opening data connection');
           const ds = await pasvConn;
-          const names = cwd === 'md:' ? Object.keys(files) : DEVICES;
+          const names = cwd === 'md:'
+            ? Object.keys(files).concat(opts.unreadable || [])
+            : DEVICES;
           ds.end(names.join('\r\n') + '\r\n');
           send('226 transfer complete');
           break;

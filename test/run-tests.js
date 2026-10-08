@@ -40,6 +40,20 @@ check(main.parsed.positions.length === 1 && main.parsed.positions[0].name === 'h
 const homeG = main.parsed.positions[0].groups[0];
 check(homeG.uf === 1 && homeG.ut === 1 && homeG.coords.X.value === 785.0, 'home position UF/UT/X parsed');
 check(programs.PICK.parsed.positions.length === 2, 'PICK has 2 positions');
+
+// fileLine + applyLineEdits: the find/replace path writes edited rows back
+// into the listing by the file line each parsed line started on.
+const flSrc = '/PROG FL\r\n/MN\r\n   1:L P[1] R[30:Spd]mm/sec FINE ;\r\n   2:  R[30:Spd]=R[31] ;\r\n   3:  CALL VERY_LONG_PROGRAM_NAME(1,2,\r\n    :  3,4) ;\r\n   4:  !end ;\r\n/POS\r\n/END';
+const fl = P.parseLS(flSrc, 'FL.LS');
+check(fl.lines.map(l => l.fileLine).join(',') === '3,4,5,7', 'body lines record their file line (got ' + fl.lines.map(l => l.fileLine).join(',') + ')');
+check(fl.lines[2].raw.split('\n').length === 2, 'a wrapped instruction keeps both raw rows');
+const flOut = P.applyLineEdits(flSrc, [
+  { fileLine: 3, count: 1, text: '   1:L P[1] 1500mm/sec FINE ;' },
+  { fileLine: 5, count: 2, text: '   3:  CALL SHORT ;' }
+]);
+check(flOut.split('\r\n').length === 8 && /\r\n/.test(flOut), 'edits keep CRLF endings and shrink the wrapped row (got ' + flOut.split('\r\n').length + ' rows)');
+const flP = P.parseLS(flOut, 'FL.LS');
+check(flP.lines[0].text === 'P[1] 1500mm/sec FINE' && flP.lines[2].text === 'CALL SHORT' && flP.lines[3].fileLine === 6, 'edited listing re-parses with the rows below shifted up');
 check(programs.GRIPPER.parsed.positions.length === 0, 'GRIPPER has no /POS section');
 
 console.log('\n-- analyzer --');
@@ -60,6 +74,29 @@ check(ma.timers[1] && ma.timers[1].writes.length >= 2, 'TIMER[1] START/STOP/RESE
 const pa = programs.PLACE.analysis;
 check(pa.posRegs[20] && pa.posRegs[20].writes.length >= 3, 'PR[20] written (incl. component writes)');
 check(pa.registers[11] && pa.registers[11].reads.length >= 1, 'R[11] read on right-hand side');
+
+// A motion line's trailing TB/DB trigger or Skip,LBL,PR=LPOS has the only '='
+// on the line; the speed register and the destination PR left of it are reads.
+const wrSrc = [
+  '/PROG WR', '/MN',
+  '   1:L PR[55:Meas] R[207:ScanSpd]mm/sec FINE Tool_Offset Skip,LBL[217],PR[49:Edge]=LPOS ;',
+  '   2:J P[1] R[31:Speed-J]% CNT50 TB 0.5sec,DO[101]=ON ;',
+  '   3:  IF R[31:Speed-J]=75,JMP LBL[1] ;',
+  '   4:  SELECT R[31]=1,CALL A ;',
+  '   5:  R[31:Speed-J]=R[31:Speed-J]+1 ;',
+  '   6:  GO[1]=R[31] ;',
+  '   7:  IF (R[31:Speed-J]<10),R[31:Speed-J]=(10) ;',
+  '   8:  IF ((R[31]=1) AND (DI[1]=ON)),DO[102]=(ON) ;',
+  '   9:  IF (R[31]=1),JMP LBL[1] ;',
+  '/POS', '/END'
+].join('\n');
+const wrA = A.analyzeProgram(P.parseLS(wrSrc, 'WR.LS'));
+check(wrA.registers[207].writes.length === 0 && wrA.registers[207].reads.length === 1, 'speed register on a Skip,PR=LPOS line is a read');
+check(wrA.posRegs[55].writes.length === 0 && wrA.posRegs[49].writes.length === 1, 'Skip line: destination PR read, PR=LPOS written');
+check(wrA.registers[31].writes.join(',') === '5,7', 'R[31]: written by R[31]=... and by the IF (...),R[31]=(10) action (got ' + wrA.registers[31].writes.join(',') + ')');
+check(wrA.registers[31].reads.length === 8, 'R[31]: TB, IF, SELECT, RHS, GO[1]= and IF-condition uses are reads (got ' + wrA.registers[31].reads.length + ')');
+check(wrA.io['DO[101]'].writes.length === 1 && wrA.io['GO[1]'].writes.length === 1, 'DO[101] in TB trigger and GO[1] target are writes');
+check(wrA.io['DO[102]'].writes.length === 1 && wrA.io['DI[1]'].reads.length === 1, 'IF (nested cond),DO[102]=(ON): DO written, DI read');
 
 console.log('\n-- call graph --');
 const graph = A.buildCallGraph(programs);
@@ -593,6 +630,119 @@ check(tail.blocks[tail.blocks.length - 1].endNum === 4,
 const prevBlanks = fb.blocks.every(b => b.preview.every(t => t.trim() !== ''));
 check(prevBlanks, 'no preview entry is an empty string');
 
+/* -- QR encoder --
+ * The symbols this produces were checked once against a real decoder (jsQR)
+ * across every version 1-10, all 8 masks, and each version's exact byte
+ * limit — that is what says the encoder is *correct*. These tests are the
+ * regression net around it: the published capacity table, the structure any
+ * scanner looks for first, and a fingerprint of one fixed symbol, so a change
+ * to the Reed-Solomon or the placement cannot pass unnoticed. */
+console.log('\n-- qr --');
+const QR = require('../js/qr.js');
+
+// The byte-mode capacities at level M, straight out of the standard's table.
+const CAPACITIES = [14, 26, 42, 62, 84, 106, 122, 152, 180, 213];
+check(CAPACITIES.every((n, i) => QR.capacity(i + 1) === n),
+  'byte-mode level-M capacities match the standard for versions 1-10');
+check(QR.maxBytes === 213, 'the encoder tops out at 213 bytes');
+
+const url = 'http://192.168.0.50:8642';
+const sym = QR.encode(url);
+check(sym.version === 2 && sym.size === 25, 'a LAN URL fits version 2 (25x25), got v' + sym.version);
+check(QR.encode('a'.repeat(14)).version === 1 && QR.encode('a'.repeat(15)).version === 2,
+  'version steps up exactly at the capacity boundary');
+
+// Structure: three finders, their separators, the timing rows, the dark module.
+const m = sym.modules;
+const finderOK = [[0, 0], [0, sym.size - 7], [sym.size - 7, 0]].every(([r0, c0]) => {
+  for (let r = 0; r < 7; r++) {
+    for (let c = 0; c < 7; c++) {
+      const d = Math.max(Math.abs(r - 3), Math.abs(c - 3));
+      if (m[r0 + r][c0 + c] !== (d !== 2 ? 1 : 0)) return false;
+    }
+  }
+  return true;
+});
+check(finderOK, 'all three finder patterns are drawn correctly');
+let timingOK = true;
+for (let i = 8; i < sym.size - 8; i++) {
+  if (m[6][i] !== (i % 2 === 0 ? 1 : 0) || m[i][6] !== (i % 2 === 0 ? 1 : 0)) timingOK = false;
+}
+check(timingOK, 'both timing patterns alternate');
+check(m[sym.size - 8][8] === 1, 'the always-dark module is dark');
+let quietOK = true;
+for (let i = 0; i < 8; i++) { if (m[7][i] || m[i][7]) quietOK = false; }
+check(quietOK, 'the separator around the top-left finder is clear');
+
+// A fingerprint of the whole symbol: any change to the encoder moves it.
+const fingerprint = m.reduce((h, row) =>
+  row.reduce((a, v) => (a * 31 + v) >>> 0, h), 7);
+check(fingerprint === 2679924875,
+  'the symbol for ' + url + ' is bit-for-bit unchanged (got ' + fingerprint + ')');
+
+check(QR.svg(url).indexOf('viewBox="0 0 33 33"') > 0,
+  'the SVG carries the 4-module quiet zone a scanner needs');
+let tooLong = false;
+try { QR.encode('x'.repeat(214)); } catch (e) { tooLong = true; }
+check(tooLong, 'text past the last version is refused rather than truncated');
+
+
+console.log('\n-- STRREG.VA parser --');
+const srSample = [
+  "[*STRREG*]$STRREG  Storage: SHADOW  Access: RW  : ARRAY[25] OF String Reg",
+  "  [1] = Error setting SR Alarm text.  '*Active Alarm' ",
+  "  [2] =   '' ",
+  "  [6] = Status ID not 0 with no Box in Grip. Reset R[101] Sts ID to 0.  'PrevAlarm-2' ",
+  "  [7] = value with no comment field at all"
+].join('\n');
+const srs = VA.parseStrreg(srSample);
+check(srs.length === 4, 'the ARRAY[25] header line is not read as a register (got ' + srs.length + ')');
+check(srs[0].index === 1 && srs[0].comment === '*Active Alarm' && srs[0].value === 'Error setting SR Alarm text.',
+  'value and comment split on the LAST quoted run');
+check(srs[1].value === '' && srs[1].comment === '', 'an empty string register parses as empty, not skipped');
+check(srs[2].index === 6 && srs[2].comment === 'PrevAlarm-2',
+  'a stored string containing R[101] does not read as a second register');
+check(srs[3].index === 7 && srs[3].comment === '' && srs[3].value === 'value with no comment field at all',
+  'a line with no quoted comment still yields its value');
+
+console.log('\n-- renaming on the controller (ComSet) --');
+const CS = require('../lib/comset.js');
+// The codes are the controller's own, read off its /KAREL/COMMAIN page's
+// klserver.js handlers. If one of these ever changes, a rename silently writes
+// the wrong table on a live robot — so they are pinned here.
+check(CS.CODES.R.fc === 1 && CS.CODES.PR.fc === 3 && CS.CODES.SR.fc === 14,
+  'register comment codes pinned: R=1, PR=3, SR=14');
+check(CS.CODES.DI.fc === 8 && CS.CODES.DO.fc === 9 && CS.CODES.F.fc === 19,
+  'I/O comment codes pinned: DI=8, DO=9, F=19');
+check(CS.CODES.R.max === 16 && CS.CODES.DO.max === 24,
+  "length caps match the controller's own maxlength: 16 for registers, 24 for I/O");
+['UI', 'UO', 'SI', 'SO', 'WI', 'WO', 'M'].forEach((t) => {
+  check(!!CS.plan(t, 1, 'x').error, t + ' has no comment write on the controller, so a rename is refused');
+});
+
+const good = CS.plan('r', 1, 'Task ID');
+check(good.url === '/karel/ComSet?sComment=Task%20ID&sIndx=1&sFc=1',
+  'the ComSet URL matches what the robot page sends: ' + good.url);
+check(good.key === 'R[1]' && good.kind === 'R', 'a lowercase type still resolves to R[1]');
+check(CS.plan('R', 1, '').error === undefined && CS.plan('R', 1, '').comment === '',
+  'clearing a name is allowed — that is how a register goes back to unnamed');
+check(!!CS.plan('R', 1, 'x'.repeat(17)).error, '17 characters is refused for a 16-character register comment');
+check(!CS.plan('DO', 1, 'x'.repeat(24)).error, '24 characters is accepted for an I/O point');
+check(!!CS.plan('R', 1, "it's").error, "an apostrophe is refused — NUMREG.VA quotes the comment");
+check(!!CS.plan('R', 1, 'a[1]').error, 'a square bracket is refused — listings bracket the comment');
+check(!!CS.plan('R', 1, 'café').error, 'non-ASCII is refused rather than encoded and hoped for');
+check(!!CS.plan('R', 0, 'x').error && !!CS.plan('R', 1.5, 'x').error && !!CS.plan('R', 10000, 'x').error,
+  'index 0, a fraction, and past the cap are all refused');
+
+// Verification reads the item back out of the file it lives in.
+check(CS.storedComment('NUMREG.VA', "  [1] = 92  'Task ID'\n", 'R', 1) === 'Task ID',
+  'a register rename is verified against NUMREG.VA');
+check(CS.storedComment('NUMREG.VA', "  [1] = 92  'Task ID'\n", 'R', 2) === null,
+  'an index missing from the file reads as null, not as an empty name');
+check(CS.storedComment('IOSTATE.DG', 'DOUT[  65] OFF  Vac-1 ON\n', 'DO', 65) === 'Vac-1 ON',
+  'an I/O rename is verified against IOSTATE.DG');
+check(CS.storedComment('IOSTATE.DG', 'DIN[   1]  ON  Auto Mode\n', 'DO', 1) === null,
+  'DI[1] and DO[1] are not confused when verifying');
 console.log('');
 if (failures) {
   console.error(failures + ' test(s) failed');

@@ -72,6 +72,27 @@
     return out;
   }
 
+  /* STRREG.VA — string registers. Value first, comment last:
+   *   [1] = Error setting SR Alarm text.  '*Active Alarm'
+   *   [2] =   ''
+   * Parsed a line at a time rather than with a global regex, because a stored
+   * string can itself contain a bracketed reference — the [101] in
+   * "Reset R[101] Sts ID to 0" would otherwise read as a register of its own.
+   * The comment is the LAST quoted run on the line, so a value carrying an
+   * apostrophe cannot swallow it either. */
+  function parseStrreg(text) {
+    var out = [];
+    text.split(/\r\n|\r|\n/).forEach(function (line) {
+      var m = line.match(/^\s*\[(\d+)\]\s*=\s*(.*)$/);
+      if (!m) return;                    // the header line is [*STRREG*]$STRREG …
+      var rest = m[2], comment = '';
+      var q = rest.match(/^(.*)'([^']*)'\s*$/);
+      if (q) { rest = q[1]; comment = q[2]; }
+      out.push({ index: parseInt(m[1], 10), value: rest.trim(), comment: comment.trim() });
+    });
+    return out;
+  }
+
   /* POSREG.VA — position registers with comments and values.
    *   [1,1] =   'Home'   Group: 1
    *   J1 = -.000 deg  J2 = -60.000 deg ...
@@ -257,7 +278,7 @@
     return out;
   }
 
-  var api = { parseNumreg: parseNumreg, rawLines: rawLines, parseIOComments: parseIOComments, parseIOState: parseIOState, parsePosreg: parsePosreg, posregValueStr: posregValueStr, parseErrall: parseErrall, parsePrgState: parsePrgState };
+  var api = { parseNumreg: parseNumreg, parseStrreg: parseStrreg, rawLines: rawLines, parseIOComments: parseIOComments, parseIOState: parseIOState, parsePosreg: parsePosreg, posregValueStr: posregValueStr, parseErrall: parseErrall, parsePrgState: parsePrgState };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucVA = api;
 })(typeof window !== 'undefined' ? window : globalThis);

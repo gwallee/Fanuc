@@ -53,12 +53,12 @@
       // Registers R[n]  (avoid PR[n] / SR[n] / AR[n] / GO[..] etc. via char class before R)
       var regRe = /(^|[^A-Z])R\[(\d+)(?::([^\]]*))?\]/g;
       while ((j = regRe.exec(text)) !== null) {
-        recordRef(a.registers, parseInt(j[2], 10), j[3], line, isWriteAt(text, j.index + j[1].length));
+        recordRef(a.registers, parseInt(j[2], 10), j[3], line, isWriteAt(text, j.index + j[0].length));
       }
       // Position registers PR[n] and PR[i,j]
       var prRe = /\bPR\[(?:GP\d+\s*:\s*)?(\d+)(?:\s*,\s*\d+)?(?::([^\]]*))?\]/g;
       while ((j = prRe.exec(text)) !== null) {
-        recordRef(a.posRegs, parseInt(j[1], 10), j[2], line, isWriteAt(text, j.index));
+        recordRef(a.posRegs, parseInt(j[1], 10), j[2], line, isWriteAt(text, j.index + j[0].length));
       }
       // Timers
       var tRe = /\bTIMER\[(\d+)\]/g;
@@ -72,7 +72,7 @@
         if (!a.io[key]) a.io[key] = { type: j[1], index: parseInt(j[2], 10), label: null, reads: [], writes: [] };
         // exports embed the live state before the comment: DI[1:ON :Auto Mode]
         if (j[3] && !a.io[key].label) a.io[key].label = j[3].replace(/^(ON|OFF)\s*:\s*/i, '').trim();
-        if (isWriteAt(text, j.index)) a.io[key].writes.push(line.num);
+        if (isWriteAt(text, j.index + j[0].length)) a.io[key].writes.push(line.num);
         else a.io[key].reads.push(line.num);
       }
 
@@ -102,28 +102,45 @@
     (isWrite ? map[n].writes : map[n].reads).push(line.num);
   }
 
-  // A reference is a "write" if it appears on the left of the first top-level '='
-  // that is an assignment (not ==, <=, >=, <>).
-  function isWriteAt(text, idx) {
+  // A reference is a "write" only when it is the thing being assigned: it ends
+  // right before the line's assignment '=' (not ==, <=, >=, <>). Merely being
+  // left of the '=' is not enough — a motion line's speed register sits left
+  // of the '=' in a trailing TB 0.5sec,DO[1]=ON or Skip,LBL[1],PR[5]=LPOS,
+  // and it is the DO or PR that is written there, not the speed.
+  function isWriteAt(text, end) {
     var eq = findAssignEq(text);
-    return eq !== -1 && idx < eq;
+    return eq !== -1 && end <= eq && /^\s*$/.test(text.slice(end, eq));
   }
 
   function findAssignEq(text) {
+    var action = ifActionStart(text);
     for (var i = 0; i < text.length; i++) {
       if (text[i] === '=') {
         var prev = text[i - 1], next = text[i + 1];
         if (prev === '<' || prev === '>' || prev === '=' || next === '=') continue;
-        // "IF (...)" conditions contain '=' comparisons; treat '=' after IF/WAIT/UNTIL as comparison
-        var head = text.slice(0, i);
-        if (/\b(IF|WAIT|UNTIL|WHEN)\b/i.test(head) && !/,\s*$/.test(head)) {
-          // mixed logic IF (DO[1]=ON) — comparison, keep scanning
-          continue;
-        }
+        // "IF (...)" conditions contain '=' comparisons; treat '=' after IF/WAIT/UNTIL/SELECT
+        // as comparison — unless it is in the action a mixed-logic IF runs once its
+        // condition closes: IF (R[1]<10),R[1]=(10) does write R[1].
+        if (i < action && /\b(IF|WAIT|UNTIL|WHEN|SELECT)\b/i.test(text.slice(0, i))) continue;
         return i;
       }
     }
     return -1;
+  }
+
+  // Where the action of a mixed-logic "IF (cond),action" begins, or Infinity
+  // when the line has no such action (plain IF R[1]=1,JMP, WAIT, SELECT...).
+  function ifActionStart(text) {
+    var m = /^\s*IF\s*\(/.exec(text);
+    if (!m) return Infinity;
+    var depth = 0;
+    for (var i = m[0].length - 1; i < text.length; i++) {
+      if (text[i] === '(') depth++;
+      else if (text[i] === ')' && --depth === 0) {
+        return /^\s*,/.test(text.slice(i + 1)) ? i + 1 : Infinity;
+      }
+    }
+    return Infinity;
   }
 
   /* ---- library-level analysis ---- */

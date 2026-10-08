@@ -11,7 +11,10 @@
  *
  * Robot-side requirement: the controller's built-in web server (HTTP)
  * must be enabled (Host Comm → HTTP). Files are read from http://<robot>/MD/.
- * This bridge only READS from robots — it never writes to a controller.
+ * The bridge reads from robots, and writes to one only where it is asked to
+ * and can prove the result: a .LS upload (snapshot / verify / auto-restore)
+ * and a comment rename through the controller's own comment tool. Nothing
+ * here can move a robot or change what a program does.
  */
 'use strict';
 const http = require('http');
@@ -22,6 +25,7 @@ const net = require('net');
 const os = require('os');
 const { Ftp } = require('./lib/ftp.js');
 const { unwrapMd } = require('./js/parser.js');
+const CS = require('./lib/comset.js');
 
 const ROOT = __dirname;
 const SNAPSHOT_DIR = path.join(ROOT, 'backups', 'pre-upload');
@@ -32,8 +36,23 @@ const ROBOT_TIMEOUT_MS = 6000;
  * than this anyway. Only a silently-dropping firewall runs it to the end. */
 const PROBE_TIMEOUT_MS = 1500;
 const MAX_BODY = 5 * 1024 * 1024;
-const ROBOTS_FILE = path.join(ROOT, 'robots.json');
+/* Where the bridge keeps what it remembers — the saved robots and the
+ * settings. Beside the bridge by default, which is what a shop-floor PC
+ * wants. Overridable so a test can point a bridge at a scratch directory
+ * instead: the robot list someone actually uses is not a thing a test run
+ * should ever be able to write over. */
+const STATE_DIR = process.env.FANUC_STUDIO_STATE
+  ? path.resolve(process.env.FANUC_STUDIO_STATE) : ROOT;
+const ROBOTS_FILE = path.join(STATE_DIR, 'robots.json');
+const SETTINGS_FILE = path.join(STATE_DIR, 'settings.json');
 const MAX_ROBOTS = 64;
+const DEFAULT_BACKUP_ROOT = path.join(STATE_DIR, 'backups');
+if (STATE_DIR !== ROOT) fs.mkdirSync(STATE_DIR, { recursive: true });
+/* Backing up several robots, a powered-down controller is the normal case,
+ * not an error — and each one would otherwise hold the whole sweep for the
+ * FTP connect timeout. A plain TCP probe of the control port turns twenty
+ * seconds of dead air into three and a reason worth printing. */
+const BATCH_PROBE_MS = 3000;
 /* Subnet sweep. A connect attempt that finds nothing is one SYN and one RST,
  * so the whole cost of a /24 is well under 100 KB — the clock is set by how
  * many run at once, not by bandwidth. Capped at a /22 so a mistyped prefix
@@ -101,6 +120,23 @@ function robotGet(host, filePath, timeoutMs) {
   });
 }
 
+/* Read one MD: file, controller web server first and FTP second — the same
+ * either-protocol-is-enough fallback the rest of the bridge relies on. */
+async function readRobotFile(t, user, pass, name) {
+  const upper = name.toUpperCase();
+  try {
+    return { via: 'http', content: unwrapMd(await robotGet(t.host, '/MD/' + encodeURIComponent(upper))) };
+  } catch (httpErr) {
+    try {
+      const ftp = await ftpConnect(t, user, pass);
+      try { return { via: 'ftp', content: (await ftp.retr(upper)).toString('utf8') }; }
+      finally { try { await ftp.quit(); } catch (e) { /* already gone */ } }
+    } catch (ftpErr) {
+      throw new Error('HTTP: ' + httpErr.message + ' / FTP: ' + ftpErr.message);
+    }
+  }
+}
+
 /* Extract program/variable filenames from an MD: directory listing page.
  * Listing HTML varies by controller version, so scrape both hrefs and
  * bare NAME.EXT tokens. */
@@ -132,14 +168,41 @@ async function handleApi(req, res, u) {
     if (!ip || !ROBOT_HOST.test(String(ip).split(':')[0])) return fail(res, 400, 'missing or invalid ip');
     const t = parseTarget(ip);
     const name = cleanLabel(payload.name, 32) || await robotName(t.host);
-    const list = readRobots().filter((r) => r.ip !== t.ip);
+    const all = readRobots();
+    const prev = all.find((r) => r.ip === t.ip) || null;
+    const list = all.filter((r) => r.ip !== t.ip);
     list.unshift({
       ip: t.ip,
       name: name,
       ftpUser: cleanLabel(payload.ftpUser, 32),   // never the password
+      folder: prev ? (prev.folder || null) : null,  // set once; reconnecting must not clear it
       lastSeen: new Date().toISOString()
     });
     writeRobots(list);
+    return json(res, 200, { robots: readRobots() });
+  }
+
+  /* The folder THIS robot's backups go in. Blank puts it back on the home
+   * folder. Refused unless it can actually be written, for the same reason
+   * the home folder is: a saved path that does not work is not a setting,
+   * it is a backup that will not happen. */
+  if (u.pathname === '/api/robots/folder' && req.method === 'POST') {
+    let payload;
+    try { payload = JSON.parse(await readBody(req)); } catch (e) { return fail(res, 400, 'invalid JSON body'); }
+    const ip = payload && payload.ip;
+    if (!ip || !ROBOT_HOST.test(String(ip).split(':')[0])) return fail(res, 400, 'missing or invalid ip');
+    const raw = payload.folder == null ? '' : String(payload.folder).trim();
+    let folder = null;
+    if (raw) {
+      folder = path.resolve(raw);
+      const bad = ensureDir(folder);
+      if (bad) return fail(res, 400, bad);
+    }
+    const list = readRobots();
+    const hit = list.find((r) => r.ip === String(ip));
+    if (hit) hit.folder = folder;
+    else list.unshift({ ip: String(ip), name: null, ftpUser: null, folder: folder, lastSeen: null });
+    if (!writeRobots(list)) return fail(res, 500, 'could not save ' + ROBOTS_FILE);
     return json(res, 200, { robots: readRobots() });
   }
 
@@ -154,6 +217,74 @@ async function handleApi(req, res, u) {
 
   if (u.pathname === '/api/net') {
     return json(res, 200, { subnets: localSubnets() });
+  }
+
+  /* ---- folder picker ----
+   * The folders that matter are on the BRIDGE PC — a mapped drive or a share
+   * this machine can see. A browser cannot hand a server a real path (a
+   * folder input gives file names, never a filesystem location), and typing
+   * a UNC path by hand on a phone is nobody's idea of a good time, so the
+   * bridge lists its own directories and the UI walks them. Names only:
+   * strictly less than /api/dir/list already gives out, which reads files. */
+  if (u.pathname === '/api/fs/dirs') {
+    const raw = q.get('path');
+    if (!raw) return json(res, 200, { places: startingPlaces() });
+    const dir = path.resolve(raw);
+    let dirs;
+    try {
+      dirs = fs.readdirSync(dir, { withFileTypes: true })
+        .filter((e) => e.isDirectory() || (e.isSymbolicLink() && isDirLink(path.join(dir, e.name))))
+        .map((e) => e.name)
+        /* $RECYCLE.BIN, System Volume Information and friends: never where a
+         * backup goes, and they only ever error when opened. */
+        .filter((n) => n[0] !== '$' && n !== 'System Volume Information')
+        .sort((a, b) => a.localeCompare(b))
+        .slice(0, 1000);
+    } catch (e) {
+      return fail(res, 400, 'cannot read ' + dir + ': ' + e.message);
+    }
+    const parent = path.dirname(dir);
+    return json(res, 200, {
+      path: dir,
+      parent: parent === dir ? null : parent,
+      dirs: dirs,
+      error: dirWritable(dir)
+    });
+  }
+
+  /* The home folder, reported with whether it can actually be written to
+   * right now — a mapped drive is only mapped inside a login session, so a
+   * path that worked yesterday can be gone today and the UI should say so
+   * before someone starts a sweep. */
+  if (u.pathname === '/api/settings' && req.method === 'GET') {
+    const dir = homeRoot();
+    return json(res, 200, {
+      backupRoot: dir,
+      isDefault: dir === DEFAULT_BACKUP_ROOT,
+      error: dirWritable(dir)
+    });
+  }
+
+  if (u.pathname === '/api/settings' && req.method === 'POST') {
+    let payload;
+    try { payload = JSON.parse(await readBody(req)); } catch (e) { return fail(res, 400, 'invalid JSON body'); }
+    const s = readSettings();
+    if ('backupRoot' in payload) {
+      const raw = payload.backupRoot == null ? '' : String(payload.backupRoot).trim();
+      if (!raw) {
+        delete s.backupRoot;                  // back to backups/ beside the bridge
+      } else {
+        const dir = path.resolve(raw);
+        /* Refused rather than saved-and-hoped-for: a home folder that cannot
+         * be written is not a setting, it is a backup that will not happen. */
+        const bad = ensureDir(dir);
+        if (bad) return fail(res, 400, bad);
+        s.backupRoot = dir;
+      }
+    }
+    if (!writeSettings(s)) return fail(res, 500, 'could not save ' + SETTINGS_FILE);
+    const dir = homeRoot();
+    return json(res, 200, { backupRoot: dir, isDefault: dir === DEFAULT_BACKUP_ROOT, error: dirWritable(dir) });
   }
 
   /* Streams NDJSON so the UI can show progress and the caller can give up
@@ -204,6 +335,7 @@ async function handleApi(req, res, u) {
           ip: f.ip,
           name: f.name || (prev && prev.name) || null,
           ftpUser: prev ? prev.ftpUser : null,
+          folder: prev ? (prev.folder || null) : null,   // a re-scan must not undo a filed folder
           lastSeen: new Date().toISOString()
         });
       }
@@ -279,17 +411,57 @@ async function handleApi(req, res, u) {
     if (!t) return fail(res, 400, 'missing or invalid ?ip=');
     if (!name || !ROBOT_NAME.test(name)) return fail(res, 400, 'missing or invalid ?name=');
     try {
-      // the controller web server wraps MD: files in an HTML page — unwrap it
-      const content = unwrapMd(await robotGet(t.host, '/MD/' + encodeURIComponent(name.toUpperCase())));
-      return json(res, 200, { ip: t.ip, name: name.toUpperCase(), via: 'http', content });
-    } catch (httpErr) {
-      try {
-        const buf = await withFtp(t, q, (ftp) => ftp.retr(name.toUpperCase()));
-        return json(res, 200, { ip: t.ip, name: name.toUpperCase(), via: 'ftp', content: buf.toString('utf8') });
-      } catch (ftpErr) {
-        return fail(res, 502, 'HTTP: ' + httpErr.message + ' / FTP: ' + ftpErr.message);
-      }
+      const got = await readRobotFile(t, q.get('user') || undefined, q.get('pass') || undefined, name);
+      return json(res, 200, { ip: t.ip, name: name.toUpperCase(), via: got.via, content: got.content });
+    } catch (e) {
+      return fail(res, 502, e.message);
     }
+  }
+
+  /* Rename one item on the controller: a register, a position or string
+   * register, or an I/O point. This is the only write the bridge makes over
+   * HTTP, so it is deliberately narrow — a comment and nothing else, only for
+   * a type the controller's own comment tool offers, and the text is checked
+   * before it goes anywhere. Nothing reachable here can move the robot or
+   * change a program.
+   *
+   * Same shape as the .LS upload: write, then read the file back and report
+   * what the controller actually stored, so the UI can prove the rename landed
+   * instead of taking a 200 for an answer. */
+  if (u.pathname === '/api/robot/comment' && req.method === 'POST') {
+    const body = await readBody(req);
+    let payload;
+    try { payload = JSON.parse(body); } catch (e) { return fail(res, 400, 'invalid JSON body'); }
+    const { ip, type, index, text, user, pass } = payload;
+    if (!ip || !ROBOT_HOST.test(String(ip).split(':')[0])) return fail(res, 400, 'missing or invalid ip');
+    const { error, spec, kind, index: idx, comment, key, url } = CS.plan(type, index, text);
+    if (error) return fail(res, 400, error);
+
+    const t = parseTarget(ip);
+    const result = { ok: false, key, type: kind, index: idx, comment, verified: false };
+    try {
+      await robotGet(t.host, url);
+    } catch (e) {
+      return fail(res, 502, 'The controller would not rename ' + key + ': ' + e.message +
+        ' — renaming needs the controller\'s comment tool (its own /KAREL/COMMAIN page) reachable over HTTP.');
+    }
+    result.ok = true;
+    if (!spec.file) return json(res, 200, result);   // nothing to read back
+
+    try {
+      const got = await readRobotFile(t, user, pass, spec.file);
+      const stored = CS.storedComment(spec.file, got.content, kind, idx);
+      result.stored = stored;
+      result.verified = stored === comment;
+      if (!result.verified) {
+        result.ok = false;
+        result.error = 'The controller took the write but ' + key + ' still reads ' +
+          (stored === null ? 'as absent from ' + spec.file : '"' + stored + '"') + '.';
+      }
+    } catch (e) {
+      result.verifyError = e.message;   // the write went through; only the proof failed
+    }
+    return json(res, 200, result);
   }
 
   /* Safe .LS upload over FTP.
@@ -360,51 +532,131 @@ async function handleApi(req, res, u) {
     }
   }
 
-  /* Full backup over FTP into <name-or-ip>_<YYYY-MM-DD>_<NN>/ */
+  /* Full backup over FTP into <name-or-ip>_<YYYY-MM-DD>_<NN>/, under the
+   * saved home folder unless this call names somewhere else. */
   if (u.pathname === '/api/robot/backup' && req.method === 'POST') {
-    const body = await readBody(req);
     let payload;
-    try { payload = JSON.parse(body); } catch (e) { return fail(res, 400, 'invalid JSON body'); }
+    try { payload = JSON.parse(await readBody(req)); } catch (e) { return fail(res, 400, 'invalid JSON body'); }
     const { ip, user, pass, dest } = payload;
     const mode = payload.mode === 'quick' ? 'quick' : 'full';
     if (!ip || !ROBOT_HOST.test(String(ip).split(':')[0])) return fail(res, 400, 'missing or invalid ip');
-    const t = parseTarget(ip);
-    let robotName = null;
+    const destRoot = destFor(ip, dest);
+    const bad = ensureDir(destRoot);
+    if (bad) return fail(res, 400, bad);
     try {
-      const dg = await robotGet(t.host, '/MD/SUMMARY.DG');
-      const m = dg.match(/(?:Host\s*name|Hostname|Robot\s*Name|\$HOSTNAME)\s*[:=]?\s*([A-Za-z0-9_-]{2,32})/i);
-      if (m) robotName = m[1];
-    } catch (e) { /* HTTP not available — fall back to IP naming */ }
-    const base = (robotName || t.ip.replace(/[:.]/g, '-')) + '_' + new Date().toISOString().slice(0, 10);
-    const destRoot = dest ? path.resolve(dest) : path.join(ROOT, 'backups');
-    fs.mkdirSync(destRoot, { recursive: true });
-    let nn = 1;
-    for (const e of fs.readdirSync(destRoot)) {
-      const m = e.match(new RegExp('^' + base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '_(\\d+)(?:_quick)?$'));
-      if (m) nn = Math.max(nn, parseInt(m[1], 10) + 1);
-    }
-    const folder = path.join(destRoot, base + '_' + String(nn).padStart(2, '0') + (mode === 'quick' ? '_quick' : ''));
-    try {
-      const ftp = await ftpConnect(t, user, pass, 20000);
-      const files = await ftp.nlst();
-      fs.mkdirSync(folder, { recursive: true });
-      let saved = 0, bytes = 0;
-      const failed = [];
-      for (const f of files) {
-        if (!ROBOT_NAME.test(f)) continue;
-        if (mode === 'quick' && !/\.(ls|va)$/i.test(f)) continue;
-        try {
-          const buf = await ftp.retr(f);
-          fs.writeFileSync(path.join(folder, f.toUpperCase()), buf);
-          saved++;
-          bytes += buf.length;
-        } catch (e) { failed.push(f); }
-      }
-      await ftp.quit();
-      return json(res, 200, { ok: true, folder, robotName, mode, files: saved, failed, bytes });
+      return json(res, 200, await backupRobot(parseTarget(ip), user, pass, mode, destRoot));
     } catch (e) {
       return fail(res, 502, 'backup failed: ' + e.message);
     }
+  }
+
+  /* Back up several robots in one go into the same home folder — what a
+   * per-robot batch script used to do, without a script per robot. Streams
+   * NDJSON so the sweep says which controller it is on and aborting the
+   * request really stops it. One robot at a time on purpose: it keeps the
+   * progress honest, and on a plant network where each controller sits
+   * behind its own point-to-point link there is nothing for parallel FTP
+   * transfers to overlap with anyway. */
+  if (u.pathname === '/api/robots/backup-all' && req.method === 'POST') {
+    let payload;
+    try { payload = JSON.parse(await readBody(req)); } catch (e) { return fail(res, 400, 'invalid JSON body'); }
+    const mode = payload.mode === 'quick' ? 'quick' : 'full';
+    const ips = [];
+    const seen = new Set();
+    for (const raw of (Array.isArray(payload.ips) ? payload.ips : [])) {
+      const ip = String(raw == null ? '' : raw).trim();
+      if (!ip || !ROBOT_HOST.test(ip.split(':')[0])) return fail(res, 400, 'invalid ip: ' + ip);
+      if (!seen.has(ip)) { seen.add(ip); ips.push(ip); }
+    }
+    if (!ips.length) return fail(res, 400, 'no robots given');
+    if (ips.length > MAX_ROBOTS) return fail(res, 400, 'too many robots at once (' + ips.length + ', max ' + MAX_ROBOTS + ')');
+
+    const byIp = new Map(readRobots().map((r) => [r.ip, r]));
+    /* Each robot has its own folder, so every distinct destination is checked
+     * before the first controller is touched — a share that is down should
+     * cost nothing, and it should be named along with the robot that was
+     * going to use it rather than discovered eight transfers in. */
+    const dests = new Map();
+    for (const ip of ips) dests.set(ip, destFor(ip, payload.dest));
+    const checked = new Set();
+    for (const ip of ips) {
+      const d = dests.get(ip);
+      if (checked.has(d)) continue;
+      checked.add(d);
+      const bad = ensureDir(d);
+      if (bad) return fail(res, 400, ((byIp.get(ip) || {}).name || ip) + ': ' + bad);
+    }
+    let aborted = false;
+    req.on('close', () => { aborted = true; });
+    res.writeHead(200, { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-store' });
+    const send = (o) => { if (!aborted) res.write(JSON.stringify(o) + '\n'); };
+    const started = Date.now();
+    send({ type: 'start', total: ips.length, dests: checked.size, mode: mode });
+
+    const done = new Set();
+    const names = new Map();
+    let okCount = 0, failCount = 0, skipCount = 0, files = 0, bytes = 0;
+    for (let i = 0; i < ips.length; i++) {
+      if (aborted) break;
+      const ip = ips[i];
+      const entry = byIp.get(ip) || null;
+      const t = parseTarget(ip);
+      send({ type: 'robot', index: i, ip: ip, name: (entry && entry.name) || null, dest: dests.get(ip) });
+      const up = await probePort(t.host, t.port, BATCH_PROBE_MS);
+      if (!up.ok) {
+        skipCount++;
+        send({
+          type: 'robotDone', ip: ip, skipped: true,
+          error: 'no answer on FTP port ' + t.port + ' (' + up.error + ') — powered down, or not on this network'
+        });
+        continue;
+      }
+      try {
+        /* A robot's own saved FTP user wins; the credentials sent with the
+         * request cover the rest. The password is never stored, so it can
+         * only ever come from this call. */
+        const r = await backupRobot(
+          t,
+          (entry && entry.ftpUser) || payload.user || undefined,
+          payload.pass || undefined,
+          mode, dests.get(ip),
+          (p) => send({ type: 'file', ip: ip, saved: p.saved, total: p.total, bytes: p.bytes })
+        );
+        okCount++;
+        files += r.files;
+        bytes += r.bytes;
+        done.add(ip);
+        if (r.robotName) names.set(ip, r.robotName);
+        send({
+          type: 'robotDone', ip: ip, ok: true, folder: r.folder,
+          files: r.files, failed: r.failed, bytes: r.bytes, robotName: r.robotName
+        });
+      } catch (e) {
+        failCount++;
+        send({ type: 'robotDone', ip: ip, error: e.message });
+      }
+    }
+
+    /* A completed backup is the strongest proof of reachability there is, so
+     * it refreshes lastSeen — and fills in a name for a robot that was found
+     * by a scan before it would tell anyone what it was called. */
+    if (done.size) {
+      const list = readRobots();
+      let touched = false;
+      for (const r of list) {
+        if (!done.has(r.ip)) continue;
+        r.lastSeen = new Date().toISOString();
+        if (!r.name && names.get(r.ip)) r.name = names.get(r.ip);
+        touched = true;
+      }
+      if (touched) writeRobots(list);
+    }
+
+    send({
+      type: 'done', ok: okCount, failed: failCount, skipped: skipCount,
+      files: files, bytes: bytes, dests: Array.from(checked), ms: Date.now() - started
+    });
+    return res.end();
   }
 
   return fail(res, 404, 'unknown API route');
@@ -438,6 +690,144 @@ function cleanLabel(v, max) {
   if (typeof v !== 'string') return null;
   const t = v.replace(/[^A-Za-z0-9_. @-]/g, '').trim().slice(0, max);
   return t || null;
+}
+
+/* ---- bridge settings ----
+ * Kept on the bridge for the same reason the robot list is: the home folder
+ * is a path on THIS PC — a mapped drive or a UNC share — so it means nothing
+ * to a phone pointed at the bridge, and everyone filing backups off this
+ * bridge should be filing them in the same place. Set it once, and every
+ * backup after that lands there without anyone retyping a server path. */
+function readSettings() {
+  try {
+    const s = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    return (s && typeof s === 'object' && !Array.isArray(s)) ? s : {};
+  } catch (e) {
+    return {};   // missing or corrupt — the built-in defaults are the answer
+  }
+}
+
+function writeSettings(s) {
+  try {
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2));
+    return true;
+  } catch (e) {
+    console.error('[bridge] could not save ' + SETTINGS_FILE + ': ' + e.message);
+    return false;
+  }
+}
+
+/* The home folder alone — where a robot with no folder of its own goes. */
+function homeRoot() {
+  const raw = readSettings().backupRoot;
+  return raw ? path.resolve(String(raw)) : DEFAULT_BACKUP_ROOT;
+}
+
+/* Where one robot's backup goes: an explicit dest for this call wins, then
+ * that robot's own folder, then the home folder. A robot gets its own folder
+ * because a cell's backups belong with that cell's project on the server —
+ * which is what a per-robot batch script was really encoding. */
+function destFor(ip, dest) {
+  if (dest && String(dest).trim()) return path.resolve(String(dest).trim());
+  const own = robotFolder(ip);
+  return own || homeRoot();
+}
+
+function robotFolder(ip) {
+  const r = readRobots().find((x) => x.ip === String(ip));
+  return (r && r.folder) ? path.resolve(r.folder) : null;
+}
+
+/* A mapped drive that isn't mapped in this login session, or a share that is
+ * down, has to be said out loud BEFORE a sweep of eight robots starts —
+ * never discovered halfway through on the first write. */
+function dirWritable(dir) {
+  try {
+    if (!fs.statSync(dir).isDirectory()) return dir + ' is not a folder';
+    fs.accessSync(dir, fs.constants.W_OK);
+    return null;
+  } catch (e) {
+    return 'cannot write to ' + dir + ': ' + e.message;
+  }
+}
+
+function ensureDir(dir) {
+  try { fs.mkdirSync(dir, { recursive: true }); }
+  catch (e) { return 'cannot create ' + dir + ': ' + e.message; }
+  return dirWritable(dir);
+}
+
+function isDirLink(p) {
+  try { return fs.statSync(p).isDirectory(); } catch (e) { return false; }
+}
+
+/* Where the folder picker opens: the drives this PC can see — the mapped
+ * network drives are the whole point, since that is where plant backups
+ * live — plus wherever backups already go. Drive letters are probed rather
+ * than listed, because there is no dependency-free way to enumerate them and
+ * 26 stat calls on a local machine cost nothing. */
+function startingPlaces() {
+  const places = [];
+  const add = (label, dir) => {
+    if (!dir) return;
+    const p = path.resolve(dir);
+    if (places.some((x) => x.path === p)) return;
+    if (!isDirLink(p)) return;
+    places.push({ label: label, path: p });
+  };
+  const home = homeRoot();
+  add(home === DEFAULT_BACKUP_ROOT ? 'Bridge backups folder' : 'Current home folder', home);
+  for (const r of readRobots()) if (r.folder) add((r.name || r.ip) + '’s folder', r.folder);
+  if (process.platform === 'win32') {
+    for (let i = 0; i < 26; i++) {
+      const letter = String.fromCharCode(67 + i);       // C: upward
+      add(letter + ':', letter + ':\\');
+    }
+  } else {
+    add('/', '/');
+    for (const m of ['/Volumes', '/mnt', '/media', '/srv']) add(m, m);
+  }
+  add('Home directory', os.homedir());
+  return places;
+}
+
+/* Pull the files off one robot's MD: into <name-or-ip>_<YYYY-MM-DD>_<NN>/.
+ * Shared by the single-robot buttons and the back-up-every-robot sweep, so a
+ * batch backup is indistinguishable from four taken by hand — same folder
+ * names, same contents, and the Compare tab loads either as a baseline.
+ * onFile is called after each file so a caller can stream progress. */
+async function backupRobot(t, user, pass, mode, destRoot, onFile) {
+  const name = await robotName(t.host);
+  const base = (name || t.ip.replace(/[:.]/g, '-')) + '_' + new Date().toISOString().slice(0, 10);
+  fs.mkdirSync(destRoot, { recursive: true });
+  let nn = 1;
+  for (const e of fs.readdirSync(destRoot)) {
+    const m = e.match(new RegExp('^' + base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '_(\\d+)(?:_quick)?$'));
+    if (m) nn = Math.max(nn, parseInt(m[1], 10) + 1);
+  }
+  const folder = path.join(destRoot, base + '_' + String(nn).padStart(2, '0') + (mode === 'quick' ? '_quick' : ''));
+  const ftp = await ftpConnect(t, user, pass, 20000);
+  let saved = 0, bytes = 0;
+  const failed = [];
+  try {
+    /* The list is filtered before any transfer starts so progress has a real
+     * denominator — "12 of 57" rather than a count that only makes sense
+     * once it stops. */
+    const want = (await ftp.nlst()).filter((f) => ROBOT_NAME.test(f) && (mode !== 'quick' || /\.(ls|va)$/i.test(f)));
+    fs.mkdirSync(folder, { recursive: true });
+    for (const f of want) {
+      try {
+        const buf = await ftp.retr(f);
+        fs.writeFileSync(path.join(folder, f.toUpperCase()), buf);
+        saved++;
+        bytes += buf.length;
+      } catch (e) { failed.push(f); }
+      if (onFile) onFile({ name: f, saved: saved, total: want.length, bytes: bytes });
+    }
+  } finally {
+    try { await ftp.quit(); } catch (e) { /* already gone */ }
+  }
+  return { ok: true, folder: folder, robotName: name, mode: mode, files: saved, failed: failed, bytes: bytes };
 }
 
 /* Ask the controller its name. Best-effort and short: a robot that does not
@@ -534,7 +924,18 @@ function ifaceKind(name, address) {
   return 'wired';
 }
 
-const KIND_RANK = { wired: 0, wireless: 1, virtual: 2, overlay: 3 };
+const KIND_RANK = { wired: 0, wireless: 1, virtual: 3, overlay: 4 };
+
+/* Wired first as a rule — controllers live on wired networks — but a tiny
+ * wired link is the exception: a /30 holds this PC and one device, so as a
+ * SCAN target it can never find anything a probe of its one neighbor would
+ * not. A plant PC with five point-to-point robot links and the shop Wi-Fi
+ * used to bury the one network with every controller on it behind those
+ * five, so real networks now outrank the direct links regardless of kind. */
+function scanRank(s) {
+  if (s.kind === 'wired' && s.hosts < 6) return 2;
+  return KIND_RANK[s.kind];
+}
 
 /* The subnets this bridge is actually attached to — the sensible default for
  * a scan, since a robot has to be reachable from here to be usable. */
@@ -567,7 +968,7 @@ function localSubnets() {
       });
     }
   }
-  out.sort((x, y) => (KIND_RANK[x.kind] - KIND_RANK[y.kind]) || x.iface.localeCompare(y.iface));
+  out.sort((x, y) => (scanRank(x) - scanRank(y)) || x.iface.localeCompare(y.iface));
   return out;
 }
 
@@ -694,7 +1095,7 @@ httpServer.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
     console.log('The bridge is already running (port ' + PORT + ' is in use).');
     console.log('Just open http://localhost:' + PORT + ' in your browser.');
-    console.log('This window will close; the other bridge window keeps serving.');
+    console.log('You can close this window; the other bridge window keeps serving.');
     process.exit(0);
   }
   console.error('[bridge] could not start: ' + e.message);

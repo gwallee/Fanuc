@@ -13,6 +13,7 @@
 <div class="app">
   <header class="header">
     <button class="btn subtle nav-toggle" id="btn-nav" aria-label="Program library"
+            title="Hide the program library on every tab"
             aria-expanded="false" aria-controls="sidebar">☰</button>
     <div class="brand">
       <span class="mark">FANUC TP</span>
@@ -21,8 +22,10 @@
     </div>
     <div class="spacer"></div>
     <div class="header-actions">
+      <button class="btn" id="btn-phone" hidden
+              title="Show a QR code for this bridge’s address — scan it to open the app on a phone or tablet">Phone</button>
       <button class="btn primary" id="btn-import">Import .LS files</button>
-      <button class="btn" id="btn-folder">Open folder</button>
+      <button class="btn" id="btn-folder">Import folder</button>
     </div>
     <input type="file" id="file-input" accept=".ls,.LS,.txt" multiple hidden>
     <input type="file" id="folder-input" webkitdirectory multiple hidden>
@@ -44,6 +47,7 @@
       </div>
       <div class="row" id="dir-row">
         <input id="dir-path" type="text" placeholder="Local folder path">
+        <button class="btn" id="btn-dir-browse" title="Browse the bridge PC’s folders — its drives, mapped network drives included">…</button>
         <button class="btn" id="btn-dir">Open</button>
       </div>
       <div class="hint muted" id="server-hint"></div>
@@ -51,6 +55,10 @@
     <div class="section-head">
       <span class="eyebrow">Program library</span>
       <span class="muted" id="lib-count"></span>
+    </div>
+    <div class="lib-ws" id="lib-ws-row" hidden>
+      <select id="lib-ws"
+              title="Each robot keeps its own program library. Picking one here only changes which library is shown — connecting to a robot switches to its library automatically."></select>
     </div>
     <div class="lib-filter">
       <input id="lib-filter" type="search" placeholder="Filter programs…"
@@ -75,6 +83,7 @@
 <script src="js/flow.js"></script>
 <script src="js/vaparse.js"></script>
 <script src="js/diff.js"></script>
+<script src="js/qr.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
