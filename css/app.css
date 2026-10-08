@@ -685,6 +685,37 @@ tr:last-child td { border-bottom: none; }
 .editor-hl .tok-call { text-decoration: none; }
 .tok-ln { color: var(--gutter); }
 
+/* ---------- editor: syntax check, snippets ----------
+ * Marks live in the overlay <pre>; nothing here may change a glyph's advance
+ * width, so it is underlines and background tints only. */
+.editor-hl .ln-err { background: var(--write-bg); text-decoration: underline wavy var(--write); text-underline-offset: 3px; }
+.editor-hl .ln-unk { text-decoration: underline dotted var(--warn); text-underline-offset: 3px; }
+.editor-status { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; padding: 6px 2px 0; font-size: 12.5px; min-height: 24px; }
+.editor-status .msg { color: var(--muted); }
+.editor-status .msg.err { color: var(--write); }
+.editor-status .msg.unk { color: var(--warn); }
+.editor-status .ex { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink); }
+.editor-status .toggle { color: var(--accent); cursor: pointer; text-decoration: underline dotted; }
+.editor-problems { max-height: 132px; overflow: auto; border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; font-size: 12.5px; }
+.editor-problems div { cursor: pointer; padding: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.editor-problems div:hover { color: var(--accent); }
+.editor-problems .n { font-family: "IBM Plex Mono", monospace; color: var(--muted); margin-right: 8px; }
+.snip-wrap { position: relative; }
+.snip-menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 40;
+  width: min(560px, 90vw); max-height: 60vh; overflow: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); padding: 6px 0; text-align: left; font-weight: 400;
+}
+.snip-menu input { width: calc(100% - 20px); margin: 4px 10px 6px; font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel-2); color: var(--ink); }
+.snip-group { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--faint); padding: 8px 12px 2px; }
+.snip-item { display: flex; flex-direction: column; gap: 1px; padding: 4px 12px; cursor: pointer; }
+.snip-item:hover, .snip-item.active { background: var(--accent-bg); }
+.snip-item .name { font-size: 12.5px; }
+.snip-item .name .count { font-size: 11px; color: var(--accent); margin-left: 8px; }
+.snip-item .code { font-family: "IBM Plex Mono", monospace; font-size: 12px; white-space: pre; color: var(--ink); }
+.snip-item .note { font-size: 11.5px; color: var(--muted); }
+
 /* ---------- checks ---------- */
 .card.sev-error .k { color: var(--write); }
 .card.sev-warn .k { color: var(--accent); }

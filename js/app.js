@@ -4,6 +4,9 @@
 
   var P = window.FanucParser, A = window.FanucAnalyzer;
   var L = window.FanucLinter, FL = window.FanucFlow, VA = window.FanucVA, D = window.FanucDiff;
+  // TP syntax: the grammar, and the shape dictionary mined from real listings
+  // (absent only if js/tpshapes.js was never built — the grammar still runs)
+  var TPS = window.FanucSyntax || null, TP_DICT = window.TP_SHAPES || null;
   var STORE_KEY_V1 = 'fanuc-tp-studio.programs.v1';
   var STORE_KEY_V2 = 'fanuc-tp-studio.programs.v2';
   /* v3: one library per robot. Each robot's programs live under their own
@@ -196,6 +199,17 @@
     state.xref = A.buildGlobalXref(state.programs);
     state.extern = buildExtern();
     state.findings = L.lint(state.programs, state.graph, state.xref, state.extern, { passThroughCalls: state.flowIgnore });
+    // lines the controller's translator will refuse — the same grammar the
+    // editor underlines, so Save + send can warn before the upload
+    if (TPS) Object.keys(state.programs).forEach(function (name) {
+      TPS.checkProgram(state.programs[name].parsed, TP_DICT).forEach(function (e) {
+        state.findings.push({
+          severity: 'error', rule: 'syntax-error',
+          message: name + ' line ' + e.line + ': ' + e.message,
+          refs: [{ prog: name, line: e.line }]
+        });
+      });
+    });
     // live names: the controller's CURRENT register/PR/IO comments, shown in
     // place of whatever stale comment the program text was exported with
     state.liveNames = null;
@@ -2774,21 +2788,177 @@
     var hl = h('pre', { class: 'editor-hl', 'aria-hidden': 'true' });
     var editorWrap = h('div', { class: 'editor-wrap' }, [hl, ta]);
     var repaintQueued = false;
+
+    /* ---- syntax check ----
+     * Every repaint re-checks the whole listing (a few hundred lines is
+     * nothing) and marks the rows in the overlay: a wavy underline for what
+     * the controller will refuse, a dotted one for a form no robot in the
+     * dictionary uses. The strip under the editor explains the row the caret
+     * is on; the list jumps to any of them. */
+    var issues = [], byRow = {};
+    var statusBar = h('div', { class: 'editor-status' });
+    var problems = h('div', { class: 'editor-problems' });
+    problems.hidden = true;
+
     function paint() {
+      var rows = ta.value.split('\n');
+      issues = TPS ? TPS.checkSource(ta.value, TP_DICT) : [];
+      byRow = {};
+      issues.forEach(function (iss) {
+        iss.rows.forEach(function (r) { if (!byRow[r] || iss.level === 'error') byRow[r] = iss; });
+      });
       // the trailing newline keeps the last line scrollable in step with the textarea
-      hl.innerHTML = highlightSource(ta.value) + '\n';
+      hl.innerHTML = rows.map(function (raw, i) {
+        var html = highlightSourceLine(raw);
+        var iss = byRow[i];
+        return iss ? '<span class="' + (iss.level === 'error' ? 'ln-err' : 'ln-unk') + '">' + html + '</span>' : html;
+      }).join('\n') + '\n';
       syncScroll();
+      renderStatus();
     }
     function syncScroll() {
       hl.scrollTop = ta.scrollTop;
       hl.scrollLeft = ta.scrollLeft;
     }
+    function caretRow() { return ta.value.slice(0, ta.selectionStart).split('\n').length - 1; }
+    function rowStart(rows, row) {
+      var pos = 0;
+      for (var i = 0; i < row; i++) pos += rows[i].length + 1;
+      return pos;
+    }
+    function gotoRow(row) {
+      var rows = ta.value.split('\n');
+      var pos = rowStart(rows, row);
+      ta.focus();
+      ta.setSelectionRange(pos, pos + (rows[row] || '').length);
+      var lh = parseFloat(getComputedStyle(ta).lineHeight) || 20;
+      ta.scrollTop = Math.max(0, row * lh - ta.clientHeight / 2);
+      renderStatus();
+    }
+    function renderStatus() {
+      statusBar.innerHTML = '';
+      if (!TPS) return;
+      var errs = issues.filter(function (i) { return i.level === 'error'; }).length;
+      var unks = issues.length - errs;
+      var text = errs ? errs + ' syntax error' + (errs === 1 ? '' : 's') : 'no syntax errors';
+      if (unks) text += ' · ' + unks + ' unrecognised form' + (unks === 1 ? '' : 's');
+      if (!TP_DICT) text += ' · grammar only (no shape dictionary built)';
+      statusBar.appendChild(h('span', { class: 'msg' + (errs ? ' err' : ''), text: text }));
+      if (issues.length) statusBar.appendChild(h('span', {
+        class: 'toggle', text: problems.hidden ? 'list them' : 'hide the list',
+        onclick: function () { problems.hidden = !problems.hidden; renderStatus(); }
+      }));
+      var iss = byRow[caretRow()];
+      if (iss) {
+        statusBar.appendChild(h('span', { class: 'msg ' + (iss.level === 'error' ? 'err' : 'unk'), text: (iss.num !== null ? 'line ' + iss.num + ': ' : '') + iss.message }));
+        if (iss.nearest && iss.nearest.length) {
+          statusBar.appendChild(h('span', { class: 'msg', text: 'closest forms your robots use:' }));
+          iss.nearest.forEach(function (n) { statusBar.appendChild(h('span', { class: 'ex', text: n.example, title: 'used ' + n.count + ' time' + (n.count === 1 ? '' : 's') })); });
+        }
+      } else {
+        var m = (ta.value.split('\n')[caretRow()] || '').match(/^\s*\d+\s*:(.*)$/);
+        if (m) {
+          var r = TPS.check(m[1], TP_DICT);
+          if (r.level === 'ok' && r.count) statusBar.appendChild(h('span', { class: 'msg', text: 'this form appears ' + r.count + ' time' + (r.count === 1 ? '' : 's') + ' on your robots' }));
+        }
+      }
+      problems.innerHTML = '';
+      issues.forEach(function (i) {
+        problems.appendChild(h('div', { onclick: function () { gotoRow(i.row); } }, [
+          h('span', { class: 'n', text: i.num !== null ? String(i.num) : '?' }),
+          h('span', { class: i.level === 'error' ? 'msg err' : 'msg unk', text: i.message })
+        ]));
+      });
+    }
+
+    /* ---- snippets ----
+     * A form is dropped in as a new row (or rows) after the caret's, written
+     * the way the controller writes it, and the whole /MN renumbered so the
+     * file stays loadable. The inserted instruction is left selected. */
+    function insertSnippet(text) {
+      var rows = ta.value.split('\n');
+      var mn = -1, end = rows.length, i;
+      for (i = 0; i < rows.length; i++) {
+        if (mn === -1 && /^\s*\/MN\b/i.test(rows[i])) mn = i;
+        else if (mn !== -1 && /^\s*\/(?:POS|END)\b/i.test(rows[i])) { end = i; break; }
+      }
+      if (mn === -1) { toast('No /MN section to insert into.'); return; }
+      var at = caretRow() + 1;
+      if (at <= mn) at = mn + 1;
+      if (at > end) at = end;
+      if (at - 1 > mn && at - 1 < end && !rows[at - 1].trim()) { at = at - 1; rows.splice(at, 1); }   // use a blank row
+      var lines = text.split('\n').map(function (t) { return TPS.formatRow(0, t); });
+      rows.splice.apply(rows, [at, 0].concat(lines));
+      ta.value = TPS.renumber(rows.join('\n'));
+      var out = ta.value.split('\n');
+      var first = out[at], pos = rowStart(out, at);
+      var start = pos + first.indexOf(':') + 1 + (/^\s*\d+:  /.test(first) ? 2 : 0);
+      ta.focus();
+      ta.setSelectionRange(start, pos + first.length - 2);
+      paint();
+    }
+
+    var snipWrap = h('span', { class: 'snip-wrap' });
+    var menu = null;
+    function closeMenu() {
+      if (!menu) return;
+      menu.remove();
+      menu = null;
+      document.removeEventListener('mousedown', outsideMenu);
+    }
+    function outsideMenu(e) { if (menu && !snipWrap.contains(e.target)) closeMenu(); }
+    function openMenu() {
+      if (menu) { closeMenu(); return; }
+      var list = TPS.snippets(TP_DICT);
+      menu = h('div', { class: 'snip-menu' });
+      var filt = h('input', { type: 'search', placeholder: 'Filter… e.g. wait, offset, select, negative' });
+      var body = h('div');
+      function draw() {
+        var q = filt.value.trim().toLowerCase(), lastGroup = null;
+        body.innerHTML = '';
+        list.forEach(function (s) {
+          if (q && (s.group + ' ' + s.name + ' ' + s.text + ' ' + s.note).toLowerCase().indexOf(q) === -1) return;
+          if (s.group !== lastGroup) { body.appendChild(h('div', { class: 'snip-group', text: s.group })); lastGroup = s.group; }
+          var mined = s.group === 'Most used on your robots';
+          var countTxt = s.count ? s.count + '× on your robots' : '';
+          body.appendChild(h('div', {
+            class: 'snip-item',
+            onmousedown: function (e) { e.preventDefault(); },   // keep the textarea's caret
+            onclick: function () { insertSnippet(s.text); closeMenu(); }
+          }, [
+            mined ? null : h('div', { class: 'name' }, [document.createTextNode(s.name), countTxt ? h('span', { class: 'count', text: countTxt }) : null]),
+            h('div', { class: 'code', text: s.text }),
+            s.note ? h('div', { class: 'note', text: s.note }) : (mined ? h('div', { class: 'note', text: countTxt }) : null)
+          ]));
+        });
+        if (!body.children.length) body.appendChild(h('div', { class: 'snip-group', text: 'nothing matches' }));
+      }
+      filt.addEventListener('input', draw);
+      filt.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') { closeMenu(); ta.focus(); }
+        if (e.key === 'Enter') { var first = body.querySelector('.snip-item'); if (first) first.click(); }
+      });
+      menu.appendChild(filt);
+      menu.appendChild(body);
+      draw();
+      snipWrap.appendChild(menu);
+      document.addEventListener('mousedown', outsideMenu);
+      filt.focus();
+    }
+    if (TPS) snipWrap.appendChild(h('button', {
+      class: 'btn', text: 'Insert ▾',
+      title: 'Insert a correctly formatted instruction after the caret — each with a note on its form, and how often your robots use it',
+      onclick: openMenu
+    }));
+
     ta.addEventListener('input', function () {
       if (repaintQueued) return;
       repaintQueued = true;
       requestAnimationFrame(function () { repaintQueued = false; paint(); });
     });
     ta.addEventListener('scroll', syncScroll);
+    ta.addEventListener('keyup', renderStatus);
+    ta.addEventListener('click', renderStatus);
     paint();
 
     function save(alsoDisk) {
@@ -2852,6 +3022,12 @@
       status,
       h('span', { style: 'flex:1' }),
       codeSizeControl(),
+      TPS ? snipWrap : null,
+      TPS ? h('button', {
+        class: 'btn', text: 'Renumber',
+        title: 'Number the /MN rows 1, 2, 3… after inserting or deleting lines by hand',
+        onclick: function () { ta.value = TPS.renumber(ta.value); paint(); ta.focus(); }
+      }) : null,
       h('button', { class: 'btn primary', text: 'Save to library', onclick: function () { save(false); } }),
       (p.origin.type === 'dir' && state.server)
         ? h('button', { class: 'btn', text: 'Save to library + disk', title: p.origin.path, onclick: function () { save(true); } })
@@ -2868,8 +3044,11 @@
       pane.appendChild(h('p', { class: 'muted', text: 'This program was read from robot ' + p.origin.ip + '. Connect to the robot (Robot tab) to send edits back over FTP with the snapshot/auto-restore safety net.' }));
     }
     pane.appendChild(editorWrap);
+    pane.appendChild(statusBar);
+    pane.appendChild(problems);
     pane.classList.add('editing');
     ta.focus();
+    renderStatus();
   }
 
   function exportProgram(p) {
@@ -4346,6 +4525,7 @@
 
   var SEV_LABEL = { error: 'Error', warn: 'Warning', info: 'Info' };
   var RULE_NAMES = {
+    'syntax-error': 'Syntax the controller will refuse',
     'jump-to-missing-label': 'Jump to a missing label',
     'duplicate-label': 'Duplicate label definition',
     'unreachable-code': 'Unreachable code',
@@ -4764,15 +4944,23 @@
       var label = item[4]
         ? ':[^\\]]*' + escapeRe(item[4]) + '[^\\]]*'
         : '(?::[^\\]]*)?';
-      re = new RegExp('(?:^|[^A-Za-z])(' + type + '\\[\\s*' + item[2] + '\\s*' + comp + label + '\\])', flags);
+      re = new RegExp('(?:^|[^A-Za-z])((' + type + '\\[\\s*' + item[2] + ')\\s*' + comp + label + '\\])', flags);
       var itemMatch = function (text) {
         re.lastIndex = 0;
         var m = re.exec(text);
         return m ? { index: m.index + m[0].indexOf(m[1]), length: m[1].length } : null;
       };
-      // keep the character before the item (it is context, not the match)
+      /* A partial query — "PR[26", no closing bracket and no label — names the
+       * number alone, so only TYPE[index is swapped and the comment and the
+       * closing bracket stay: PR[26 → PR[22 turns PR[26:Zone1 Appr] into
+       * PR[22:Zone1 Appr]. A closed query, or one with a label, replaces the
+       * whole item. The character before the item is context, never touched. */
+      var partial = !/\]\s*$/.test(q) && !item[4];
       itemMatch.replaceAll = function (text, repl) {
-        return text.replace(re, function (m0, m1) { return m0.slice(0, m0.indexOf(m1)) + repl; });
+        return text.replace(re, function (m0, m1, m2) {
+          var pre = m0.slice(0, m0.indexOf(m1));
+          return partial ? pre + repl + m1.slice(m2.length) : pre + repl;
+        });
       };
       itemMatch.positions = function (text) {
         var out = [], m;
