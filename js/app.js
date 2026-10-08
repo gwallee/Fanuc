@@ -59,7 +59,14 @@
     codeSize: 13,          // code font size in px (persisted)
     ignoreIoState: true,   // Compare: skip the controller's inline I/O state (persisted)
     ignoreLineNums: true,  // Compare: skip the leading /MN line number (persisted)
-    robotCheck: null       // last "check robot for changes" run — manual, never polled
+    robotCheck: null,      // last "check robot for changes" run — manual, never polled
+    /* Studio-5000-style document tabs in the Code view. A doc is a program
+     * ('P:NAME') or a data view ('D:regs' | 'D:prs' | 'D:io'), so live
+     * registers can sit in a tab — or docked beside the code — instead of
+     * needing a second browser window. */
+    openDocs: [],          // ordered open-doc ids (the tab strip)
+    activeDoc: null,       // doc in the left (or only) half of the Code view
+    splitDoc: null         // doc docked on the right, or null
   };
 
   var PREFS_KEY = 'fanuc-tp-studio.prefs.v1';
@@ -251,6 +258,7 @@
 
   function removeProgram(name) {
     delete state.programs[name];
+    closeDoc('P:' + name);
     if (state.selected === name) state.selected = Object.keys(state.programs)[0] || null;
     rebuildDerived();
     persist();
@@ -326,7 +334,9 @@
     state.programs = {};
     state.selected = null;
     state.editing = false;
-    state.split = null;
+    state.openDocs = [];
+    state.activeDoc = null;
+    state.splitDoc = null;
     state.pair = null;
     state.checksProg = null;
     loadLibraryStore(id);
@@ -1354,6 +1364,7 @@
       // the costly part, once, rather than once per program
       rebuildDerived();
       persist();
+      if (!state.selected) state.selected = Object.keys(state.programs).sort()[0] || null;
       if (imp) {
         toast(imp.cancel
           ? 'Import stopped — ' + imp.added + ' of ' + imp.total + ' imported.'
@@ -1771,11 +1782,11 @@
   var nav = { restoring: false, last: null };
 
   function navSnapshot() {
-    return { tab: state.tab, selected: state.selected, split: state.split };
+    return { tab: state.tab, selected: state.selected, split: state.splitDoc, active: state.activeDoc };
   }
 
   function sameNav(a, b) {
-    return a && b && a.tab === b.tab && a.selected === b.selected && a.split === b.split;
+    return a && b && a.tab === b.tab && a.selected === b.selected && a.split === b.split && a.active === b.active;
   }
 
   function recordNav() {
@@ -1800,7 +1811,11 @@
     }
     state.tab = s.tab;
     if (s.selected && state.programs[s.selected]) state.selected = s.selected;
-    state.split = (s.split && state.programs[s.split]) ? s.split : null;
+    state.splitDoc = docValid(s.split) ? s.split : null;
+    if (docValid(s.active)) {
+      state.activeDoc = s.active;
+      if (docIsProg(s.active)) docSelSync = state.selected = docProg(s.active);
+    }
     nav.restoring = true;
     render();
     nav.restoring = false;
@@ -1898,7 +1913,7 @@
         class: 'prog-item' + (n === state.selected ? ' active' : ''),
         draggable: 'true',
         title: (p.origin.dir ? 'From ' + p.origin.dir + '/ · ' : '') + 'Click to open · drag onto the code view to open side-by-side',
-        onclick: function () { state.selected = n; state.editing = false; setNav(false); render(); }
+        onclick: function () { state.selected = n; state.editing = false; openDoc('P:' + n); state.activeDoc = 'P:' + n; docSelSync = n; setNav(false); render(); }
       }, [
         h('div', { class: 'name' }, [
           document.createTextNode(n),
@@ -2352,6 +2367,210 @@
     return box;
   }
 
+  /* ================= document tabs (Code view) =================
+   * Studio-5000 habit: everything you have open — programs AND data views —
+   * is a tab, and any tab drags onto the right half of the code to dock
+   * side-by-side. Data views put live registers next to the program that
+   * uses them, which used to take a second browser window. */
+
+  var DATA_DOCS = {
+    'D:regs': 'Registers',
+    'D:prs': 'PRs',
+    'D:io': 'I/O'
+  };
+
+  function docIsProg(id) { return !!id && id.slice(0, 2) === 'P:'; }
+  function docProg(id) { return docIsProg(id) ? id.slice(2) : null; }
+  function docLabel(id) { return DATA_DOCS[id] || String(id).slice(2); }
+  function docValid(id) {
+    if (!id) return false;
+    return DATA_DOCS[id] ? true : !!state.programs[id.slice(2)];
+  }
+
+  function openDoc(id, activate) {
+    if (state.openDocs.indexOf(id) === -1) state.openDocs.push(id);
+    if (activate) state.activeDoc = id;
+  }
+
+  function closeDoc(id) {
+    var i = state.openDocs.indexOf(id);
+    if (i !== -1) state.openDocs.splice(i, 1);
+    if (state.splitDoc === id) state.splitDoc = null;
+    if (state.activeDoc === id) {
+      var next = state.openDocs[Math.min(i, state.openDocs.length - 1)] || null;
+      state.activeDoc = next;
+      if (docIsProg(next)) { state.selected = docProg(next); docSelSync = state.selected; }
+    }
+  }
+
+  function activateDoc(id) {
+    if (!docValid(id)) return;
+    if (state.editing) {
+      if (!confirm('Leave the editor? Unsaved changes will be lost.')) return;
+      state.editing = false;
+    }
+    openDoc(id);
+    state.activeDoc = id;
+    if (docIsProg(id)) { state.selected = docProg(id); docSelSync = state.selected; }
+    render();
+  }
+
+  /* Dock a doc on the right, or activate it on the left — the one drop
+   * gesture, shared by tab drags and library drags. */
+  function dockDoc(id, rightHalf) {
+    if (!docValid(id)) return;
+    state.tab = 'code';
+    state.editing = false;
+    openDoc(id);
+    if (rightHalf) {
+      if (!state.activeDoc || !docValid(state.activeDoc)) state.activeDoc = id;
+      else state.splitDoc = id;
+    } else {
+      state.activeDoc = id;
+      if (docIsProg(id)) { state.selected = docProg(id); docSelSync = state.selected; }
+    }
+    render();
+  }
+
+  /* Everything else in the app navigates by setting state.selected (sidebar,
+   * go-to-line, CALL clicks, search hits). The doc model follows along here
+   * rather than patching two dozen call sites: a selection change opens that
+   * program's tab and makes it active. */
+  var docSelSync = null;
+
+  function syncDocs() {
+    state.openDocs = state.openDocs.filter(docValid);
+    if (state.splitDoc && !docValid(state.splitDoc)) state.splitDoc = null;
+    if (state.selected && state.selected !== docSelSync) {
+      docSelSync = state.selected;
+      openDoc('P:' + state.selected, true);
+    }
+    if (state.selected) openDoc('P:' + state.selected);
+    if (!docValid(state.activeDoc)) {
+      state.activeDoc = state.selected ? 'P:' + state.selected : (state.openDocs[0] || null);
+    }
+    if (state.splitDoc && state.splitDoc === state.activeDoc && docIsProg(state.splitDoc) === false) {
+      state.splitDoc = null;   // the same data view twice says nothing
+    }
+  }
+
+  function renderDocTabs() {
+    var strip = h('div', { class: 'doc-tabs', title: 'Drag a tab onto the right half of the code to dock it side-by-side' });
+    state.openDocs.forEach(function (id) {
+      var tab = h('span', {
+        class: 'doc-tab' + (id === state.activeDoc ? ' active' : '') +
+               (id === state.splitDoc ? ' docked' : '') +
+               (DATA_DOCS[id] ? ' data' : ''),
+        draggable: 'true'
+      }, [
+        h('span', { class: 'doc-label', text: docLabel(id) }),
+        h('span', {
+          class: 'doc-x', text: '×', title: 'Close',
+          onclick: function (ev) { ev.stopPropagation(); closeDoc(id); render(); }
+        })
+      ]);
+      tab.addEventListener('click', function () { activateDoc(id); });
+      tab.addEventListener('auxclick', function (ev) { if (ev.button === 1) { closeDoc(id); render(); } });
+      tab.addEventListener('dragstart', function (e) {
+        e.dataTransfer.setData('text/x-doc', id);
+        e.dataTransfer.effectAllowed = 'link';
+      });
+      strip.appendChild(tab);
+    });
+    // data-view openers for whatever is not already open
+    var haveData = !!(state.extern || (state.server && state.robot.ip));
+    Object.keys(DATA_DOCS).forEach(function (id) {
+      if (state.openDocs.indexOf(id) !== -1) return;
+      strip.appendChild(h('button', {
+        class: 'doc-add', text: '+ ' + DATA_DOCS[id],
+        title: haveData
+          ? 'Open ' + DATA_DOCS[id] + ' as a tab — drag it onto the code to dock it side-by-side'
+          : 'Opens as a tab. No controller data yet — connect to a robot or open a backup folder to fill it.',
+        onclick: function () { activateDoc(id); }
+      }));
+    });
+    return strip;
+  }
+
+  /* One data view: live registers / position registers / I/O as a document.
+   * The filter works on the rows already rendered — no re-render, so the
+   * input never loses its caret. */
+  function buildDataView(id) {
+    var box = h('div', { class: 'dataview' });
+    var rows = [];
+    var source = null;
+
+    if (id === 'D:regs') {
+      var regs = (state.robot.registers && !state.robot.registers.error && state.robot.registers) ||
+                 (state.extern && state.extern.registers) || [];
+      source = state.robot.registers && !state.robot.registers.error ? 'robot ' + state.robot.ip
+             : (state.extern && state.extern.source);
+      regs.forEach(function (r) {
+        rows.push({
+          text: 'R[' + r.index + (r.comment ? ':' + r.comment : '') + '] = ' + r.value,
+          html: '<span class="tok-reg">R[' + esc(String(r.index)) + (r.comment ? ':' + esc(r.comment) : '') + ']</span> = <span class="tok-num">' + esc(String(r.value)) + '</span>'
+        });
+      });
+    } else if (id === 'D:prs') {
+      var prs = (state.robot.posregs && !state.robot.posregs.error && state.robot.posregs) ||
+                (state.extern && state.extern.posregs) || [];
+      source = state.robot.posregs && !state.robot.posregs.error ? 'robot ' + state.robot.ip
+             : (state.extern && state.extern.source);
+      prs.forEach(function (r) {
+        var val = r.uninit ? 'Uninitialized' : (VA.posregValueStr ? VA.posregValueStr(r) : '');
+        rows.push({
+          text: 'PR[' + r.group + ',' + r.index + (r.comment ? ':' + r.comment : '') + '] ' + val,
+          html: '<span class="tok-reg">PR[' + r.group + ',' + r.index + (r.comment ? ':' + esc(r.comment) : '') + ']</span> <span class="' + (r.uninit ? 'muted' : 'tok-num') + '">' + esc(val) + '</span>'
+        });
+      });
+    } else if (id === 'D:io') {
+      var pts = state.robot.ioState || (state.extern && state.extern.io) || [];
+      source = state.robot.ioState ? 'robot ' + state.robot.ip : (state.extern && state.extern.source);
+      pts.forEach(function (p2) {
+        var st = p2.state ? (p2.state === 'ON' ? '<span class="tok-on">ON</span>' : '<span class="tok-off">OFF</span>') : '';
+        rows.push({
+          text: p2.type + '[' + p2.index + (p2.comment ? ':' + p2.comment : '') + '] ' + (p2.state || ''),
+          html: '<span class="tok-io">' + esc(p2.type) + '[' + p2.index + (p2.comment ? ':' + esc(p2.comment) : '') + ']</span> ' + st
+        });
+      });
+    }
+
+    var head = h('div', { class: 'dataview-head' });
+    var filter = h('input', { type: 'text', placeholder: 'Filter ' + DATA_DOCS[id].toLowerCase() + '…', class: 'dataview-filter' });
+    head.appendChild(filter);
+    if (source) head.appendChild(h('span', { class: 'muted', text: 'from ' + source }));
+    if (state.server && state.robot.ip) {
+      head.appendChild(h('button', {
+        class: 'btn subtle', text: 'Refresh',
+        title: 'Re-read from ' + state.robot.ip,
+        onclick: function () {
+          if (id === 'D:regs') loadRobotRegisters();
+          else if (id === 'D:prs') loadRobotPosregs();
+          else loadRobotIO();
+          toast('Re-reading from ' + state.robot.ip + '…', 2500);
+        }
+      }));
+    }
+    box.appendChild(head);
+
+    var listEl = h('div', { class: 'dataview-rows' });
+    if (!rows.length) {
+      listEl.appendChild(h('p', { class: 'muted', text: 'No data yet. Connect to a robot (Robot tab) or open a backup folder that holds NUMREG.VA / POSREG.VA / IOSTATE.DG.' }));
+    }
+    var els = rows.map(function (r) {
+      var el = h('div', { class: 'dataview-row mono', html: r.html });
+      el._filterText = r.text.toLowerCase();
+      listEl.appendChild(el);
+      return el;
+    });
+    filter.addEventListener('input', function () {
+      var q = filter.value.trim().toLowerCase();
+      els.forEach(function (el) { el.style.display = (!q || el._filterText.indexOf(q) !== -1) ? '' : 'none'; });
+    });
+    box.appendChild(listEl);
+    return box;
+  }
+
   function progSelect(value, onchange) {
     var sel = h('select', { class: 'prog-select' });
     Object.keys(state.programs).sort().forEach(function (n) {
@@ -2424,40 +2643,55 @@
     }, [cb]);
     syncLabel.appendChild(document.createTextNode(' Sync scroll'));
 
+    var bothProgs = docIsProg(state.activeDoc) && docIsProg(state.splitDoc);
+
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Side by side' }),
-      h('span', { class: 'muted', text: 'drag a program from the library onto either half to view it there' }),
+      h('span', { class: 'muted', text: 'drag a tab or a library program onto either half to view it there' }),
       h('span', { style: 'flex:1' }),
-      syncLabel,
-      h('button', { class: 'btn subtle', text: 'Close split', onclick: function () { state.split = null; render(); } })
+      bothProgs ? syncLabel : null,
+      h('button', { class: 'btn subtle', text: 'Close split', onclick: function () { state.splitDoc = null; render(); } })
     ]));
 
     var wrap = h('div', { class: 'split-wrap' });
-    [['left', state.selected], ['right', state.split]].forEach(function (side) {
-      var name = side[1];
-      var p = state.programs[name];
+    [['left', state.activeDoc], ['right', state.splitDoc]].forEach(function (side) {
+      var id = side[1];
       var col = h('div', { class: 'code-pane ' + side[0], 'data-side': side[0] });
-      col.appendChild(h('div', { class: 'pane-head' }, [
-        progSelect(name, function (v) {
-          if (side[0] === 'left') state.selected = v; else state.split = v;
-          render();
-        }),
-        h('button', {
-          class: 'btn subtle', text: 'Edit',
-          onclick: function () { state.selected = name; state.split = null; state.editing = true; render(); }
-        }),
-        h('button', {
-          class: 'btn subtle', text: 'Compare A↔B', title: 'Diff these two programs in the Compare tab',
-          onclick: function () { state.pair = { a: state.selected, b: state.split }; state.tab = 'compare'; render(); }
-        })
-      ]));
-      if (p) {
-        var box = buildCodeBox(p);
-        box.addEventListener('scroll', onScroll);
-        boxes.push(box);
-        col.appendChild(box);
+      if (docIsProg(id)) {
+        var name = docProg(id);
+        var p = state.programs[name];
+        col.appendChild(h('div', { class: 'pane-head' }, [
+          progSelect(name, function (v) {
+            if (side[0] === 'left') { state.selected = v; state.activeDoc = 'P:' + v; openDoc('P:' + v); }
+            else { state.splitDoc = 'P:' + v; openDoc('P:' + v); }
+            render();
+          }),
+          h('button', {
+            class: 'btn subtle', text: 'Edit',
+            onclick: function () { state.selected = name; state.activeDoc = 'P:' + name; state.splitDoc = null; state.editing = true; render(); }
+          }),
+          bothProgs ? h('button', {
+            class: 'btn subtle', text: 'Compare A↔B', title: 'Diff these two programs in the Compare tab',
+            onclick: function () { state.pair = { a: docProg(state.activeDoc), b: docProg(state.splitDoc) }; state.tab = 'compare'; render(); }
+          }) : null
+        ]));
+        if (p) {
+          var box = buildCodeBox(p);
+          box.addEventListener('scroll', onScroll);
+          boxes.push(box);
+          col.appendChild(box);
+        } else {
+          col.appendChild(h('p', { class: 'muted', text: 'no program' }));
+        }
       } else {
-        col.appendChild(h('p', { class: 'muted', text: 'no program' }));
+        col.appendChild(h('div', { class: 'pane-head' }, [
+          h('span', { class: 'title', text: docLabel(id) }),
+          h('span', { style: 'flex:1' }),
+          side[0] === 'right' ? h('button', {
+            class: 'btn subtle', text: 'Close', onclick: function () { state.splitDoc = null; render(); }
+          }) : null
+        ]));
+        col.appendChild(buildDataView(id));
       }
       wrap.appendChild(col);
     });
@@ -2465,11 +2699,23 @@
   }
 
   function renderCode(pane) {
-    var p = current();
+    syncDocs();
+    pane.appendChild(renderDocTabs());
+
+    if (!docValid(state.activeDoc)) return;
+
+    // a data view, full width
+    if (!docIsProg(state.activeDoc)) {
+      if (state.splitDoc && docValid(state.splitDoc)) return renderSplit(pane);
+      pane.appendChild(buildDataView(state.activeDoc));
+      return;
+    }
+
+    var p = state.programs[docProg(state.activeDoc)];
     if (!p) return;
 
     if (state.editing) return renderEditor(pane, p);
-    if (state.split && state.programs[state.split]) return renderSplit(pane);
+    if (state.splitDoc && docValid(state.splitDoc)) return renderSplit(pane);
 
     var progFindings = findingsFor(p.parsed.name);
 
@@ -2488,7 +2734,7 @@
       h('button', { class: 'btn', text: 'Edit', onclick: function () { state.editing = true; render(); } }),
       h('button', {
         class: 'btn', text: 'Side-by-side', title: 'Open a second program next to this one (or drag one from the library onto the right half)',
-        onclick: function () { state.split = p.parsed.name; render(); }
+        onclick: function () { state.splitDoc = 'P:' + p.parsed.name; render(); }
       }),
       (state.server && state.robot.ip) ? h('button', {
         class: 'btn', text: 'Send to robot',
@@ -4902,7 +5148,7 @@
       pane.appendChild(h('p', { class: 'muted', text: 'Import programs first.' }));
       return;
     }
-    if (!state.pair) state.pair = { a: state.selected || names[0], b: state.split || state.selected || names[0] };
+    if (!state.pair) state.pair = { a: state.selected || names[0], b: docProg(state.splitDoc) || state.selected || names[0] };
     var row = h('div', { class: 'search-bar' });
     row.appendChild(progSelect(state.pair.a, function (v) { state.pair.a = v; render(); }));
     row.appendChild(h('span', { class: 'muted', text: 'vs' }));
@@ -6189,17 +6435,15 @@
       document.body.classList.remove('dragging');
       if (!e.dataTransfer) return;
       var progName = e.dataTransfer.getData('text/x-prog');
-      if (progName && state.programs[progName]) {
-        // Notepad++-style: drop a program onto the code view — right half opens
-        // it side-by-side, left half (or no split yet, left third) replaces the view
+      var docId = e.dataTransfer.getData('text/x-doc') ||
+        (progName && state.programs[progName] ? 'P:' + progName : '');
+      if (docId && docValid(docId)) {
+        // Notepad++/Studio-5000-style: drop a tab or a library program onto
+        // the code view — right half docks it side-by-side, left half
+        // replaces the view
         var paneEl = document.getElementById('pane');
         var r = paneEl.getBoundingClientRect();
-        var rightHalf = e.clientX > r.left + r.width / 2;
-        state.tab = 'code';
-        state.editing = false;
-        if (rightHalf) state.split = progName;
-        else state.selected = progName;
-        render();
+        dockDoc(docId, e.clientX > r.left + r.width / 2);
         return;
       }
       if (e.dataTransfer.files.length) importFiles(e.dataTransfer.files);
