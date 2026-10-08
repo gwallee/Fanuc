@@ -5066,6 +5066,18 @@
     }
     input.addEventListener('input', run);
     if (replIn) replIn.addEventListener('input', run);
+    /* Tab hops straight between the find and replace boxes — the option
+     * buttons sit between them in the DOM, and tabbing through four toggles
+     * to get to "replace with" made the pair useless from the keyboard.
+     * Shift+Tab comes straight back; the buttons stay mouse targets. */
+    if (replIn) {
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); replIn.focus(); replIn.select(); }
+      });
+      replIn.addEventListener('keydown', function (e) {
+        if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); input.focus(); input.select(); }
+      });
+    }
     run();
     if (replIn && input.value) replIn.focus(); else input.focus();
   }
