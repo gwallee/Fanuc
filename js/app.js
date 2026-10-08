@@ -3096,7 +3096,16 @@
       menu.appendChild(body);
       draw();
       snipWrap.appendChild(menu);
+      // place it under the button, clamped inside the viewport — never
+      // under the sidebar, never clipped by the pane's scroll box
+      var r = snipWrap.getBoundingClientRect();
+      var w = Math.min(560, window.innerWidth - 16);
+      menu.style.width = w + 'px';
+      menu.style.left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)) + 'px';
+      menu.style.top = (r.bottom + 4) + 'px';
+      menu.style.maxHeight = Math.max(180, window.innerHeight - r.bottom - 16) + 'px';
       document.addEventListener('mousedown', outsideMenu);
+      window.addEventListener('resize', closeMenu, { once: true });
       filt.focus();
     }
     if (TPS) snipWrap.appendChild(h('button', {

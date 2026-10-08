@@ -706,8 +706,10 @@ tr:last-child td { border-bottom: none; }
 .editor-problems .n { font-family: "IBM Plex Mono", monospace; color: var(--muted); margin-right: 8px; }
 .snip-wrap { position: relative; }
 .snip-menu {
-  position: absolute; right: 0; top: calc(100% + 4px); z-index: 40;
-  width: min(560px, 90vw); max-height: 60vh; overflow: auto;
+  /* fixed and placed by openMenu(): an absolute dropdown inside the pane got
+   * clipped by the pane's own scroll box and slid behind the sidebar when the
+   * window was narrow — fixed coordinates clamp to the viewport instead */
+  position: fixed; z-index: 40; overflow: auto;
   background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); padding: 6px 0; text-align: left; font-weight: 400;
 }
