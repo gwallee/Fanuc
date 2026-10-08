@@ -2396,6 +2396,22 @@
     if (activate) state.activeDoc = id;
   }
 
+  /* Close a tab from the UI: if that doc is the one being edited, unsaved
+   * changes get a say first. closeDoc() stays the raw bookkeeping. */
+  function safeCloseDoc(id) {
+    var editingThis =
+      (state.editing && id === state.activeDoc) ||
+      (state.editSide === 'left' && id === state.activeDoc) ||
+      (state.editSide === 'right' && id === state.splitDoc);
+    if (editingThis) {
+      if (editorDirty() && !confirm('Close ' + docLabel(id) + '? Unsaved changes will be lost.')) return;
+      state.editing = false;
+      state.editSide = null;
+    }
+    closeDoc(id);
+    render();
+  }
+
   function closeDoc(id) {
     var i = state.openDocs.indexOf(id);
     if (i !== -1) state.openDocs.splice(i, 1);
@@ -2404,6 +2420,19 @@
       var next = state.openDocs[Math.min(i, state.openDocs.length - 1)] || null;
       state.activeDoc = next;
       if (docIsProg(next)) { state.selected = docProg(next); docSelSync = state.selected; }
+    }
+    /* The selection may not keep pointing at a closed tab — syncDocs holds
+     * "the selected program is always an open doc" and would reopen it on
+     * the very next render. Hand the selection to the next open program. */
+    if (docIsProg(id) && state.selected === docProg(id)) {
+      var np = docIsProg(state.activeDoc) ? docProg(state.activeDoc) : null;
+      if (!np) {
+        for (var k = 0; k < state.openDocs.length; k++) {
+          if (docIsProg(state.openDocs[k])) { np = docProg(state.openDocs[k]); break; }
+        }
+      }
+      state.selected = np;
+      docSelSync = np;
     }
   }
 
@@ -2477,12 +2506,20 @@
       }, [
         h('span', { class: 'doc-label', text: docLabel(id) }),
         h('span', {
-          class: 'doc-x', text: '×', title: 'Close',
-          onclick: function (ev) { ev.stopPropagation(); closeDoc(id); render(); }
+          class: 'doc-x', text: '×', title: 'Close (or middle-click the tab)',
+          onclick: function (ev) { ev.stopPropagation(); safeCloseDoc(id); }
         })
       ]);
       tab.addEventListener('click', function () { activateDoc(id); });
-      tab.addEventListener('auxclick', function (ev) { if (ev.button === 1) { closeDoc(id); render(); } });
+      /* Middle-click closes, Notepad++/browser style. The mousedown
+       * preventDefault matters: without it Windows Chrome starts its
+       * middle-button autoscroll on the way down and eats the click. */
+      tab.addEventListener('mousedown', function (ev) { if (ev.button === 1) ev.preventDefault(); });
+      tab.addEventListener('auxclick', function (ev) {
+        if (ev.button !== 1) return;
+        ev.preventDefault();
+        safeCloseDoc(id);
+      });
       tab.addEventListener('dragstart', function (e) {
         e.dataTransfer.setData('text/x-doc', id);
         e.dataTransfer.effectAllowed = 'link';
