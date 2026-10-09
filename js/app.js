@@ -381,6 +381,7 @@
     state.checksProg = null;
     loadLibraryStore(id);
     state.selected = Object.keys(state.programs)[0] || null;
+    loadViewState();                // each library remembers its own tabs
     rebuildDerived();
     persist();                      // records the new active library
     return true;
@@ -422,7 +423,33 @@
       state.library = localStorage.getItem(ACTIVE_LIB_KEY) || LOCAL_LIB;
       loadLibraryStore(state.library);
       state.selected = Object.keys(state.programs)[0] || null;
+      loadViewState();   // reopen the tabs and program from before the refresh
     } catch (e) { /* ignore corrupt store */ }
+  }
+
+  /* ---- per-library view memory ----
+   * Which program was open, which doc tabs, what was docked: without this a
+   * refresh landed on whatever program happened to be first in the store. */
+  function viewKey(id) { return 'fanuc-tp-studio.view.v1.' + id; }
+
+  function saveViewState() {
+    try {
+      localStorage.setItem(viewKey(state.library), JSON.stringify({
+        selected: state.selected, openDocs: state.openDocs,
+        activeDoc: state.activeDoc, splitDoc: state.splitDoc
+      }));
+    } catch (e) { /* storage unavailable — session-only */ }
+  }
+
+  function loadViewState() {
+    try {
+      var v = JSON.parse(localStorage.getItem(viewKey(state.library)) || 'null');
+      if (!v) return;
+      if (v.selected && state.programs[v.selected]) { state.selected = v.selected; docSelSync = v.selected; }
+      state.openDocs = (v.openDocs || []).filter(docValid);
+      state.activeDoc = docValid(v.activeDoc) ? v.activeDoc : null;
+      state.splitDoc = docValid(v.splitDoc) ? v.splitDoc : null;
+    } catch (e) { /* corrupt — fall back to defaults */ }
   }
 
   /* Controller device directories. A robot backup keeps its programs under
@@ -1874,6 +1901,7 @@
     renderConnect();
     renderTabs();
     renderPane();
+    saveViewState();   // a refresh reopens exactly this view
   }
 
   /* Library filter: whitespace-separated words are ANDed, each matched as a
@@ -2502,7 +2530,21 @@
     openDoc(id);
     if (rightHalf) {
       if (!state.activeDoc || !docValid(state.activeDoc)) state.activeDoc = id;
-      else state.splitDoc = id;
+      else {
+        /* Docking the data view you are already looking at: hand the left
+         * half back to a program, or the "no doc twice" rule silently
+         * swallows the whole gesture. */
+        if (state.activeDoc === id && !docIsProg(id)) {
+          var back = (state.selected && state.programs[state.selected]) ? 'P:' + state.selected : null;
+          if (!back) {
+            for (var k = 0; k < state.openDocs.length; k++) {
+              if (docIsProg(state.openDocs[k])) { back = state.openDocs[k]; break; }
+            }
+          }
+          if (back) { state.activeDoc = back; openDoc(back); }
+        }
+        state.splitDoc = id;
+      }
     } else {
       state.activeDoc = id;
       if (docIsProg(id)) { state.selected = docProg(id); docSelSync = state.selected; }
@@ -2571,13 +2613,20 @@
     var haveData = !!(state.extern || (state.server && state.robot.ip));
     Object.keys(DATA_DOCS).forEach(function (id) {
       if (state.openDocs.indexOf(id) !== -1) return;
-      strip.appendChild(h('button', {
-        class: 'doc-add', text: '+ ' + DATA_DOCS[id],
+      var add = h('button', {
+        class: 'doc-add', draggable: 'true', text: '+ ' + DATA_DOCS[id],
         title: haveData
-          ? 'Open ' + DATA_DOCS[id] + ' as a tab — drag it onto the code to dock it side-by-side'
+          ? 'Open ' + DATA_DOCS[id] + ' as a tab — or drag it onto the right half of the code to dock it side-by-side'
           : 'Opens as a tab. No controller data yet — connect to a robot or open a backup folder to fill it.',
         onclick: function () { activateDoc(id); }
-      }));
+      });
+      // draggable before it is even open: "+ I/O" dragged onto the right
+      // half docks it in one gesture
+      add.addEventListener('dragstart', function (e) {
+        e.dataTransfer.setData('text/x-doc', id);
+        e.dataTransfer.effectAllowed = 'link';
+      });
+      strip.appendChild(add);
     });
     return strip;
   }
