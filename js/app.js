@@ -71,6 +71,7 @@
     activeDoc: null,       // doc in the left (or only) half of the Code view
     splitDoc: null,        // doc docked on the right, or null
     editSide: null,        // 'left' | 'right' — which split half is an editor
+    editDraft: null,       // {name, text} — unsaved editor text, survives tab switches
     dataFilter: {},        // data-view filter text, per doc id — survives re-renders
     theme: 'auto'          // 'auto' (follow the system) | 'light' | 'dark' (persisted)
   };
@@ -372,6 +373,7 @@
     state.selected = null;
     state.editing = false;
     state.editSide = null;
+    state.editDraft = null;
     state.openDocs = [];
     state.activeDoc = null;
     state.splitDoc = null;
@@ -1847,6 +1849,7 @@
       }
       state.editing = false;
       state.editSide = null;
+      state.editDraft = null;
     }
     state.tab = s.tab;
     if (s.selected && state.programs[s.selected]) state.selected = s.selected;
@@ -2442,6 +2445,7 @@
       if (editorDirty() && !confirm('Close ' + docLabel(id) + '? Unsaved changes will be lost.')) return;
       state.editing = false;
       state.editSide = null;
+      state.editDraft = null;
     }
     closeDoc(id);
     render();
@@ -2477,6 +2481,7 @@
       if (editorDirty() && !confirm('Leave the editor? Unsaved changes will be lost.')) return;
       state.editing = false;
       state.editSide = null;
+      state.editDraft = null;
     }
     openDoc(id);
     state.activeDoc = id;
@@ -2493,6 +2498,7 @@
     state.tab = 'code';
     state.editing = false;
     state.editSide = null;
+    state.editDraft = null;
     openDoc(id);
     if (rightHalf) {
       if (!state.activeDoc || !docValid(state.activeDoc)) state.activeDoc = id;
@@ -2748,6 +2754,7 @@
           if (state.editSide && editorDirty() && !confirm('Discard your unsaved changes?')) return;
           state.splitDoc = null;
           state.editSide = null;
+          state.editDraft = null;
           render();
         }
       })
@@ -2787,6 +2794,7 @@
               onclick: function () {
                 if (editorDirty() && !confirm('Discard your changes to ' + name + '?')) return;
                 state.editSide = null;
+                state.editDraft = null;
                 render();
               }
             })
@@ -2810,6 +2818,7 @@
             class: 'btn subtle', text: 'Edit', title: 'Edit this half in place — the other half stays open beside it',
             onclick: function () {
               if (state.editSide && editorDirty() && !confirm('Discard your unsaved changes in the other half?')) return;
+              state.editDraft = null;
               state.editSide = side[0];
               render();
             }
@@ -2908,7 +2917,10 @@
   var liveEditor = null;
 
   function editorDirty() {
-    return !!(liveEditor && liveEditor.ta.isConnected && liveEditor.ta.value !== liveEditor.source);
+    if (liveEditor && liveEditor.ta.isConnected) return liveEditor.ta.value !== liveEditor.source;
+    // the editor may not be on screen (another tab is) — the draft still counts
+    return !!(state.editDraft && state.programs[state.editDraft.name] &&
+      state.editDraft.text !== state.programs[state.editDraft.name].source);
   }
 
   /* A program was renamed by editing its /PROG header — every open doc
@@ -2932,7 +2944,10 @@
       class: 'editor', spellcheck: 'false', wrap: 'off',
       autocapitalize: 'off', autocomplete: 'off', autocorrect: 'off'
     });
-    ta.value = p.source;
+    /* Unsaved text survives leaving the Code tab: the draft lives in state
+     * and the editor reopens with it. Saving or an explicit discard clears
+     * it — switching tabs never does. */
+    ta.value = (state.editDraft && state.editDraft.name === oldName) ? state.editDraft.text : p.source;
 
     /* Syntax highlighting in a plain textarea: a <pre> holding the coloured
      * copy sits directly behind transparent text, with identical metrics, and
@@ -3115,6 +3130,7 @@
     }));
 
     ta.addEventListener('input', function () {
+      state.editDraft = { name: oldName, text: ta.value };
       if (repaintQueued) return;
       repaintQueued = true;
       requestAnimationFrame(function () { repaintQueued = false; paint(); });
@@ -3125,7 +3141,7 @@
     paint();
     liveEditor = { ta: ta, source: p.source };
 
-    function stopEditing() { state.editing = false; state.editSide = null; }
+    function stopEditing() { state.editing = false; state.editSide = null; state.editDraft = null; }
 
     /* Store the edited source and keep every view pointing at it, renamed or
      * not. Editing the RIGHT half must not yank the left half over to the
@@ -3234,7 +3250,7 @@
       (state.server && state.robot.ip)
         ? h('button', { class: 'btn', text: 'Save + send to robot', title: 'FTP to ' + state.robot.ip + ' with snapshot + verify + auto-restore', onclick: saveAndSend })
         : null,
-      h('button', { class: 'btn subtle', text: 'Cancel', onclick: function () { state.editing = false; render(); } })
+      h('button', { class: 'btn subtle', text: 'Cancel', onclick: function () { state.editing = false; state.editDraft = null; render(); } })
     ]);
     pane.appendChild(bar);
     var banner = uploadBanner(p.parsed.name);
