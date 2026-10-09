@@ -680,6 +680,11 @@ tr:last-child td { border-bottom: none; }
   pointer-events: none;
   color: var(--ink);
   background: var(--code-bg);
+  /* sized to the textarea's client box by sizeOverlay() — the inset:0
+   * right/bottom would otherwise make its scroll range one scrollbar
+   * short of the textarea's */
+  right: auto;
+  bottom: auto;
 }
 /* Nothing in the overlay may change a glyph's advance width, or the coloured
  * copy drifts out from under the caret: the ON/OFF pills lose their padding

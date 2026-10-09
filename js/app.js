@@ -3087,10 +3087,23 @@
       syncScroll();
       renderStatus();
     }
+    /* The overlay must have EXACTLY the textarea's client box. The textarea
+     * carries scrollbars and the overlay does not, so with inset:0 the
+     * overlay's scroll range comes up one scrollbar short on each axis — at
+     * full right/bottom scroll the colored copy lags the caret by ~15px,
+     * which reads as "the cursor doesn't line up" in a non-maximized
+     * window where long lines force the horizontal scrollbar. */
+    function sizeOverlay() {
+      var w = ta.clientWidth + 'px', hgt = ta.clientHeight + 'px';
+      if (hl.style.width !== w) hl.style.width = w;
+      if (hl.style.height !== hgt) hl.style.height = hgt;
+    }
     function syncScroll() {
+      sizeOverlay();
       hl.scrollTop = ta.scrollTop;
       hl.scrollLeft = ta.scrollLeft;
     }
+    if (window.ResizeObserver) new ResizeObserver(syncScroll).observe(ta);
     function caretRow() { return ta.value.slice(0, ta.selectionStart).split('\n').length - 1; }
     function rowStart(rows, row) {
       var pos = 0;
@@ -3250,6 +3263,7 @@
     ta.addEventListener('keyup', renderStatus);
     ta.addEventListener('click', renderStatus);
     paint();
+    requestAnimationFrame(syncScroll);   // size the overlay once it is in the DOM
     liveEditor = { ta: ta, source: p.source };
 
     function stopEditing() { state.editing = false; state.editSide = null; state.editDraft = null; }
