@@ -66,6 +66,10 @@
     <div class="lib-filter">
       <input id="lib-filter" type="search" placeholder="Filter programs…"
              title="Type one or more words. Every word has to appear in the program name or its comment, in any order — “set task” matches both _SET_TASK and _TASK_SETUP.">
+      <label class="lib-showall" title="Off: only programs starting with A_ or _ are listed — the shop naming convention — so the default FANUC programs stay out of the way.">
+        <input type="checkbox" id="lib-showall"> Show all
+        <span class="muted" id="lib-hidden-count"></span>
+      </label>
     </div>
     <div class="prog-list" id="prog-list"></div>
     <div class="footer">

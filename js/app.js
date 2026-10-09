@@ -73,6 +73,7 @@
     editSide: null,        // 'left' | 'right' — which split half is an editor
     editDraft: null,       // {name, text} — unsaved editor text, survives tab switches
     splitPct: 50,          // side-by-side: left half's share of the width (persisted)
+    showAllProgs: false,   // sidebar: also list programs not prefixed A_/_ (persisted)
     dataFilter: {},        // data-view filter text, per doc id — survives re-renders
     theme: 'auto'          // 'auto' (follow the system) | 'light' | 'dark' (persisted)
   };
@@ -159,6 +160,7 @@
       if (p.lastRobot && p.lastRobot.ip) state.lastRobot = p.lastRobot; // {ip, ftpUser}
       if (p.theme === 'light' || p.theme === 'dark' || p.theme === 'auto') state.theme = p.theme;
       if (typeof p.splitPct === 'number' && p.splitPct >= 20 && p.splitPct <= 80) state.splitPct = p.splitPct;
+      if (typeof p.showAllProgs === 'boolean') state.showAllProgs = p.showAllProgs;
       if (typeof p.ignoreLineNums === 'boolean') state.ignoreLineNums = p.ignoreLineNums;
       if (typeof p.syncSplit === 'boolean') state.syncSplit = p.syncSplit;
       if (p.flowLayout === 'column' || p.flowLayout === 'chart') state.flowLayout = p.flowLayout;
@@ -185,7 +187,8 @@
         flowLayout: state.flowLayout, flowGaps: state.flowGaps, flowDetail: state.flowDetail,
         flowMini: state.flowMini, flowHideNav: state.flowHideNav, hideNav: state.hideNav,
         xrefFolded: state.xrefFolded, xrefHideUnused: state.xrefHideUnused,
-        lastRobot: state.lastRobot || null, theme: state.theme, splitPct: state.splitPct
+        lastRobot: state.lastRobot || null, theme: state.theme, splitPct: state.splitPct,
+        showAllProgs: state.showAllProgs
       }));
     } catch (e) { /* session-only */ }
   }
@@ -1953,20 +1956,34 @@
     sel.value = state.library;
   }
 
+  /* The shop convention: own programs are prefixed A_ or _, everything else
+   * is the controller's furniture (-BCKED*-, RSR0001, SV_ADJST…). */
+  function isOwnProgram(n) { return /^(?:A_|_)/i.test(n); }
+
   function renderSidebar() {
     paintLibraryPicker();
     var list = document.getElementById('prog-list');
     list.innerHTML = '';
     var all = Object.keys(state.programs).sort();
+    var shown = state.showAllProgs ? all : all.filter(isOwnProgram);
+    var hidden = all.length - shown.length;
+    var cb = document.getElementById('lib-showall');
+    if (cb) cb.checked = !!state.showAllProgs;
+    var hc = document.getElementById('lib-hidden-count');
+    if (hc) hc.textContent = (!state.showAllProgs && hidden) ? '· ' + hidden + ' hidden' : '';
     var q = (document.getElementById('lib-filter').value || '').trim();
     var terms = q.toLowerCase().split(/\s+/).filter(Boolean);
-    var names = !terms.length ? all : all.filter(function (n) { return libMatch(n, terms); });
+    var names = !terms.length ? shown : shown.filter(function (n) { return libMatch(n, terms); });
     document.getElementById('lib-count').textContent =
       !all.length ? '' :
-      terms.length ? names.length + ' of ' + all.length :
-      all.length + ' program' + (all.length > 1 ? 's' : '');
+      terms.length ? names.length + ' of ' + shown.length :
+      shown.length + ' program' + (shown.length === 1 ? '' : 's');
     if (!all.length) {
       list.appendChild(h('div', { class: 'empty', text: 'No programs yet. Import .LS files or open a backup folder.' }));
+      return;
+    }
+    if (!shown.length) {
+      list.appendChild(h('div', { class: 'empty', text: 'All ' + all.length + ' programs here are hidden by the A_/_ prefix filter — tick “Show all” above to list them.' }));
       return;
     }
     if (!names.length) {
@@ -6922,6 +6939,11 @@
     });
     document.getElementById('btn-phone').addEventListener('click', openPhoneDialog);
     document.getElementById('lib-filter').addEventListener('input', renderSidebar);
+    document.getElementById('lib-showall').addEventListener('change', function () {
+      state.showAllProgs = this.checked;
+      savePrefs();
+      renderSidebar();
+    });
     document.getElementById('btn-clear').addEventListener('click', function () {
       if (!Object.keys(state.programs).length) return;
       if (!confirm('Remove all programs from the ' + libLabel(state.library) + ' library? Other robots’ libraries and your original files are untouched.')) return;
