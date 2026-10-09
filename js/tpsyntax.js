@@ -295,12 +295,76 @@
     var shape = normalize(t);
     var hit = dict && dict.shapes && dict.shapes[shape];
     if (hit) return { level: 'ok', shape: shape, count: hit[0], example: hit[1] };
+    var rep = familyHit(shape, dict);
+    if (rep) return { level: 'ok', shape: shape, family: true, count: dict.shapes[rep][0], example: dict.shapes[rep][1] };
     if (g.unknown) return { level: 'unknown', message: g.unknown, shape: shape, nearest: nearest(shape, dict) };
     if (!dict || !dict.shapes) return { level: 'ok' };
     return {
       level: 'unknown', shape: shape, nearest: nearest(shape, dict),
       message: 'no program on your robots uses this form' + (g.silent ? '' : ' (the grammar sees nothing wrong with it)')
     };
+  }
+
+  /* ---------- family matching (fuzzier than exact shapes) ----------
+   * Two collapses on top of normalize(), used only for the "have my robots
+   * seen this form" question — never for grammar errors:
+   *   1. Scalar variables are interchangeable: reading DI[3] is the same
+   *      gesture as reading GI[7] or R[12], so they all become V[n].
+   *   2. Repetition is not novelty: a chain of six identical OR/AND terms
+   *      is the same form as a chain of two, so runs collapse to two.
+   * PR, SR, P and TIMER stay distinct — positions, strings and timers have
+   * genuinely different legal forms. */
+  var SCALAR_RE = /\b(?:DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|WI|WO|AI|AO|F|M|R)\[n\]/g;
+
+  // "A OR A OR A" -> "A OR A"; mixed operators or units break the run
+  function collapseChain(s) {
+    var parts = s.split(/ (AND|OR) /);
+    if (parts.length < 5) return s;
+    var out = [parts[0]];
+    for (var i = 1; i + 1 <= parts.length - 1; i += 2) {
+      var op = parts[i], unit = parts[i + 1];
+      if (out.length >= 3 && out[out.length - 2] === op && out[out.length - 1] === unit) continue;
+      out.push(op, unit);
+    }
+    return out.join(' ');
+  }
+
+  function family(shape) {
+    var s = String(shape).replace(SCALAR_RE, 'V[n]');
+    var groups = [];
+    var prev = null;
+    while (prev !== s) {           // innermost parens become opaque tokens,
+      prev = s;                    // identical groups share one token so the
+      s = s.replace(/\(([^()]*)\)/g, function (_, inner) {   // outer chain
+        var c = collapseChain(inner);                        // can collapse
+        var k = groups.indexOf(c);
+        if (k === -1) { k = groups.length; groups.push(c); }
+        return '§' + k + '§';
+      });
+    }
+    s = collapseChain(s);
+    prev = null;
+    while (prev !== s && s.indexOf('§') !== -1) {
+      prev = s;
+      s = s.replace(/§(\d+)§/g, function (_, k) { return '(' + groups[+k] + ')'; });
+    }
+    return s;
+  }
+
+  // family -> one representative exact shape, built once per dictionary
+  function familyHit(shape, dict) {
+    if (!dict || !dict.shapes) return null;
+    if (!dict.families) {
+      dict.families = {};
+      Object.keys(dict.shapes).forEach(function (k) {
+        var f = family(k);
+        if (!(f in dict.families) || dict.shapes[k][0] > dict.shapes[dict.families[f]][0]) {
+          dict.families[f] = k;
+        }
+      });
+    }
+    var rep = dict.families[family(shape)];
+    return rep === undefined ? null : rep;
   }
 
   // the most-used known shapes that start the same way, as examples to copy
@@ -486,7 +550,8 @@
 
   var api = {
     normalize: normalize, check: check, checkSource: checkSource, checkProgram: checkProgram,
-    instructions: instructions, formatRow: formatRow, renumber: renumber, snippets: snippets
+    instructions: instructions, formatRow: formatRow, renumber: renumber, snippets: snippets,
+    family: family
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucSyntax = api;

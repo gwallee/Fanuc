@@ -3113,7 +3113,14 @@
         var m = (ta.value.split('\n')[caretRow()] || '').match(/^\s*\d+\s*:(.*)$/);
         if (m) {
           var r = TPS.check(m[1], TP_DICT);
-          if (r.level === 'ok' && r.count) statusBar.appendChild(h('span', { class: 'msg', text: 'this form appears ' + r.count + ' time' + (r.count === 1 ? '' : 's') + ' on your robots' }));
+          if (r.level === 'ok' && r.count) {
+            statusBar.appendChild(h('span', {
+              class: 'msg',
+              text: r.family
+                ? 'your robots use this form (as ' + r.example + ')'
+                : 'this form appears ' + r.count + ' time' + (r.count === 1 ? '' : 's') + ' on your robots'
+            }));
+          }
         }
       }
       problems.innerHTML = '';

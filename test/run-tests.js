@@ -773,6 +773,19 @@ check(err('CALL _TRANSIT(-90)') && ok('CALL _TRANSIT((-90))'), 'a negative call 
 check(err('SELECT R[1]=1,R[2]=0') && ok('SELECT R[1]=1,JMP LBL[1]') && ok('=20,JMP LBL[921]') && ok('ELSE,CALL _RECOVER'), 'SELECT rows take JMP or CALL only');
 check(unk('L P[1] 500mm/sec FINE Wobble'), 'an unknown motion option is "unknown", not an error');
 check(S.check('R[1]=R[2] XOR R[3]', SH).nearest.length > 0, 'an unknown form offers nearest known shapes');
+// family matching: scalar types are interchangeable, repeats collapse to two
+check(S.family('F[n]=((GI[n]>N OR GI[n]<N) AND (GI[n]>N OR GI[n]<N) AND (GI[n]>N OR GI[n]<N))') ===
+      'V[n]=((V[n]>N OR V[n]<N) AND (V[n]>N OR V[n]<N))', 'family collapses types and repeated groups');
+check(S.family('DO[n]=(F[n] OR F[n] OR F[n] OR F[n])') === S.family('GO[n]=(DI[n] OR DI[n])'),
+  'OR-chains of any scalar type and length share one family');
+{
+  // DO[n]=(F[n] OR F[n]) is in the dictionary, so any scalar OR-chain
+  // assignment is a known family — even one no listing contains verbatim
+  const famHit = S.check('F[55]=(GI[3] OR GI[4] OR GI[5])', SH);
+  check(famHit.level === 'ok' && famHit.family === true && famHit.example,
+    'family match reports ok with the representative example (' + famHit.example + ')');
+  check(S.check('PAYLOAD[1] AND PR[1]', SH).level !== 'ok', 'a genuinely novel structure still reads as unknown');
+}
 check(ok('! a remark') && ok('//PAUSE') && ok(''), 'comments, disabled lines and blanks are never flagged');
 // row-level checks over a listing, plus renumber and formatRow
 const rowSrc = '/PROG RS\r\n/MN\r\n   1:  R[1]=0 ;\r\n   2:  R[2]=1\r\n   3:J P[1] 100% FINE ;\r\n  R[3]=2 ;\r\n   5:  CALL VERY_LONG(1,\r\n    :  2) ;\r\n/POS\r\n/END';
