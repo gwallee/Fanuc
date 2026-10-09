@@ -3169,9 +3169,40 @@
       ta.scrollTop = Math.max(0, row * lh - ta.clientHeight / 2);
       renderStatus();
     }
+    /* The editor overlay cannot write live names INTO the text — every
+     * character must sit exactly under the one you typed, or the caret
+     * drifts. So the item under the caret names itself here instead:
+     * type DI[99], and the strip says what DI[99] is on the controller. */
+    function caretItemName() {
+      var ln = state.liveNames;
+      if (!ln) return null;
+      var rows = ta.value.split('\n');
+      var row = caretRow();
+      var col = ta.selectionStart - rowStart(rows, row);
+      var txt = rows[row] || '';
+      var re = /\b(DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|WI|WO|F|M|PR|R)\[\s*(\d+)[^\]]*\]?/g;
+      var m;
+      while ((m = re.exec(txt)) !== null) {
+        if (col < m.index || col > m.index + m[0].length) continue;
+        var type = m[1], idx = m[2];
+        var name = type === 'R' ? ln.r[idx]
+                 : type === 'PR' ? ln.pr[idx]
+                 : ln.io[type + '[' + idx + ']'];
+        return { key: type + '[' + idx + ']', name: name || null };
+      }
+      return null;
+    }
+
     function renderStatus() {
       statusBar.innerHTML = '';
       if (!TPS) return;
+      var it = caretItemName();
+      if (it) {
+        statusBar.appendChild(h('span', {
+          class: 'ex', title: 'The controller’s current comment — regenerated into the source when you Save & Upload',
+          text: it.key + (it.name ? ' : ' + it.name : ' — no comment on the robot')
+        }));
+      }
       var errs = issues.filter(function (i) { return i.level === 'error'; }).length;
       var unks = issues.length - errs;
       var text = errs ? errs + ' syntax error' + (errs === 1 ? '' : 's') : 'no syntax errors';
