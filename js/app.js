@@ -2760,6 +2760,11 @@
       })
     ]));
 
+    /* A failed send renders its banner here too — without this, a rejected
+     * translation after "Save + send" from a split half reported nothing. */
+    var ub = uploadBanner(docProg(state.activeDoc)) || uploadBanner(docProg(state.splitDoc));
+    if (ub) pane.appendChild(ub);
+
     var wrap = h('div', { class: 'split-wrap' });
     [['left', state.activeDoc], ['right', state.splitDoc]].forEach(function (side) {
       var id = side[1];
@@ -2784,10 +2789,10 @@
             }) : null,
             h('button', { class: 'btn primary', text: 'Save', title: 'Save to library — re-parses and re-runs every check', onclick: function () { ed.save(false); } }),
             (p.origin.type === 'dir' && state.server)
-              ? h('button', { class: 'btn', text: '+ disk', title: 'Save to library and to ' + p.origin.path, onclick: function () { ed.save(true); } })
+              ? h('button', { class: 'btn', text: 'Save + disk', title: 'Save to library and to ' + p.origin.path, onclick: function () { ed.save(true); } })
               : null,
             (state.server && state.robot.ip)
-              ? h('button', { class: 'btn', text: '+ robot', title: 'Save and FTP to ' + state.robot.ip + ' with snapshot + verify + auto-restore', onclick: ed.saveAndSend })
+              ? h('button', { class: 'btn', text: 'Save & Upload', title: 'Save and FTP to ' + state.robot.ip + ' with snapshot + verify + auto-restore', onclick: ed.saveAndSend })
               : null,
             h('button', {
               class: 'btn subtle', text: 'Cancel',
@@ -3248,7 +3253,7 @@
         ? h('button', { class: 'btn', text: 'Save to library + disk', title: p.origin.path, onclick: function () { save(true); } })
         : null,
       (state.server && state.robot.ip)
-        ? h('button', { class: 'btn', text: 'Save + send to robot', title: 'FTP to ' + state.robot.ip + ' with snapshot + verify + auto-restore', onclick: saveAndSend })
+        ? h('button', { class: 'btn', text: 'Save & Upload', title: 'FTP to ' + state.robot.ip + ' with snapshot + verify + auto-restore', onclick: saveAndSend })
         : null,
       h('button', { class: 'btn subtle', text: 'Cancel', onclick: function () { state.editing = false; state.editDraft = null; render(); } })
     ]);
