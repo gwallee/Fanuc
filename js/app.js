@@ -5169,10 +5169,32 @@
       };
       return itemMatch;
     }
+    /* Space-separated terms: a line matches when it has them ALL, anywhere —
+     * "DO EOAT" finds DO[30:EOAT Clamp]. A * inside a term stands for
+     * anything. Plain searches only: regex mode owns its own spaces, and
+     * replace mode needs one literal needle to swap out. */
+    if (!searchOpts.regex && !searchOpts.replace && /\s/.test(q.trim())) {
+      var terms = q.trim().split(/\s+/).map(function (t) {
+        var e = escapeRe(t).replace(/\\\*/g, '.*');
+        if (searchOpts.wholeWord) e = '\\b' + e + '\\b';
+        return new RegExp(e, flags);
+      });
+      return function (text) {
+        var ranges = [];
+        for (var i = 0; i < terms.length; i++) {
+          terms[i].lastIndex = 0;
+          var m = terms[i].exec(text);
+          if (!m) return null;
+          ranges.push({ index: m.index, length: m[0].length || 1 });
+        }
+        ranges.sort(function (a, b) { return a.index - b.index; });
+        return { index: ranges[0].index, length: ranges[0].length, ranges: ranges };
+      };
+    }
     if (searchOpts.regex) {
       try { re = new RegExp(q, flags); } catch (e) { return { error: 'Invalid regex: ' + e.message }; }
     } else {
-      var escd = escapeRe(q);
+      var escd = escapeRe(q).replace(/\\\*/g, '.*');   // * = wildcard here too
       if (searchOpts.wholeWord) escd = '\\b' + escd + '\\b';
       re = new RegExp(escd, flags);
     }
@@ -5335,7 +5357,10 @@
 
   function renderSearch(pane) {
     var bar = h('div', { class: 'search-bar' });
-    var input = h('input', { type: 'search', placeholder: 'Find in all files… e.g. R[10], DO[104], CALL PICK, pallet' });
+    var input = h('input', {
+      type: 'search', placeholder: 'Find in all files… e.g. R[10], DO EOAT, CALL PICK',
+      title: 'Space-separated terms must ALL appear on the line: DO EOAT finds DO[30:EOAT Clamp]. * stands for anything: R[2*] finds R[20]–R[29]. With Replace (⇄) on, spaces are literal.'
+    });
     input.value = state.searchQuery || '';
     bar.appendChild(input);
     [['caseSensitive', 'Aa', 'Match case'], ['wholeWord', '|w|', 'Whole word'], ['regex', '.*', 'Regular expression'], ['replace', '⇄', 'Find and replace across the library']].forEach(function (o) {
@@ -5427,7 +5452,17 @@
             onclick: function () { gotoLine(n, hh.line.num); }
           }));
           var txt = h('span', { class: 'text' });
-          txt.innerHTML = esc(hh.full.slice(0, hh.m.index)) + '<mark>' + esc(hh.full.substr(hh.m.index, hh.m.length)) + '</mark>' + esc(hh.full.slice(hh.m.index + hh.m.length));
+          // a multi-term match marks every term, not just the first
+          var ranges = hh.m.ranges || [{ index: hh.m.index, length: hh.m.length }];
+          var parts = [], pos = 0;
+          ranges.forEach(function (r2) {
+            var s = Math.max(r2.index, pos), e2 = r2.index + r2.length;
+            if (e2 <= pos) return;   // overlapping terms — already marked
+            parts.push(esc(hh.full.slice(pos, s)), '<mark>', esc(hh.full.slice(s, e2)), '</mark>');
+            pos = e2;
+          });
+          parts.push(esc(hh.full.slice(pos)));
+          txt.innerHTML = parts.join('');
           if (replacing && hh.after !== hh.line.raw) {
             txt.appendChild(h('span', { class: 'after', text: '\n→ ' + hh.after.replace(/^\s*\d+\s*:\s?/, '').replace(/\s*;\s*$/, '') }));
           }

@@ -69,6 +69,14 @@
       if (cut !== -1) seg = seg.slice(0, cut);
       out.push({ type: IOSTATE_TYPES[m[1]], index: parseInt(m[2], 10), state: m[3], comment: seg.trim() });
     }
+    /* The controller prints flags in TWO columns per line (F[1] beside
+     * F[513]), so reading in file order interleaves them 1, 513, 2, 514…
+     * Sort per type by index; types keep their first-seen file order. */
+    var typeOrder = {};
+    out.forEach(function (p, i) { if (!(p.type in typeOrder)) typeOrder[p.type] = i; });
+    out.sort(function (a, b) {
+      return a.type === b.type ? a.index - b.index : typeOrder[a.type] - typeOrder[b.type];
+    });
     return out;
   }
 
