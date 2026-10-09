@@ -300,6 +300,7 @@
 
   function removeProgram(name) {
     delete state.programs[name];
+    delete state.editDrafts[name];
     closeDoc('P:' + name);
     if (state.selected === name) state.selected = Object.keys(state.programs)[0] || null;
     rebuildDerived();
@@ -1494,21 +1495,41 @@
     var ip = state.robot.ip;
     if (!ip || (state.robotCheck && state.robotCheck.running)) return;
     var gen = libGen;
+    var rc = state.robotCheck = {
+      running: true, cancel: false, ip: ip, at: null,
+      total: 0, done: 0, same: 0,
+      differs: {},        // NAME -> {name, adds, dels} vs the robot copy
+      headerOnly: [],     // only /ATTR noise (dates, sizes) moved
+      notOnRobot: [],
+      failed: [],
+      sources: {}         // NAME -> robot copy, ready to open in Compare
+    };
+    render();
+    /* The file list is re-read first: a program deleted or added on the
+     * controller since connecting is exactly the kind of change this
+     * button exists to notice. */
+    api('/api/robot/list?ip=' + encodeURIComponent(ip) + ftpQS()).then(function (lb) {
+      if (state.robotCheck !== rc || gen !== libGen) return;
+      state.robot.files = lb.files;
+      startRobotCheck(rc, gen, ip);
+    }).catch(function (e) {
+      if (state.robotCheck !== rc) return;
+      rc.running = false;
+      rc.error = 'Could not read the robot’s file list: ' + e.message;
+      rc.at = new Date();
+      render();
+    });
+  }
+
+  function startRobotCheck(rc, gen, ip) {
     var onRobot = {};
     state.robot.files.forEach(function (f) {
       if (/\.LS$/i.test(f) && !isKnownNonProgram(f)) onRobot[f.replace(/\.LS$/i, '').toUpperCase()] = f;
     });
     var libNames = Object.keys(state.programs);
     var targets = libNames.filter(function (n) { return onRobot[n.toUpperCase()]; });
-    var rc = state.robotCheck = {
-      running: true, cancel: false, ip: ip, at: null,
-      total: targets.length, done: 0, same: 0,
-      differs: {},        // NAME -> {name, adds, dels} vs the robot copy
-      headerOnly: [],     // only /ATTR noise (dates, sizes) moved
-      notOnRobot: libNames.filter(function (n) { return !onRobot[n.toUpperCase()]; }),
-      failed: [],
-      sources: {}         // NAME -> robot copy, ready to open in Compare
-    };
+    rc.total = targets.length;
+    rc.notOnRobot = libNames.filter(function (n) { return !onRobot[n.toUpperCase()]; });
     render();
     var chain = Promise.resolve();
     targets.forEach(function (n) {
@@ -2918,7 +2939,16 @@
           bothProgs ? h('button', {
             class: 'btn subtle', text: 'Compare A\u2194B', title: 'Diff these two programs in the Compare tab',
             onclick: function () { state.pair = { a: docProg(state.active.left), b: docProg(state.active.right) }; state.tab = 'compare'; render(); }
-          }) : null
+          }) : null,
+          h('span', { style: 'flex:1' }),
+          h('button', { class: 'btn subtle', text: 'Export .LS', onclick: function () { exportProgram(p); } }),
+          h('button', {
+            class: 'btn subtle', text: 'Remove',
+            title: 'Remove ' + name + ' from the library (files on disk are untouched)',
+            onclick: function () {
+              if (confirm('Remove ' + name + ' from the library? (Your original file is untouched.)')) removeProgram(name);
+            }
+          })
         ]));
         if (p) {
           var box = buildCodeBox(p);
@@ -6238,6 +6268,10 @@
       var pct = rc.total ? Math.round((rc.done / rc.total) * 100) : 0;
       box.appendChild(h('div', { class: 'import-bar' }, [h('span', { style: 'width:' + pct + '%' })]));
     }
+    if (rc.error) {
+      box.appendChild(h('p', {}, [h('span', { class: 'badge warn', text: 'check failed' }), h('span', { text: ' ' + rc.error })]));
+      return box;
+    }
     var difNames = Object.keys(rc.differs).sort();
     var parts = [];
     parts.push(difNames.length
@@ -6268,6 +6302,41 @@
         title: 'Load the robot copies as the Compare baseline: robot on the left, library on the right',
         onclick: function () { openRobotCheckCompare(null); }
       })]));
+    }
+
+    /* Library-only programs: deleted from the robot, renamed, or never sent.
+     * This is where stale library copies get cleaned out. */
+    var gone = rc.running ? [] : rc.notOnRobot.filter(function (n) { return state.programs[n]; });
+    if (gone.length) {
+      box.appendChild(h('p', { class: 'muted', text: 'Only in the library — not on ' + rc.ip + ' (deleted there, renamed, or never sent). Click one to remove the library copy; your files on disk are untouched.' }));
+      var fl2 = h('div', { class: 'robot-files' });
+      gone.forEach(function (n) {
+        fl2.appendChild(h('span', {
+          class: 'chip write', text: n + ' ✕',
+          title: 'Remove ' + n + ' from the library (it is not on ' + rc.ip + ')',
+          onclick: function () {
+            if (confirm('Remove ' + n + ' from the library? It is not on ' + rc.ip + '. Files on disk are untouched.')) removeProgram(n);
+          }
+        }));
+      });
+      box.appendChild(fl2);
+      if (gone.length > 1) {
+        box.appendChild(h('p', {}, [h('button', {
+          class: 'btn subtle', text: 'Remove all ' + gone.length + ' from the library',
+          onclick: function () {
+            if (!confirm('Remove all ' + gone.length + ' library programs that are not on ' + rc.ip + '?\n\n' + gone.join(', ') + '\n\nFiles on disk are untouched.')) return;
+            gone.forEach(function (n) {
+              delete state.programs[n];
+              delete state.editDrafts[n];
+              closeDoc('P:' + n);
+            });
+            if (state.selected && !state.programs[state.selected]) state.selected = Object.keys(state.programs)[0] || null;
+            rebuildDerived();
+            persist();
+            render();
+          }
+        })]));
+      }
     }
     return box;
   }
