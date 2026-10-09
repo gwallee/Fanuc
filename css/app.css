@@ -1207,9 +1207,20 @@ tr:last-child td { border-bottom: none; }
 /* ---------- side-by-side split ---------- */
 .split-wrap {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  /* left share comes from the drag handle; each half keeps a working minimum */
+  grid-template-columns: minmax(220px, var(--split-l, 50%)) 10px minmax(220px, 1fr);
+  gap: 0 4px;
   align-items: start;
+}
+.split-divider {
+  align-self: stretch;
+  cursor: col-resize;
+  touch-action: none;
+  border-radius: 3px;
+  background: linear-gradient(var(--line), var(--line)) center / 2px 100% no-repeat;
+}
+.split-divider:hover, .split-divider:active {
+  background: linear-gradient(var(--accent), var(--accent)) center / 3px 100% no-repeat;
 }
 .code-pane { min-width: 0; }
 

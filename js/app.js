@@ -72,6 +72,7 @@
     splitDoc: null,        // doc docked on the right, or null
     editSide: null,        // 'left' | 'right' — which split half is an editor
     editDraft: null,       // {name, text} — unsaved editor text, survives tab switches
+    splitPct: 50,          // side-by-side: left half's share of the width (persisted)
     dataFilter: {},        // data-view filter text, per doc id — survives re-renders
     theme: 'auto'          // 'auto' (follow the system) | 'light' | 'dark' (persisted)
   };
@@ -157,6 +158,7 @@
       if (typeof p.ignoreIoState === 'boolean') state.ignoreIoState = p.ignoreIoState;
       if (p.lastRobot && p.lastRobot.ip) state.lastRobot = p.lastRobot; // {ip, ftpUser}
       if (p.theme === 'light' || p.theme === 'dark' || p.theme === 'auto') state.theme = p.theme;
+      if (typeof p.splitPct === 'number' && p.splitPct >= 20 && p.splitPct <= 80) state.splitPct = p.splitPct;
       if (typeof p.ignoreLineNums === 'boolean') state.ignoreLineNums = p.ignoreLineNums;
       if (typeof p.syncSplit === 'boolean') state.syncSplit = p.syncSplit;
       if (p.flowLayout === 'column' || p.flowLayout === 'chart') state.flowLayout = p.flowLayout;
@@ -183,7 +185,7 @@
         flowLayout: state.flowLayout, flowGaps: state.flowGaps, flowDetail: state.flowDetail,
         flowMini: state.flowMini, flowHideNav: state.flowHideNav, hideNav: state.hideNav,
         xrefFolded: state.xrefFolded, xrefHideUnused: state.xrefHideUnused,
-        lastRobot: state.lastRobot || null, theme: state.theme
+        lastRobot: state.lastRobot || null, theme: state.theme, splitPct: state.splitPct
       }));
     } catch (e) { /* session-only */ }
   }
@@ -2815,6 +2817,7 @@
     if (ub) pane.appendChild(ub);
 
     var wrap = h('div', { class: 'split-wrap' });
+    wrap.style.setProperty('--split-l', (state.splitPct || 50) + '%');
     [['left', state.activeDoc], ['right', state.splitDoc]].forEach(function (side) {
       var id = side[1];
       var col = h('div', { class: 'code-pane ' + side[0], 'data-side': side[0] });
@@ -2902,6 +2905,36 @@
       }
       wrap.appendChild(col);
     });
+
+    /* The handle between the halves: drag to resize, double-click to reset.
+     * The ratio lives in --split-l on the wrap and is saved with the prefs. */
+    var divider = h('div', {
+      class: 'split-divider', title: 'Drag to resize · double-click for 50/50',
+      role: 'separator', 'aria-orientation': 'vertical'
+    });
+    divider.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      divider.setPointerCapture(e.pointerId);
+      var r = wrap.getBoundingClientRect();
+      function move(ev) {
+        var pct = ((ev.clientX - r.left) / r.width) * 100;
+        state.splitPct = Math.round(Math.max(20, Math.min(80, pct)) * 10) / 10;
+        wrap.style.setProperty('--split-l', state.splitPct + '%');
+      }
+      function up() {
+        divider.removeEventListener('pointermove', move);
+        divider.removeEventListener('pointerup', up);
+        savePrefs();
+      }
+      divider.addEventListener('pointermove', move);
+      divider.addEventListener('pointerup', up);
+    });
+    divider.addEventListener('dblclick', function () {
+      state.splitPct = 50;
+      wrap.style.setProperty('--split-l', '50%');
+      savePrefs();
+    });
+    wrap.insertBefore(divider, wrap.children[1]);
     pane.appendChild(wrap);
   }
 
