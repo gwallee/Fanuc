@@ -329,6 +329,17 @@
     return out.join(' ');
   }
 
+  /* A parenthesized boolean expression — anything with logic operators,
+   * comparisons or a NOT in it — is the GRAMMAR's business, not the
+   * dictionary's: the grammar already proves it well-formed, and which
+   * registers it combines is not what makes a form novel. It collapses to
+   * the one token (C), so IF (!DI[n]),… and IF (GI[n]>N AND DI[n]),… are
+   * the same family. A plain value group like =(N) or an argument list
+   * stays itself. */
+  function isCondition(inner) {
+    return /(^|\s)(AND|OR)(\s|$)|[<>]|<=|>=|<>|(^|\s)!|=/.test(inner);
+  }
+
   function family(shape) {
     var s = String(shape).replace(SCALAR_RE, 'V[n]');
     var groups = [];
@@ -337,6 +348,7 @@
       prev = s;                    // identical groups share one token so the
       s = s.replace(/\(([^()]*)\)/g, function (_, inner) {   // outer chain
         var c = collapseChain(inner);                        // can collapse
+        if (isCondition(c)) c = 'C';
         var k = groups.indexOf(c);
         if (k === -1) { k = groups.length; groups.push(c); }
         return '§' + k + '§';
@@ -348,6 +360,8 @@
       prev = s;
       s = s.replace(/§(\d+)§/g, function (_, k) { return '(' + groups[+k] + ')'; });
     }
+    // plain-form IF conditions (no parentheses) are conditions all the same
+    s = s.replace(/^IF [^,()]+,/, 'IF (C),');
     return s;
   }
 
@@ -363,7 +377,13 @@
         }
       });
     }
-    var rep = dict.families[family(shape)];
+    var f = family(shape);
+    var rep = dict.families[f];
+    if (rep === undefined && f.indexOf('IF (C),') === 0) {
+      // an IF is as familiar as its action: the grammar vouches for the
+      // condition, so "IF (anything),R[n]=N" is known wherever R[n]=N is
+      rep = dict.families[f.slice('IF (C),'.length)];
+    }
     return rep === undefined ? null : rep;
   }
 

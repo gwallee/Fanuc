@@ -775,7 +775,9 @@ check(unk('L P[1] 500mm/sec FINE Wobble'), 'an unknown motion option is "unknown
 check(S.check('R[1]=R[2] XOR R[3]', SH).nearest.length > 0, 'an unknown form offers nearest known shapes');
 // family matching: scalar types are interchangeable, repeats collapse to two
 check(S.family('F[n]=((GI[n]>N OR GI[n]<N) AND (GI[n]>N OR GI[n]<N) AND (GI[n]>N OR GI[n]<N))') ===
-      'V[n]=((V[n]>N OR V[n]<N) AND (V[n]>N OR V[n]<N))', 'family collapses types and repeated groups');
+      'V[n]=(C)', 'family collapses types, repeats and boolean expressions');
+check(S.family('IF (!DI[n]),R[n]=N') === 'IF (C),V[n]=N' && S.family('IF R[n]>N,JMP LBL[n]') === 'IF (C),JMP LBL[n]',
+  'IF conditions collapse to (C), parenthesized or plain');
 check(S.family('DO[n]=(F[n] OR F[n] OR F[n] OR F[n])') === S.family('GO[n]=(DI[n] OR DI[n])'),
   'OR-chains of any scalar type and length share one family');
 {
