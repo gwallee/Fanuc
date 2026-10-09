@@ -70,8 +70,8 @@
     openDocs: [],          // ordered open-doc ids (the tab strip)
     activeDoc: null,       // doc in the left (or only) half of the Code view
     splitDoc: null,        // doc docked on the right, or null
-    editSide: null,        // 'left' | 'right' — which split half is an editor
-    editDraft: null,       // {name, text} — unsaved editor text, survives tab switches
+    editSides: { left: false, right: false },   // which split halves are editors
+    editDrafts: {},        // NAME -> unsaved editor text, survives tab switches and renders
     splitPct: 50,          // side-by-side: left half's share of the width (persisted)
     showAllProgs: false,   // sidebar: also list programs not prefixed A_/_ (persisted)
     dataFilter: {},        // data-view filter text, per doc id — survives re-renders
@@ -369,7 +369,7 @@
    * chose to stay (unsaved editor text). */
   function setLibrary(id) {
     if (id === state.library) return true;
-    if ((state.editing || state.editSide) && editorDirty() && !confirm('Switch libraries? Unsaved editor changes will be lost.')) return false;
+    if ((state.editing || anyEditSide()) && editorDirty() && !confirm('Switch libraries? Unsaved editor changes will be lost.')) return false;
     if (state.robotImport) state.robotImport.cancel = true;
     persist();                      // save the outgoing library
     libGen++;
@@ -377,8 +377,8 @@
     state.programs = {};
     state.selected = null;
     state.editing = false;
-    state.editSide = null;
-    state.editDraft = null;
+    state.editSides = { left: false, right: false };
+    state.editDrafts = {};
     state.openDocs = [];
     state.activeDoc = null;
     state.splitDoc = null;
@@ -1874,14 +1874,14 @@
   function onPopState(e) {
     var s = e.state;
     if (!s || !s.tab) return;
-    if (state.editing || state.editSide) {
+    if (state.editing || anyEditSide()) {
       if (editorDirty() && !confirm('Leave the editor? Unsaved changes will be lost.')) {
         try { history.pushState(navSnapshot(), ''); } catch (err) { /* ignore */ }
         return;
       }
       state.editing = false;
-      state.editSide = null;
-      state.editDraft = null;
+      state.editSides = { left: false, right: false };
+      state.editDrafts = {};
     }
     state.tab = s.tab;
     if (s.selected && state.programs[s.selected]) state.selected = s.selected;
@@ -2486,13 +2486,14 @@
   function safeCloseDoc(id) {
     var editingThis =
       (state.editing && id === state.activeDoc) ||
-      (state.editSide === 'left' && id === state.activeDoc) ||
-      (state.editSide === 'right' && id === state.splitDoc);
+      (state.editSides.left && id === state.activeDoc) ||
+      (state.editSides.right && id === state.splitDoc);
     if (editingThis) {
       if (editorDirty() && !confirm('Close ' + docLabel(id) + '? Unsaved changes will be lost.')) return;
       state.editing = false;
-      state.editSide = null;
-      state.editDraft = null;
+      if (id === state.activeDoc) state.editSides.left = false;
+      if (id === state.splitDoc) state.editSides.right = false;
+      if (docIsProg(id)) delete state.editDrafts[docProg(id)];
     }
     closeDoc(id);
     render();
@@ -2524,11 +2525,11 @@
 
   function activateDoc(id) {
     if (!docValid(id)) return;
-    if (state.editing || state.editSide) {
+    if (state.editing || anyEditSide()) {
       if (editorDirty() && !confirm('Leave the editor? Unsaved changes will be lost.')) return;
       state.editing = false;
-      state.editSide = null;
-      state.editDraft = null;
+      state.editSides = { left: false, right: false };
+      state.editDrafts = {};
     }
     openDoc(id);
     state.activeDoc = id;
@@ -2540,12 +2541,12 @@
    * gesture, shared by tab drags and library drags. */
   function dockDoc(id, rightHalf) {
     if (!docValid(id)) return;
-    if ((state.editing || state.editSide) && editorDirty() &&
+    if ((state.editing || anyEditSide()) && editorDirty() &&
         !confirm('Leave the editor? Unsaved changes will be lost.')) return;
     state.tab = 'code';
     state.editing = false;
-    state.editSide = null;
-    state.editDraft = null;
+    state.editSides = { left: false, right: false };
+    state.editDrafts = {};
     openDoc(id);
     if (rightHalf) {
       if (!state.activeDoc || !docValid(state.activeDoc)) state.activeDoc = id;
@@ -2581,9 +2582,9 @@
     state.openDocs = state.openDocs.filter(docValid);
     if (state.splitDoc && !docValid(state.splitDoc)) state.splitDoc = null;
     // split-editing only exists while that half holds a program
-    if (state.editSide === 'right' && !docIsProg(state.splitDoc)) state.editSide = null;
-    if (state.editSide === 'left' && !docIsProg(state.activeDoc)) state.editSide = null;
-    if (!state.splitDoc) state.editSide = null;
+    if (state.editSides.right && !docIsProg(state.splitDoc)) state.editSides.right = false;
+    if (state.editSides.left && !docIsProg(state.activeDoc)) state.editSides.left = false;
+    if (!state.splitDoc) { state.editSides.left = false; state.editSides.right = false; }
     if (state.selected && state.selected !== docSelSync) {
       docSelSync = state.selected;
       openDoc('P:' + state.selected, true);
@@ -2604,6 +2605,9 @@
         class: 'doc-tab' + (id === state.activeDoc ? ' active' : '') +
                (id === state.splitDoc ? ' docked' : '') +
                (DATA_DOCS[id] ? ' data' : ''),
+        title: id === state.splitDoc
+          ? 'Docked in the right half of the split (the dashed outline)'
+          : 'Click to show · drag onto the right half of the code to dock it side-by-side · middle-click to close',
         draggable: 'true'
       }, [
         h('span', { class: 'doc-label', text: docLabel(id) }),
@@ -2815,14 +2819,14 @@
       h('span', { class: 'title', text: 'Side by side' }),
       h('span', { class: 'muted', text: 'drag a tab or a library program onto either half to view it there' }),
       h('span', { style: 'flex:1' }),
-      bothProgs && !state.editSide ? syncLabel : null,
+      bothProgs && !anyEditSide() ? syncLabel : null,
       h('button', {
         class: 'btn subtle', text: 'Close split',
         onclick: function () {
-          if (state.editSide && editorDirty() && !confirm('Discard your unsaved changes?')) return;
+          if (anyEditSide() && editorDirty() && !confirm('Discard your unsaved changes?')) return;
           state.splitDoc = null;
-          state.editSide = null;
-          state.editDraft = null;
+          state.editSides = { left: false, right: false };
+          state.editDrafts = {};
           render();
         }
       })
@@ -2843,7 +2847,7 @@
         var p = state.programs[name];
 
         // this half is being edited — the other half stays a live reference
-        if (p && state.editSide === side[0]) {
+        if (p && state.editSides[side[0]]) {
           var ed = buildEditorCore(p, { side: side[0] });
           col.classList.add('editing');
           col.appendChild(h('div', { class: 'pane-head' }, [
@@ -2866,9 +2870,10 @@
             h('button', {
               class: 'btn subtle', text: 'Cancel',
               onclick: function () {
-                if (editorDirty() && !confirm('Discard your changes to ' + name + '?')) return;
-                state.editSide = null;
-                state.editDraft = null;
+                if (state.editDrafts[name] !== undefined && state.editDrafts[name] !== p.source &&
+                    !confirm('Discard your changes to ' + name + '?')) return;
+                state.editSides[side[0]] = false;
+                delete state.editDrafts[name];
                 render();
               }
             })
@@ -2891,9 +2896,13 @@
           h('button', {
             class: 'btn subtle', text: 'Edit', title: 'Edit this half in place — the other half stays open beside it',
             onclick: function () {
-              if (state.editSide && editorDirty() && !confirm('Discard your unsaved changes in the other half?')) return;
-              state.editDraft = null;
-              state.editSide = side[0];
+              var otherId = side[0] === 'left' ? state.splitDoc : state.activeDoc;
+              var otherEditing = state.editSides[side[0] === 'left' ? 'right' : 'left'];
+              if (otherEditing && docProg(otherId) === name) {
+                toast('This program is already being edited in the other half.');
+                return;
+              }
+              state.editSides[side[0]] = true;
               render();
             }
           }),
@@ -3018,13 +3027,17 @@
   /* The one live editor (full-page or a split half). Dirty means the text no
    * longer matches what was loaded — the guards below only interrupt for
    * changes that would actually be lost. */
-  var liveEditor = null;
+  var liveEditors = [];
+
+  function anyEditSide() { return state.editSides.left || state.editSides.right; }
 
   function editorDirty() {
-    if (liveEditor && liveEditor.ta.isConnected) return liveEditor.ta.value !== liveEditor.source;
-    // the editor may not be on screen (another tab is) — the draft still counts
-    return !!(state.editDraft && state.programs[state.editDraft.name] &&
-      state.editDraft.text !== state.programs[state.editDraft.name].source);
+    liveEditors = liveEditors.filter(function (e) { return e.ta.isConnected; });
+    if (liveEditors.some(function (e) { return e.ta.value !== e.source; })) return true;
+    // editors may not be on screen (another tab is) — drafts still count
+    return Object.keys(state.editDrafts).some(function (n) {
+      return state.programs[n] && state.editDrafts[n] !== state.programs[n].source;
+    });
   }
 
   /* A program was renamed by editing its /PROG header — every open doc
@@ -3051,7 +3064,7 @@
     /* Unsaved text survives leaving the Code tab: the draft lives in state
      * and the editor reopens with it. Saving or an explicit discard clears
      * it — switching tabs never does. */
-    ta.value = (state.editDraft && state.editDraft.name === oldName) ? state.editDraft.text : p.source;
+    ta.value = (state.editDrafts[oldName] !== undefined) ? state.editDrafts[oldName] : p.source;
 
     /* Syntax highlighting in a plain textarea: a <pre> holding the coloured
      * copy sits directly behind transparent text, with identical metrics, and
@@ -3254,7 +3267,7 @@
     }));
 
     ta.addEventListener('input', function () {
-      state.editDraft = { name: oldName, text: ta.value };
+      state.editDrafts[oldName] = ta.value;
       if (repaintQueued) return;
       repaintQueued = true;
       requestAnimationFrame(function () { repaintQueued = false; paint(); });
@@ -3264,9 +3277,13 @@
     ta.addEventListener('click', renderStatus);
     paint();
     requestAnimationFrame(syncScroll);   // size the overlay once it is in the DOM
-    liveEditor = { ta: ta, source: p.source };
+    liveEditors.push({ ta: ta, source: p.source });
 
-    function stopEditing() { state.editing = false; state.editSide = null; state.editDraft = null; }
+    function stopEditing() {
+      if (opts.side) state.editSides[opts.side] = false;
+      else state.editing = false;
+      delete state.editDrafts[oldName];
+    }
 
     /* Store the edited source and keep every view pointing at it, renamed or
      * not. Editing the RIGHT half must not yank the left half over to the
@@ -3331,7 +3348,7 @@
       sendToRobot(parsed.name, src, function (result) {
         // on failure keep the editor open so the fix is one keystroke away
         if (result.ok) stopEditing();
-        else if (opts.side) state.editSide = opts.side;
+        else if (opts.side) state.editSides[opts.side] = true;
         else state.editing = true;
         render();
       });
@@ -3375,7 +3392,7 @@
       (state.server && state.robot.ip)
         ? h('button', { class: 'btn', text: 'Save & Upload', title: 'FTP to ' + state.robot.ip + ' with snapshot + verify + auto-restore', onclick: saveAndSend })
         : null,
-      h('button', { class: 'btn subtle', text: 'Cancel', onclick: function () { state.editing = false; state.editDraft = null; render(); } })
+      h('button', { class: 'btn subtle', text: 'Cancel', onclick: function () { state.editing = false; delete state.editDrafts[oldName]; render(); } })
     ]);
     pane.appendChild(bar);
     var banner = uploadBanner(p.parsed.name);
