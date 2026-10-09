@@ -3344,7 +3344,25 @@
     ta.addEventListener('keyup', renderStatus);
     ta.addEventListener('click', renderStatus);
     paint();
-    requestAnimationFrame(syncScroll);   // size the overlay once it is in the DOM
+    /* Size the overlay once in the DOM, and open at the CODE, not the
+     * header — nobody edits /ATTR. The caret lands after /MN and the view
+     * scrolls there; an explicit target (the "fix line" chip) runs later
+     * and overrides this. */
+    requestAnimationFrame(function () {
+      syncScroll();
+      if (!ta.isConnected) return;
+      var rows = ta.value.split('\n');
+      for (var i = 0; i < rows.length; i++) {
+        if (/^\s*\/MN\b/i.test(rows[i])) {
+          var pos = rowStart(rows, i + 1);
+          ta.setSelectionRange(pos, pos);
+          var lh = parseFloat(getComputedStyle(ta).lineHeight) || 20;
+          ta.scrollTop = Math.max(0, i * lh - 4);
+          renderStatus();
+          break;
+        }
+      }
+    });
     liveEditors.push({ ta: ta, source: p.source });
 
     function stopEditing() {
