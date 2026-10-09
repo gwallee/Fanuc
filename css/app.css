@@ -452,15 +452,15 @@ body.dragging .drop-hint, body.dragging .pane { outline: 2px dashed var(--accent
 .cnote .cn-msg { color: var(--ink); }
 .cnote .cn-open { margin-top: 7px; font-size: 12px; }
 
-.tok-motion { color: var(--motion); font-weight: 600; }
-.tok-kw { color: var(--kw); font-weight: 600; }
+.tok-motion { color: var(--motion); }
+.tok-kw { color: var(--kw); }
 .tok-reg { color: var(--reg); }
 .tok-io { color: var(--io); }
-.tok-lbl { color: var(--lbl); font-weight: 600; }
+.tok-lbl { color: var(--lbl); }
 .tok-num { color: var(--num); }
 .tok-cmt { color: var(--cmt); font-style: italic; }
 .tok-str { color: var(--str); }
-.tok-call { color: var(--motion); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.tok-call { color: var(--motion); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 
 /* ---------- summary / cards ---------- */
 /* The band above the counts. Frames and parser trouble decide how you read
@@ -1181,8 +1181,8 @@ tr:last-child td { border-bottom: none; }
 .io-raw .src { font-size: 12px; }
 
 /* ---------- ON / OFF states: background highlight ---------- */
-.tok-on { color: var(--on); background: var(--diff-add-bg); font-weight: 600; border-radius: 3px; padding: 0 4px; }
-.tok-off { color: var(--off); background: var(--diff-del-bg); font-weight: 600; border-radius: 3px; padding: 0 4px; }
+.tok-on { color: var(--on); background: var(--diff-add-bg); border-radius: 3px; padding: 0 4px; }
+.tok-off { color: var(--off); background: var(--diff-del-bg); border-radius: 3px; padding: 0 4px; }
 
 /* ---------- upload result banner ---------- */
 .banner {
