@@ -1679,3 +1679,11 @@ h3.sec-toggle:hover { color: var(--accent); }
 .lib-showall .muted { overflow: hidden; text-overflow: ellipsis; }
 .lib-showall input { accent-color: var(--accent); }
 .lib-showall:hover { color: var(--ink); }
+
+/* ---- tab strips inside each split half ---- */
+.code-pane .doc-tabs {
+  position: static;            /* sticky belongs to the single-view strip */
+  margin: 0 0 6px;
+  padding: 0 0 0 2px;
+  background: transparent;
+}

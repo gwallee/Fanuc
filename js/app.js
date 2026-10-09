@@ -67,9 +67,8 @@
      * ('P:NAME') or a data view ('D:regs' | 'D:prs' | 'D:io'), so live
      * registers can sit in a tab — or docked beside the code — instead of
      * needing a second browser window. */
-    openDocs: [],          // ordered open-doc ids (the tab strip)
-    activeDoc: null,       // doc in the left (or only) half of the Code view
-    splitDoc: null,        // doc docked on the right, or null
+    docs: { left: [], right: [] },   // the two tab strips of the Code view
+    active: { left: null, right: null },  // each strip's shown doc; right null = no split
     editSides: { left: false, right: false },   // which split halves are editors
     editDrafts: {},        // NAME -> unsaved editor text, survives tab switches and renders
     splitPct: 50,          // side-by-side: left half's share of the width (persisted)
@@ -379,9 +378,8 @@
     state.editing = false;
     state.editSides = { left: false, right: false };
     state.editDrafts = {};
-    state.openDocs = [];
-    state.activeDoc = null;
-    state.splitDoc = null;
+    state.docs = { left: [], right: [] };
+    state.active = { left: null, right: null };
     state.pair = null;
     state.checksProg = null;
     loadLibraryStore(id);
@@ -440,8 +438,9 @@
   function saveViewState() {
     try {
       localStorage.setItem(viewKey(state.library), JSON.stringify({
-        selected: state.selected, openDocs: state.openDocs,
-        activeDoc: state.activeDoc, splitDoc: state.splitDoc
+        v: 2, selected: state.selected,
+        docsL: state.docs.left, docsR: state.docs.right,
+        activeL: state.active.left, activeR: state.active.right
       }));
     } catch (e) { /* storage unavailable — session-only */ }
   }
@@ -451,9 +450,18 @@
       var v = JSON.parse(localStorage.getItem(viewKey(state.library)) || 'null');
       if (!v) return;
       if (v.selected && state.programs[v.selected]) { state.selected = v.selected; docSelSync = v.selected; }
-      state.openDocs = (v.openDocs || []).filter(docValid);
-      state.activeDoc = docValid(v.activeDoc) ? v.activeDoc : null;
-      state.splitDoc = docValid(v.splitDoc) ? v.splitDoc : null;
+      if (v.v === 2) {
+        state.docs.left = (v.docsL || []).filter(docValid);
+        state.docs.right = (v.docsR || []).filter(docValid);
+        state.active.left = docValid(v.activeL) ? v.activeL : null;
+        state.active.right = docValid(v.activeR) ? v.activeR : null;
+      } else {
+        // v1 kept one list plus a single docked doc
+        state.docs.left = (v.openDocs || []).filter(docValid).filter(function (d) { return d !== v.splitDoc; });
+        state.docs.right = docValid(v.splitDoc) ? [v.splitDoc] : [];
+        state.active.left = (docValid(v.activeDoc) && v.activeDoc !== v.splitDoc) ? v.activeDoc : null;
+        state.active.right = state.docs.right[0] || null;
+      }
     } catch (e) { /* corrupt — fall back to defaults */ }
   }
 
@@ -1854,7 +1862,7 @@
   var nav = { restoring: false, last: null };
 
   function navSnapshot() {
-    return { tab: state.tab, selected: state.selected, split: state.splitDoc, active: state.activeDoc };
+    return { tab: state.tab, selected: state.selected, split: state.active.right, active: state.active.left };
   }
 
   function sameNav(a, b) {
@@ -1885,9 +1893,9 @@
     }
     state.tab = s.tab;
     if (s.selected && state.programs[s.selected]) state.selected = s.selected;
-    state.splitDoc = docValid(s.split) ? s.split : null;
-    if (docValid(s.active)) {
-      state.activeDoc = s.active;
+    if (s.split && docValid(s.split) && paneOf(s.split) === 'right') state.active.right = s.split;
+    if (docValid(s.active) && paneOf(s.active) !== 'right') {
+      openDoc(s.active, true, 'left');
       if (docIsProg(s.active)) docSelSync = state.selected = docProg(s.active);
     }
     nav.restoring = true;
@@ -2476,46 +2484,73 @@
     return DATA_DOCS[id] ? true : !!state.programs[id.slice(2)];
   }
 
-  function openDoc(id, activate) {
-    if (state.openDocs.indexOf(id) === -1) state.openDocs.push(id);
-    if (activate) state.activeDoc = id;
+  function paneOf(id) {
+    if (state.docs.left.indexOf(id) !== -1) return 'left';
+    if (state.docs.right.indexOf(id) !== -1) return 'right';
+    return null;
   }
 
-  /* Close a tab from the UI: if that doc is the one being edited, unsaved
-   * changes get a say first. closeDoc() stays the raw bookkeeping. */
-  function safeCloseDoc(id) {
-    var editingThis =
-      (state.editing && id === state.activeDoc) ||
-      (state.editSides.left && id === state.activeDoc) ||
-      (state.editSides.right && id === state.splitDoc);
-    if (editingThis) {
-      if (editorDirty() && !confirm('Close ' + docLabel(id) + '? Unsaved changes will be lost.')) return;
-      state.editing = false;
-      if (id === state.activeDoc) state.editSides.left = false;
-      if (id === state.splitDoc) state.editSides.right = false;
-      if (docIsProg(id)) delete state.editDrafts[docProg(id)];
+  function openDoc(id, activate, pane) {
+    var where = paneOf(id) || pane || 'left';
+    if (state.docs[where].indexOf(id) === -1) state.docs[where].push(id);
+    if (activate) state.active[where] = id;
+  }
+
+  /* Move a doc into the other strip — the drag-between-halves gesture. Its
+   * edit mode travels with it; drafts are keyed by program and untouched. */
+  function moveDoc(id, pane) {
+    var from = paneOf(id);
+    if (from === pane) { state.active[pane] = id; return; }
+    var wasEditing = !!(from && state.active[from] === id && state.editSides[from]);
+    if (from) {
+      var li = state.docs[from].indexOf(id);
+      state.docs[from].splice(li, 1);
+      if (state.active[from] === id) {
+        state.active[from] = state.docs[from][Math.min(li, state.docs[from].length - 1)] || null;
+      }
+      if (wasEditing) state.editSides[from] = false;
     }
+    if (state.docs[pane].indexOf(id) === -1) state.docs[pane].push(id);
+    state.active[pane] = id;
+    if (wasEditing) state.editSides[pane] = true;
+  }
+
+  /* Close a tab from the UI: a dirty draft on that program gets a say
+   * first. closeDoc() stays the raw bookkeeping. */
+  function safeCloseDoc(id) {
+    var pn = paneOf(id);
+    var nm = docProg(id);
+    var dirtyThis = nm && state.editDrafts[nm] !== undefined &&
+      state.programs[nm] && state.editDrafts[nm] !== state.programs[nm].source;
+    if (dirtyThis && !confirm('Close ' + docLabel(id) + '? Unsaved changes will be lost.')) return;
+    if (state.editing && id === state.active.left) state.editing = false;
+    if (pn && state.active[pn] === id) state.editSides[pn] = false;
+    if (nm) delete state.editDrafts[nm];
     closeDoc(id);
     render();
   }
 
   function closeDoc(id) {
-    var i = state.openDocs.indexOf(id);
-    if (i !== -1) state.openDocs.splice(i, 1);
-    if (state.splitDoc === id) state.splitDoc = null;
-    if (state.activeDoc === id) {
-      var next = state.openDocs[Math.min(i, state.openDocs.length - 1)] || null;
-      state.activeDoc = next;
-      if (docIsProg(next)) { state.selected = docProg(next); docSelSync = state.selected; }
+    var pn = paneOf(id);
+    if (!pn) return;
+    var li = state.docs[pn].indexOf(id);
+    state.docs[pn].splice(li, 1);
+    if (state.active[pn] === id) {
+      state.active[pn] = state.docs[pn][Math.min(li, state.docs[pn].length - 1)] || null;
+      if (pn === 'left' && docIsProg(state.active.left)) {
+        state.selected = docProg(state.active.left);
+        docSelSync = state.selected;
+      }
     }
     /* The selection may not keep pointing at a closed tab — syncDocs holds
      * "the selected program is always an open doc" and would reopen it on
      * the very next render. Hand the selection to the next open program. */
     if (docIsProg(id) && state.selected === docProg(id)) {
-      var np = docIsProg(state.activeDoc) ? docProg(state.activeDoc) : null;
+      var np = docIsProg(state.active.left) ? docProg(state.active.left) : null;
       if (!np) {
-        for (var k = 0; k < state.openDocs.length; k++) {
-          if (docIsProg(state.openDocs[k])) { np = docProg(state.openDocs[k]); break; }
+        var pool = state.docs.left.concat(state.docs.right);
+        for (var k = 0; k < pool.length; k++) {
+          if (docIsProg(pool[k])) { np = docProg(pool[k]); break; }
         }
       }
       state.selected = np;
@@ -2523,51 +2558,34 @@
     }
   }
 
+  /* Show a doc in whichever strip holds it (left for new ones). No
+   * confirmation needed: unsaved text parks in its draft, never lost. */
   function activateDoc(id) {
     if (!docValid(id)) return;
-    if (state.editing || anyEditSide()) {
-      if (editorDirty() && !confirm('Leave the editor? Unsaved changes will be lost.')) return;
-      state.editing = false;
-      state.editSides = { left: false, right: false };
-      state.editDrafts = {};
+    var pn = paneOf(id) || 'left';
+    openDoc(id, false, pn);
+    if (state.active[pn] !== id) {
+      state.editSides[pn] = false;
+      if (pn === 'left') state.editing = false;
+      state.active[pn] = id;
     }
-    openDoc(id);
-    state.activeDoc = id;
     if (docIsProg(id)) { state.selected = docProg(id); docSelSync = state.selected; }
     render();
   }
 
-  /* Dock a doc on the right, or activate it on the left — the one drop
-   * gesture, shared by tab drags and library drags. */
+  /* The drop gesture: left half shows it there, right half moves it into
+   * the right strip. Drafts make this safe without a confirmation. */
   function dockDoc(id, rightHalf) {
     if (!docValid(id)) return;
-    if ((state.editing || anyEditSide()) && editorDirty() &&
-        !confirm('Leave the editor? Unsaved changes will be lost.')) return;
     state.tab = 'code';
     state.editing = false;
-    state.editSides = { left: false, right: false };
-    state.editDrafts = {};
-    openDoc(id);
-    if (rightHalf) {
-      if (!state.activeDoc || !docValid(state.activeDoc)) state.activeDoc = id;
-      else {
-        /* Docking the data view you are already looking at: hand the left
-         * half back to a program, or the "no doc twice" rule silently
-         * swallows the whole gesture. */
-        if (state.activeDoc === id && !docIsProg(id)) {
-          var back = (state.selected && state.programs[state.selected]) ? 'P:' + state.selected : null;
-          if (!back) {
-            for (var k = 0; k < state.openDocs.length; k++) {
-              if (docIsProg(state.openDocs[k])) { back = state.openDocs[k]; break; }
-            }
-          }
-          if (back) { state.activeDoc = back; openDoc(back); }
-        }
-        state.splitDoc = id;
-      }
-    } else {
-      state.activeDoc = id;
-      if (docIsProg(id)) { state.selected = docProg(id); docSelSync = state.selected; }
+    moveDoc(id, rightHalf ? 'right' : 'left');
+    if (docIsProg(id)) { state.selected = docProg(id); docSelSync = state.selected; }
+    /* Docking the data view you were reading: the left half goes back to
+     * the selected program, not to whichever tab happened to sit beside it. */
+    if (rightHalf && !docIsProg(state.active.left) &&
+        state.selected && paneOf('P:' + state.selected) === 'left') {
+      state.active.left = 'P:' + state.selected;
     }
     render();
   }
@@ -2579,35 +2597,35 @@
   var docSelSync = null;
 
   function syncDocs() {
-    state.openDocs = state.openDocs.filter(docValid);
-    if (state.splitDoc && !docValid(state.splitDoc)) state.splitDoc = null;
-    // split-editing only exists while that half holds a program
-    if (state.editSides.right && !docIsProg(state.splitDoc)) state.editSides.right = false;
-    if (state.editSides.left && !docIsProg(state.activeDoc)) state.editSides.left = false;
-    if (!state.splitDoc) { state.editSides.left = false; state.editSides.right = false; }
+    state.docs.left = state.docs.left.filter(docValid);
+    state.docs.right = state.docs.right.filter(function (id) {
+      return docValid(id) && state.docs.left.indexOf(id) === -1;   // one strip per doc
+    });
+    if (state.active.left && paneOf(state.active.left) !== 'left') state.active.left = null;
+    if (state.active.right && paneOf(state.active.right) !== 'right') state.active.right = null;
     if (state.selected && state.selected !== docSelSync) {
       docSelSync = state.selected;
       openDoc('P:' + state.selected, true);
     }
     if (state.selected) openDoc('P:' + state.selected);
-    if (!docValid(state.activeDoc)) {
-      state.activeDoc = state.selected ? 'P:' + state.selected : (state.openDocs[0] || null);
+    if (!state.active.left) {
+      state.active.left = (state.selected && paneOf('P:' + state.selected) === 'left')
+        ? 'P:' + state.selected : (state.docs.left[0] || null);
     }
-    if (state.splitDoc && state.splitDoc === state.activeDoc && docIsProg(state.splitDoc) === false) {
-      state.splitDoc = null;   // the same data view twice says nothing
-    }
+    if (!state.active.right) state.active.right = state.docs.right[0] || null;
+    // editing flags only mean something on a strip showing a program
+    if (!state.docs.right.length) { state.editSides.left = false; state.editSides.right = false; }
+    if (!docIsProg(state.active.left)) state.editSides.left = false;
+    if (!docIsProg(state.active.right)) state.editSides.right = false;
   }
 
-  function renderDocTabs() {
-    var strip = h('div', { class: 'doc-tabs', title: 'Drag a tab onto the right half of the code to dock it side-by-side' });
-    state.openDocs.forEach(function (id) {
+  function renderDocTabs(pane) {
+    var strip = h('div', { class: 'doc-tabs', title: 'Drag a tab onto the other half of the code to move it there' });
+    state.docs[pane].forEach(function (id) {
       var tab = h('span', {
-        class: 'doc-tab' + (id === state.activeDoc ? ' active' : '') +
-               (id === state.splitDoc ? ' docked' : '') +
+        class: 'doc-tab' + (id === state.active[pane] ? ' active' : '') +
                (DATA_DOCS[id] ? ' data' : ''),
-        title: id === state.splitDoc
-          ? 'Docked in the right half of the split (the dashed outline)'
-          : 'Click to show · drag onto the right half of the code to dock it side-by-side · middle-click to close',
+        title: 'Click to show · drag onto the other half to move it there · middle-click to close',
         draggable: 'true'
       }, [
         h('span', { class: 'doc-label', text: docLabel(id) }),
@@ -2632,10 +2650,10 @@
       });
       strip.appendChild(tab);
     });
-    // data-view openers for whatever is not already open
+    // data-view openers live on the left strip only, for whatever is not open
     var haveData = !!(state.extern || (state.server && state.robot.ip));
-    Object.keys(DATA_DOCS).forEach(function (id) {
-      if (state.openDocs.indexOf(id) !== -1) return;
+    if (pane === 'left') Object.keys(DATA_DOCS).forEach(function (id) {
+      if (paneOf(id)) return;
       var add = h('button', {
         class: 'doc-add', draggable: 'true', text: '+ ' + DATA_DOCS[id],
         title: haveData
@@ -2813,7 +2831,7 @@
     }, [cb]);
     syncLabel.appendChild(document.createTextNode(' Sync scroll'));
 
-    var bothProgs = docIsProg(state.activeDoc) && docIsProg(state.splitDoc);
+    var bothProgs = docIsProg(state.active.left) && docIsProg(state.active.right);
 
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Side by side' }),
@@ -2822,11 +2840,10 @@
       bothProgs && !anyEditSide() ? syncLabel : null,
       h('button', {
         class: 'btn subtle', text: 'Close split',
+        title: 'Move the right strip\u2019s tabs back to the left \u2014 nothing closes, drafts stay',
         onclick: function () {
-          if (anyEditSide() && editorDirty() && !confirm('Discard your unsaved changes?')) return;
-          state.splitDoc = null;
-          state.editSides = { left: false, right: false };
-          state.editDrafts = {};
+          state.docs.left = state.docs.left.concat(state.docs.right);
+          state.docs.right = [];
           render();
         }
       })
@@ -2834,14 +2851,20 @@
 
     /* A failed send renders its banner here too — without this, a rejected
      * translation after "Save + send" from a split half reported nothing. */
-    var ub = uploadBanner(docProg(state.activeDoc)) || uploadBanner(docProg(state.splitDoc));
+    var ub = uploadBanner(docProg(state.active.left)) || uploadBanner(docProg(state.active.right));
     if (ub) pane.appendChild(ub);
 
     var wrap = h('div', { class: 'split-wrap' });
     wrap.style.setProperty('--split-l', (state.splitPct || 50) + '%');
-    [['left', state.activeDoc], ['right', state.splitDoc]].forEach(function (side) {
+    [['left', state.active.left], ['right', state.active.right]].forEach(function (side) {
       var id = side[1];
       var col = h('div', { class: 'code-pane ' + side[0], 'data-side': side[0] });
+      col.appendChild(renderDocTabs(side[0]));
+      if (!id) {
+        col.appendChild(h('p', { class: 'muted', text: 'Nothing on this side \u2014 drag a tab over from the other half.' }));
+        wrap.appendChild(col);
+        return;
+      }
       if (docIsProg(id)) {
         var name = docProg(id);
         var p = state.programs[name];
@@ -2888,27 +2911,13 @@
         }
 
         col.appendChild(h('div', { class: 'pane-head' }, [
-          progSelect(name, function (v) {
-            if (side[0] === 'left') { state.selected = v; docSelSync = v; state.activeDoc = 'P:' + v; openDoc('P:' + v); }
-            else { state.splitDoc = 'P:' + v; openDoc('P:' + v); }
-            render();
-          }),
           h('button', {
-            class: 'btn subtle', text: 'Edit', title: 'Edit this half in place — the other half stays open beside it',
-            onclick: function () {
-              var otherId = side[0] === 'left' ? state.splitDoc : state.activeDoc;
-              var otherEditing = state.editSides[side[0] === 'left' ? 'right' : 'left'];
-              if (otherEditing && docProg(otherId) === name) {
-                toast('This program is already being edited in the other half.');
-                return;
-              }
-              state.editSides[side[0]] = true;
-              render();
-            }
+            class: 'btn subtle', text: 'Edit', title: 'Edit this half in place \u2014 the other half stays open beside it',
+            onclick: function () { state.editSides[side[0]] = true; render(); }
           }),
           bothProgs ? h('button', {
-            class: 'btn subtle', text: 'Compare A↔B', title: 'Diff these two programs in the Compare tab',
-            onclick: function () { state.pair = { a: docProg(state.activeDoc), b: docProg(state.splitDoc) }; state.tab = 'compare'; render(); }
+            class: 'btn subtle', text: 'Compare A\u2194B', title: 'Diff these two programs in the Compare tab',
+            onclick: function () { state.pair = { a: docProg(state.active.left), b: docProg(state.active.right) }; state.tab = 'compare'; render(); }
           }) : null
         ]));
         if (p) {
@@ -2920,13 +2929,6 @@
           col.appendChild(h('p', { class: 'muted', text: 'no program' }));
         }
       } else {
-        col.appendChild(h('div', { class: 'pane-head' }, [
-          h('span', { class: 'title', text: docLabel(id) }),
-          h('span', { style: 'flex:1' }),
-          side[0] === 'right' ? h('button', {
-            class: 'btn subtle', text: 'Close', onclick: function () { state.splitDoc = null; render(); }
-          }) : null
-        ]));
         col.appendChild(buildDataView(id));
       }
       wrap.appendChild(col);
@@ -2966,22 +2968,21 @@
 
   function renderCode(pane) {
     syncDocs();
-    pane.appendChild(renderDocTabs());
+    if (state.docs.right.length) return renderSplit(pane);   // strips render per half
+    pane.appendChild(renderDocTabs('left'));
 
-    if (!docValid(state.activeDoc)) return;
+    if (!docValid(state.active.left)) return;
 
     // a data view, full width
-    if (!docIsProg(state.activeDoc)) {
-      if (state.splitDoc && docValid(state.splitDoc)) return renderSplit(pane);
-      pane.appendChild(buildDataView(state.activeDoc));
+    if (!docIsProg(state.active.left)) {
+      pane.appendChild(buildDataView(state.active.left));
       return;
     }
 
-    var p = state.programs[docProg(state.activeDoc)];
+    var p = state.programs[docProg(state.active.left)];
     if (!p) return;
 
     if (state.editing) return renderEditor(pane, p);
-    if (state.splitDoc && docValid(state.splitDoc)) return renderSplit(pane);
 
     var progFindings = findingsFor(p.parsed.name);
 
@@ -3000,7 +3001,12 @@
       h('button', { class: 'btn', text: 'Edit', onclick: function () { state.editing = true; render(); } }),
       h('button', {
         class: 'btn', text: 'Side-by-side', title: 'Open a second program next to this one (or drag one from the library onto the right half)',
-        onclick: function () { state.splitDoc = 'P:' + p.parsed.name; render(); }
+        onclick: function () {
+          var others = state.docs.left.filter(function (d) { return d !== state.active.left; });
+          if (!others.length) { toast('Open another program or a data view first \u2014 then drag its tab onto the right half.'); return; }
+          moveDoc(others[others.length - 1], 'right');
+          render();
+        }
       }),
       (state.server && state.robot.ip) ? h('button', {
         class: 'btn', text: 'Send to robot',
@@ -3043,10 +3049,11 @@
   /* A program was renamed by editing its /PROG header — every open doc
    * reference follows it. */
   function renameDocRefs(oldId, newId) {
-    state.openDocs = state.openDocs.map(function (d) { return d === oldId ? newId : d; })
-      .filter(function (d, i, arr) { return arr.indexOf(d) === i; });
-    if (state.activeDoc === oldId) state.activeDoc = newId;
-    if (state.splitDoc === oldId) state.splitDoc = newId;
+    ['left', 'right'].forEach(function (pn) {
+      state.docs[pn] = state.docs[pn].map(function (d) { return d === oldId ? newId : d; })
+        .filter(function (d, i, arr) { return arr.indexOf(d) === i; });
+      if (state.active[pn] === oldId) state.active[pn] = newId;
+    });
   }
 
   /* The editor itself — textarea, highlight overlay, save/send logic — shared
@@ -3301,11 +3308,11 @@
         origin: p.origin
       };
       if (opts.side === 'right') {
-        state.splitDoc = 'P:' + parsed.name;
+        state.active.right = 'P:' + parsed.name;
       } else {
         state.selected = parsed.name;
         docSelSync = parsed.name;
-        state.activeDoc = 'P:' + parsed.name;
+        state.active.left = 'P:' + parsed.name;
       }
       rebuildDerived();
       persist();
@@ -5740,7 +5747,7 @@
       pane.appendChild(h('p', { class: 'muted', text: 'Import programs first.' }));
       return;
     }
-    if (!state.pair) state.pair = { a: state.selected || names[0], b: docProg(state.splitDoc) || state.selected || names[0] };
+    if (!state.pair) state.pair = { a: state.selected || names[0], b: docProg(state.active.right) || state.selected || names[0] };
     var row = h('div', { class: 'search-bar' });
     row.appendChild(progSelect(state.pair.a, function (v) { state.pair.a = v; render(); }));
     row.appendChild(h('span', { class: 'muted', text: 'vs' }));
