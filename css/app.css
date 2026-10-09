@@ -1664,11 +1664,12 @@ h3.sec-toggle:hover { color: var(--accent); }
 
 /* ---- sidebar "Show all" toggle ---- */
 .lib-showall {
-  display: flex; align-items: center; gap: 6px;
-  margin-top: 5px; font-size: 12px; color: var(--muted);
+  display: flex; align-items: center; gap: 5px;
+  margin-top: 4px; font-size: 10.5px; color: var(--faint);
   cursor: pointer; user-select: none;
   white-space: nowrap;           /* "Show all · 23 hidden" stays one line */
 }
+.lib-showall input { transform: scale(0.85); transform-origin: left center; }
 .lib-showall input { flex: 0 0 auto; margin: 0; width: auto; }   /* undo .lib-filter input { width:100% } */
 .lib-showall .muted { overflow: hidden; text-overflow: ellipsis; }
 .lib-showall input { accent-color: var(--accent); }
