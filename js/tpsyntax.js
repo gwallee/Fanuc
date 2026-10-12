@@ -301,6 +301,12 @@
     var rep = familyHit(shape, dict);
     if (rep) return { level: 'ok', shape: shape, family: true, count: dict.shapes[rep][0], example: dict.shapes[rep][1] };
     if (g.unknown) return { level: 'unknown', message: g.unknown, shape: shape, nearest: nearest(shape, dict) };
+    /* Motion lines never consult the dictionary beyond this point: the
+     * grammar already checks the position, the speed and its unit, the
+     * termination, and every option one by one — and legal options combine
+     * freely, so "no robot has used this combination" is not a finding.
+     * An option the grammar does not know still reports as unknown above. */
+    if (/^[JLCAS]\s+P/.test(t)) return { level: 'ok', shape: shape };
     if (!dict || !dict.shapes) return { level: 'ok' };
     return {
       level: 'unknown', shape: shape, nearest: nearest(shape, dict),
