@@ -143,6 +143,8 @@ js/analyzer.js    per-program + library analysis (xref, call graph, labels)
 js/linter.js      static checks
 js/flow.js        control-flow blocks/edges + call-order computation
 js/diff.js        line diff + program-set comparison
+js/colsel.js      column (rectangular) selection text ops for the editor —
+                  Alt+drag / Alt+Shift+arrows, Notepad++ column mode
 js/explain.js     instruction → plain-English rules (unit-tested; not wired
                   into the UI since the per-line Explain toggle was removed)
 js/vaparse.js     NUMREG.VA / POSREG.VA / STRREG.VA / DIOCFGSV.IO / IOSTATE.DG /

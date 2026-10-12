@@ -694,6 +694,18 @@ tr:last-child td { border-bottom: none; }
 .editor-hl .tok-call { text-decoration: none; }
 .tok-ln { color: var(--gutter); }
 
+/* Column selection: one box per row, drawn in a layer between the coloured
+ * copy and the textarea (sized like .editor-hl by sizeOverlay) and moved
+ * with the scroll by a transform on the inner div. */
+.editor-colsel { position: absolute; inset: 0; right: auto; bottom: auto; overflow: hidden; pointer-events: none; }
+.editor-colsel[hidden] { display: none; }
+.editor-colsel > div { position: relative; }
+.editor-colsel .cs-box { position: absolute; background: var(--sel-editor-bg); outline: 1px solid var(--accent); outline-offset: -1px; }
+.editor-colsel .cs-caret { position: absolute; background: var(--accent); opacity: .7; }
+.editor-wrap:not(:focus-within) .editor-colsel { opacity: .45; }
+.editor-status .msg.col { color: var(--accent); }
+.editor-status .hint { color: var(--muted); opacity: .7; cursor: help; }
+
 /* ---------- editor: syntax check, snippets ----------
  * Marks live in the overlay <pre>; nothing here may change a glyph's advance
  * width, so it is underlines and background tints only. */

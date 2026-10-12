@@ -3112,7 +3112,8 @@
      * copy sits directly behind transparent text, with identical metrics, and
      * follows the textarea's scroll. Editing stays completely native. */
     var hl = h('pre', { class: 'editor-hl', 'aria-hidden': 'true' });
-    var editorWrap = h('div', { class: 'editor-wrap' }, [hl, ta]);
+    var colLayer = h('div', { class: 'editor-colsel', 'aria-hidden': 'true' });
+    var editorWrap = h('div', { class: 'editor-wrap' }, [hl, colLayer, ta]);
     var repaintQueued = false;
 
     /* ---- syntax check ----
@@ -3150,15 +3151,204 @@
      * window where long lines force the horizontal scrollbar. */
     function sizeOverlay() {
       var w = ta.clientWidth + 'px', hgt = ta.clientHeight + 'px';
-      if (hl.style.width !== w) hl.style.width = w;
-      if (hl.style.height !== hgt) hl.style.height = hgt;
+      if (hl.style.width !== w) { hl.style.width = w; colLayer.style.width = w; }
+      if (hl.style.height !== hgt) { hl.style.height = hgt; colLayer.style.height = hgt; }
     }
     function syncScroll() {
       sizeOverlay();
       hl.scrollTop = ta.scrollTop;
       hl.scrollLeft = ta.scrollLeft;
+      scrollCol();
     }
     if (window.ResizeObserver) new ResizeObserver(syncScroll).observe(ta);
+
+    /* ---- column (rectangular) selection ----
+     * Alt+drag, or Alt+Shift+arrows from the caret, selects a column across
+     * rows — Notepad++'s column mode. Typing, Backspace, Delete, Tab and
+     * Ctrl+X/C/V then act on every row at once; a column copy pasted back
+     * into the plain editor lands as a column at the caret. The rect is drawn
+     * in its own layer between the coloured copy and the textarea, and the
+     * native selection is collapsed to the rect's head so the caret blinks
+     * there. Text changes go through execCommand('insertText') so the
+     * textarea's own undo stack keeps working (Ctrl+Z undoes a column edit). */
+    var colInner = h('div');
+    colLayer.appendChild(colInner);
+    colLayer.hidden = true;
+    var colRect = null;        // { r0, c0, r1, c1 }: anchor (r0,c0) → head (r1,c1), not ordered
+    var colClip = null;        // text of the last column copy — pasting it pastes a column
+    var applyingCol = false;   // our own execCommand is firing 'input'
+
+    function colMetrics() {
+      var cs = getComputedStyle(ta);
+      var cv = colMetrics.cv || (colMetrics.cv = document.createElement('canvas'));
+      var ctx = cv.getContext('2d');
+      ctx.font = cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+      return {
+        cw: ctx.measureText('0000000000').width / 10,
+        lh: parseFloat(cs.lineHeight) || 20,
+        padL: parseFloat(cs.paddingLeft) || 0,
+        padT: parseFloat(cs.paddingTop) || 0
+      };
+    }
+    function scrollCol() {
+      if (colRect) colInner.style.transform = 'translate(' + (-ta.scrollLeft) + 'px,' + (-ta.scrollTop) + 'px)';
+    }
+    function drawCol() {
+      colInner.innerHTML = '';
+      colLayer.hidden = !colRect;
+      if (!colRect) return;
+      var m = colMetrics(), r = ColSel.normalise(colRect);
+      var w = (r.c1 - r.c0) * m.cw;
+      for (var i = r.r0; i <= r.r1; i++) {
+        var d = document.createElement('div');
+        d.className = w ? 'cs-box' : 'cs-caret';
+        d.style.left = (m.padL + r.c0 * m.cw) + 'px';
+        d.style.top = (m.padT + i * m.lh) + 'px';
+        d.style.width = (w || 2) + 'px';
+        d.style.height = m.lh + 'px';
+        colInner.appendChild(d);
+      }
+      scrollCol();
+    }
+    function setCol(rect) {
+      colRect = rect;
+      var pos = ColSel.toPos(ta.value, rect.r1, rect.c1);
+      ta.setSelectionRange(pos, pos);
+      drawCol();
+      renderStatus();
+    }
+    function exitCol() {
+      if (!colRect) return;
+      colRect = null;
+      drawCol();
+      renderStatus();
+    }
+    /* Replace the whole text through the editing command so the change is
+     * one native undo step; fall back to a plain assignment where the
+     * command is refused (that loses the undo history, nothing else). */
+    function applyCol(res) {
+      var st = ta.scrollTop, sl = ta.scrollLeft, ok = false;
+      applyingCol = true;
+      ta.focus();
+      ta.setSelectionRange(0, ta.value.length);
+      try { ok = document.execCommand('insertText', false, res.text); } catch (e) { ok = false; }
+      if (!ok || ta.value !== res.text) ta.value = res.text;
+      applyingCol = false;
+      ta.scrollTop = st;
+      ta.scrollLeft = sl;
+      state.editDrafts[oldName] = ta.value;
+      setCol(res.rect);
+      paint();
+    }
+    function mouseRC(e) {
+      var m = colMetrics(), b = ta.getBoundingClientRect();
+      var rows = ta.value.split('\n').length;
+      var row = Math.floor((e.clientY - b.top + ta.scrollTop - m.padT) / m.lh);
+      var col = Math.round((e.clientX - b.left + ta.scrollLeft - m.padL) / m.cw);
+      return { row: Math.max(0, Math.min(rows - 1, row)), col: Math.max(0, col) };
+    }
+    function moveHead(d) {
+      var rows = ta.value.split('\n').length;
+      setCol({
+        r0: colRect.r0, c0: colRect.c0,
+        r1: Math.max(0, Math.min(rows - 1, colRect.r1 + d[0])),
+        c1: Math.max(0, colRect.c1 + d[1])
+      });
+    }
+    ta.addEventListener('mousedown', function (e) {
+      if (!e.altKey || e.button !== 0) { exitCol(); return; }
+      e.preventDefault();          // no native drag-selection under the column
+      var rc = mouseRC(e);         // before focus(): focusing may scroll the box
+      ta.focus();
+      // Shift+Alt+click extends the column (or starts one from the caret)
+      var anchor = (e.shiftKey && colRect) ? { row: colRect.r0, col: colRect.c0 }
+                 : e.shiftKey ? ColSel.toRowCol(ta.value, ta.selectionStart) : rc;
+      setCol({ r0: anchor.row, c0: anchor.col, r1: rc.row, c1: rc.col });
+      function move(ev) { var p = mouseRC(ev); setCol({ r0: anchor.row, c0: anchor.col, r1: p.row, c1: p.col }); }
+      function up() { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); }
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    });
+    // Chrome hands focus to its menu bar when Alt is released on its own —
+    // which is exactly what happens after every Alt+drag
+    ta.addEventListener('keyup', function (e) { if (e.key === 'Alt') e.preventDefault(); });
+    ta.addEventListener('keydown', function (e) {
+      var ctrl = e.ctrlKey || e.metaKey;
+      if (e.key === 'Alt') { e.preventDefault(); return; }
+      var arrow = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key];
+      if (!colRect) {
+        if (arrow && e.altKey && e.shiftKey) {
+          e.preventDefault();
+          var rc = ColSel.toRowCol(ta.value, ta.selectionStart);
+          colRect = { r0: rc.row, c0: rc.col, r1: rc.row, c1: rc.col };
+          moveHead(arrow);
+        }
+        return;
+      }
+      if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Meta' || e.key === 'CapsLock') return;
+      if (e.key === 'Escape') { e.preventDefault(); exitCol(); return; }
+      if (arrow) {
+        if (e.shiftKey) { e.preventDefault(); moveHead(arrow); } else exitCol();   // the caret is at the head already
+        return;
+      }
+      if (e.key === 'Home' || e.key === 'End') {
+        if (!e.shiftKey) { exitCol(); return; }
+        e.preventDefault();
+        var rows = ta.value.split('\n'), r = ColSel.normalise(colRect), max = 0;
+        for (var i = r.r0; i <= r.r1; i++) max = Math.max(max, (rows[i] || '').length);
+        setCol({ r0: colRect.r0, c0: colRect.c0, r1: colRect.r1, c1: e.key === 'Home' ? 0 : max });
+        return;
+      }
+      if (ctrl && !(e.altKey && e.key.length === 1)) {      // AltGr characters are typed below
+        var k = e.key.toLowerCase();
+        if (k === 'c' || k === 'x') {
+          // the native copy/cut must run so the 'copy'/'cut' event fires
+          // (that is where the block replaces the clipboard text) — it does
+          // not fire over an empty selection, so select one character first
+          var p = ta.selectionStart;
+          if (p < ta.value.length) ta.setSelectionRange(p, p + 1);
+          else if (p > 0) ta.setSelectionRange(p - 1, p);
+          return;
+        }
+        if (k === 'v') return;                             // the paste handler takes it
+        exitCol();                                         // undo, select all, find… — plain editor again
+        return;
+      }
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault();
+        applyCol(ColSel.erase(ta.value, colRect, e.key === 'Backspace' ? -1 : 1));
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'PageUp' || e.key === 'PageDown') { exitCol(); return; }
+      if (e.key === 'Tab') { e.preventDefault(); applyCol(ColSel.replace(ta.value, colRect, '\t')); return; }
+      if (e.key.length === 1) { e.preventDefault(); applyCol(ColSel.replace(ta.value, colRect, e.key)); }
+    });
+    function onCopy(e) {
+      if (!colRect || !e.clipboardData) return;
+      var rect = colRect;
+      colClip = ColSel.extract(ta.value, rect);
+      e.clipboardData.setData('text/plain', colClip);
+      e.preventDefault();
+      setCol(rect);                                        // back to the collapsed head
+      // the deletion is an editing command of its own — not inside the clipboard event
+      if (e.type === 'cut') setTimeout(function () { if (colRect === rect) applyCol(ColSel.replace(ta.value, rect, '')); }, 0);
+    }
+    ta.addEventListener('copy', onCopy);
+    ta.addEventListener('cut', onCopy);
+    ta.addEventListener('paste', function (e) {
+      var cd = e.clipboardData || window.clipboardData;
+      var txt = cd ? cd.getData('text/plain') : '';
+      if (!txt) return;
+      var norm = txt.replace(/\r\n?/g, '\n');
+      if (colRect) { e.preventDefault(); applyCol(ColSel.paste(ta.value, colRect, norm)); return; }
+      // a column copy pasted into the plain editor: one line per row, down from the caret
+      if (colClip !== null && norm === colClip && ta.selectionStart === ta.selectionEnd) {
+        e.preventDefault();
+        var rc = ColSel.toRowCol(ta.value, ta.selectionStart);
+        applyCol(ColSel.paste(ta.value, { r0: rc.row, c0: rc.col, r1: rc.row, c1: rc.col }, norm));
+        exitCol();
+      }
+    });
     function caretRow() { return ta.value.slice(0, ta.selectionStart).split('\n').length - 1; }
     function rowStart(rows, row) {
       var pos = 0;
@@ -3200,6 +3390,18 @@
 
     function renderStatus() {
       statusBar.innerHTML = '';
+      if (colRect) {
+        var cr = ColSel.normalise(colRect);
+        statusBar.appendChild(h('span', {
+          class: 'msg col',
+          text: 'column: ' + (cr.r1 - cr.r0 + 1) + ' rows × ' + (cr.c1 - cr.c0) + ' cols · typing, Backspace, Delete, Ctrl+X/C/V hit every row · Shift+arrows extend · Esc'
+        }));
+      } else {
+        statusBar.appendChild(h('span', {
+          class: 'hint', text: 'Alt+drag · column select',
+          title: 'Alt+drag or Alt+Shift+arrows selects a column across rows (Notepad++ column mode). Typing, Backspace, Delete, cut, copy and paste then act on every row at once; a column copy pasted back lands as a column at the caret.'
+        }));
+      }
       if (!TPS) return;
       var it = caretItemName();
       if (it) {
@@ -3340,6 +3542,7 @@
     }));
 
     ta.addEventListener('input', function () {
+      if (!applyingCol) exitCol();     // native typing, undo, IME — the rect no longer fits the text
       state.editDrafts[oldName] = ta.value;
       if (repaintQueued) return;
       repaintQueued = true;
