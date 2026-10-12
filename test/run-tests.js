@@ -778,6 +778,10 @@ check(S.family('F[n]=((GI[n]>N OR GI[n]<N) AND (GI[n]>N OR GI[n]<N) AND (GI[n]>N
       'V[n]=(C)', 'family collapses types, repeats and boolean expressions');
 check(S.family('IF (!DI[n]),R[n]=N') === 'IF (C),V[n]=N' && S.family('IF R[n]>N,JMP LBL[n]') === 'IF (C),JMP LBL[n]',
   'IF conditions collapse to (C), parenthesized or plain');
+check(ok('IF ((R[51:Pal At Zn 1]=1) AND (R[52:Pal At Zn 2]=1)) JMP LBL[112]') &&
+      ok('IF (DI[1]) CALL _RECOVER') &&
+      err('IF (DI[1]) R[1]=0'),
+  'mixed IF accepts a spaced JMP/CALL action (controller-written), not a spaced assignment');
 check(S.family('DO[n]=(F[n] OR F[n] OR F[n] OR F[n])') === S.family('GO[n]=(DI[n] OR DI[n])'),
   'OR-chains of any scalar type and length share one family');
 {

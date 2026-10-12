@@ -177,9 +177,12 @@
       var after = t.slice(close + 1).trim();
       if (after === 'THEN') return { ok: true };
       if (/^,\s*\S/.test(after)) return action(after.replace(/^,\s*/, ''), 'IF');
+      /* Mixed logic also writes the action with a plain space — the
+       * controller itself produces IF (…) JMP LBL[n] and IF (…) CALL PROG. */
+      if (/^(JMP|CALL)\b/.test(after)) return action(after, 'IF');
       if (!after) return { error: 'IF (condition) needs THEN, or ,action — e.g. IF (DI[1]),JMP LBL[1]' };
       if (/^THEN/.test(after)) return { error: 'nothing can follow THEN on the same line' };
-      return { error: 'after the closing ")" the controller expects THEN or ,action — not "' + after.slice(0, 20) + '"' };
+      return { error: 'after the closing ")" the controller expects THEN, ,action or JMP/CALL — not "' + after.slice(0, 20) + '"' };
     }
     var m = t.match(/^IF\s+(.+)$/);
     if (!m) return { error: 'IF needs a condition' };
@@ -337,7 +340,8 @@
    * the same family. A plain value group like =(N) or an argument list
    * stays itself. */
   function isCondition(inner) {
-    return /(^|\s)(AND|OR)(\s|$)|[<>]|<=|>=|<>|(^|\s)!|=/.test(inner);
+    if (/(^|\s)(AND|OR)(\s|$)|[<>]|<=|>=|<>|(^|\s)!|=/.test(inner)) return true;
+    return /^!?V\[n\]$/.test(inner);   // a lone (or negated) point is a condition too
   }
 
   function family(shape) {
@@ -362,6 +366,8 @@
     }
     // plain-form IF conditions (no parentheses) are conditions all the same
     s = s.replace(/^IF [^,()]+,/, 'IF (C),');
+    // the spaced mixed-logic action (IF (…) JMP …) is the same family as ,action
+    s = s.replace(/^IF (\([^()]*\)) /, 'IF $1,');
     return s;
   }
 
