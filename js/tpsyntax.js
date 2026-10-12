@@ -364,6 +364,9 @@
       prev = s;
       s = s.replace(/§(\d+)§/g, function (_, k) { return '(' + groups[+k] + ')'; });
     }
+    // a motion's termination is grammar's business too: FINE vs CNT50 vs
+    // CNT100 never makes the FORM novel
+    s = s.replace(/\b(?:FINE|CNTN|CNT V\[n\]|CDN|CR)\b/g, 'TERM');
     // plain-form IF conditions (no parentheses) are conditions all the same
     s = s.replace(/^IF [^,()]+,/, 'IF (C),');
     // the spaced mixed-logic action (IF (…) JMP …) is the same family as ,action

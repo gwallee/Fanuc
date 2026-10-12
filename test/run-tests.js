@@ -778,6 +778,8 @@ check(S.family('F[n]=((GI[n]>N OR GI[n]<N) AND (GI[n]>N OR GI[n]<N) AND (GI[n]>N
       'V[n]=(C)', 'family collapses types, repeats and boolean expressions');
 check(S.family('IF (!DI[n]),R[n]=N') === 'IF (C),V[n]=N' && S.family('IF R[n]>N,JMP LBL[n]') === 'IF (C),JMP LBL[n]',
   'IF conditions collapse to (C), parenthesized or plain');
+check(S.family('L PR[n] Nmm/sec FINE Offset RT_LDN') === S.family('L PR[n] Nmm/sec CNTN Offset RT_LDN'),
+  'FINE and CNTn are one family — a termination never makes a form novel');
 check(ok('IF ((R[51:Pal At Zn 1]=1) AND (R[52:Pal At Zn 2]=1)) JMP LBL[112]') &&
       ok('IF (DI[1]) CALL _RECOVER') &&
       err('IF (DI[1]) R[1]=0'),
