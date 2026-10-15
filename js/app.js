@@ -2604,6 +2604,10 @@
   function dockDoc(id, rightHalf) {
     if (!docValid(id)) return;
     state.tab = 'code';
+    /* A full-page edit survives the view turning into a split: the flag
+     * converts to the per-side one, following wherever the edited doc
+     * lands. Its draft was never at risk; this keeps the MODE too. */
+    var editedDoc = (state.editing && docIsProg(state.active.left)) ? state.active.left : null;
     state.editing = false;
     moveDoc(id, rightHalf ? 'right' : 'left');
     if (docIsProg(id)) { state.selected = docProg(id); docSelSync = state.selected; }
@@ -2612,6 +2616,11 @@
     if (rightHalf && !docIsProg(state.active.left) &&
         state.selected && paneOf('P:' + state.selected) === 'left') {
       state.active.left = 'P:' + state.selected;
+    }
+    if (editedDoc) {
+      if (!state.docs.right.length) state.editing = (state.active.left === editedDoc);
+      else if (state.active.left === editedDoc) state.editSides.left = true;
+      else if (state.active.right === editedDoc) state.editSides.right = true;
     }
     render();
   }
@@ -2868,8 +2877,13 @@
         class: 'btn subtle', text: 'Close split',
         title: 'Move the right strip\u2019s tabs back to the left \u2014 nothing closes, drafts stay',
         onclick: function () {
+          /* Mirror of dockDoc: a left-half edit keeps its mode when the view
+           * collapses to a single pane (syncDocs clears editSides once the
+           * right strip is empty, so convert to the full-page flag first). */
+          var keepEdit = state.editSides.left && docIsProg(state.active.left);
           state.docs.left = state.docs.left.concat(state.docs.right);
           state.docs.right = [];
+          if (keepEdit) state.editing = true;
           render();
         }
       })
