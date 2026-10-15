@@ -1740,3 +1740,5 @@ h3.sec-toggle:hover { color: var(--accent); }
 @media (max-width: 1000px) {
   .doc-tabs .sync-toggle { display: none; }   /* stacked halves: nothing to sync */
 }
+/* Ctrl held over a CALL/RUN target in the editor */
+textarea.editor.call-link { cursor: pointer; }

@@ -3545,6 +3545,46 @@
         c1: Math.max(0, colRect.c1 + d[1])
       });
     }
+    /* Ctrl+click a CALL/RUN target to open that program — the viewer's
+     * single click, which a textarea cannot have (a click there places the
+     * caret). This editor's text is already its draft, so it stays open in
+     * edit mode, changes and all. Holding Ctrl over a target shows the
+     * pointer and names it. */
+    function callAt(rc) {
+      var txt = ta.value.split('\n')[rc.row] || '';
+      if (/^\s*(\d+:)?\s*!/.test(txt)) return null;   // a comment line
+      // blank bracket contents at the same width: DI[5:Run Task] is no RUN
+      var bare = txt.replace(/\[[^\]]*\]/g, function (m) { return '[' + new Array(m.length - 1).join(' ') + ']'; });
+      var re = /\b(CALL|RUN)\s+([A-Za-z_][A-Za-z0-9_]*)/g, m;
+      while ((m = re.exec(bare)) !== null) {
+        if (rc.col >= m.index && rc.col <= m.index + m[0].length) return m[2].toUpperCase();
+      }
+      return null;
+    }
+    function openCalled(name) {
+      if (!state.programs[name]) { toast(name + ' is not in the library.'); return; }
+      var id = 'P:' + name;
+      // from the right half, a program not open anywhere opens beside it
+      if (opts.side === 'right' && !paneOf(id)) { openDoc(id, true, 'right'); render(); }
+      else activateDoc(id);
+    }
+    function setCallHover(name) {
+      ta.classList.toggle('call-link', !!name);
+      if (name) ta.title = 'Ctrl+click to open ' + name;
+      else if (ta.title) ta.removeAttribute('title');
+    }
+    ta.addEventListener('mousemove', function (e) {
+      setCallHover((e.ctrlKey || e.metaKey) && !e.altKey ? callAt(mouseRC(e)) : null);
+    });
+    ta.addEventListener('keyup', function (e) { if (e.key === 'Control' || e.key === 'Meta') setCallHover(null); });
+    ta.addEventListener('mouseleave', function () { setCallHover(null); });
+    ta.addEventListener('mousedown', function (e) {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.button === 0) {
+        var called = callAt(mouseRC(e));
+        if (called) { e.preventDefault(); setCallHover(null); openCalled(called); return; }
+      }
+    });
+
     ta.addEventListener('mousedown', function (e) {
       if (!e.altKey || e.button !== 0) { exitCol(); return; }
       e.preventDefault();          // no native drag-selection under the column
@@ -3696,6 +3736,10 @@
         statusBar.appendChild(h('span', {
           class: 'hint', text: 'Alt+drag · column select',
           title: 'Alt+drag or Alt+Shift+arrows selects a column across rows (Notepad++ column mode). Typing, Backspace, Delete, cut, copy and paste then act on every row at once; a column copy pasted back lands as a column at the caret.'
+        }));
+        statusBar.appendChild(h('span', {
+          class: 'hint', text: 'Ctrl+click CALL · open',
+          title: 'Ctrl+click the program name after CALL or RUN to open it. This program stays in edit mode with its changes.'
         }));
       }
       if (!TPS) return;
