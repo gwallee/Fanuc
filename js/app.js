@@ -1680,7 +1680,7 @@
     state.tab = 'code';
     var needRender = !(state.editing && document.querySelector('textarea.editor'));
     if (needRender) {
-      state.editing = true;
+      beginEdit(progName);
       render();
     }
     requestAnimationFrame(function () {
@@ -2622,6 +2622,18 @@
    * program's tab and makes it active. */
   var docSelSync = null;
 
+  function isEditing(id) {
+    return docIsProg(id) && state.editDrafts[docProg(id)] !== undefined;
+  }
+
+  /* Enter edit mode on a program. The draft starts as the saved source, so
+   * nothing is dirty until a key is pressed. */
+  function beginEdit(name) {
+    if (state.programs[name] && state.editDrafts[name] === undefined) {
+      state.editDrafts[name] = state.programs[name].source;
+    }
+  }
+
   function syncDocs() {
     state.docs.left = state.docs.left.filter(docValid);
     state.docs.right = state.docs.right.filter(function (id) {
@@ -2639,6 +2651,14 @@
         ? 'P:' + state.selected : (state.docs.left[0] || null);
     }
     if (!state.active.right) state.active.right = state.docs.right[0] || null;
+    /* Edit mode belongs to the PROGRAM, not the strip: a program is being
+     * edited exactly while it has a draft (beginEdit seeds one, every exit
+     * deletes it). Switching tabs or halves used to drop the flag and leave
+     * the draft stranded behind a view-mode tab. */
+    var leftOn = isEditing(state.active.left), rightOn = isEditing(state.active.right);
+    state.editing = leftOn;
+    state.editSides.left = leftOn;
+    state.editSides.right = rightOn;
     // editing flags only mean something on a strip showing a program
     if (!state.docs.right.length) { state.editSides.left = false; state.editSides.right = false; }
     if (!docIsProg(state.active.left)) state.editSides.left = false;
@@ -2939,7 +2959,7 @@
         col.appendChild(h('div', { class: 'pane-head' }, [
           h('button', {
             class: 'btn subtle', text: 'Edit', title: 'Edit this half in place \u2014 the other half stays open beside it',
-            onclick: function () { state.editSides[side[0]] = true; render(); }
+            onclick: function () { beginEdit(name); render(); }
           }),
           bothProgs ? h('button', {
             class: 'btn subtle', text: 'Compare A\u2194B', title: 'Diff these two programs in the Compare tab',
@@ -3033,7 +3053,7 @@
       }) : null,
       h('span', { style: 'flex:1' }),
       codeSizeControl(),
-      h('button', { class: 'btn', text: 'Edit', onclick: function () { state.editing = true; render(); } }),
+      h('button', { class: 'btn', text: 'Edit', onclick: function () { beginEdit(p.parsed.name); render(); } }),
       h('button', {
         class: 'btn', text: 'Side-by-side', title: 'Open a second program next to this one (or drag one from the library onto the right half)',
         onclick: function () {
