@@ -1728,3 +1728,5 @@ h3.sec-toggle:hover { color: var(--accent); }
 .ds-valin { width: 7em; padding: 0 4px; font: inherit; text-align: right; height: auto; }
 .cmt-edit.val-edit { text-align: right; max-width: 9em; }
 .cmt-edit.busy { opacity: 0.6; }
+.ds-read { padding: 0 8px 6px; }
+.ds-read .btn { width: 100%; }

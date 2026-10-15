@@ -2988,6 +2988,20 @@
       : seg === 'pr' ? [[null, src.prs.map(dsPrRow)]]
       : [[null, src.io.map(dsIoRow)]];
 
+    // I/O is the one table connecting does not read: its own button, the
+    // Robot tab's wording, re-reading IOSTATE.DG alone
+    if (seg === 'io' && state.server && r0.ip) {
+      var haveIO = !!(r0.ioState || r0.rawIO);
+      var readBtn = h('button', {
+        class: 'btn subtle',
+        text: r0.ioLoading ? 'Reading…' : haveIO ? 'Refresh from robot' : 'Read from robot',
+        title: 'Read IOSTATE.DG from ' + r0.ip,
+        onclick: function () { loadRobotIO(); renderDataSide(); }
+      });
+      readBtn.disabled = !!r0.ioLoading;
+      side.appendChild(h('div', { class: 'ds-read' }, [readBtn]));
+    }
+
     var list = h('div', { class: 'ds-list mono' });
     var any = false;
     groups.forEach(function (g) {
