@@ -1722,3 +1722,9 @@ h3.sec-toggle:hover { color: var(--accent); }
 /* a PR's six numbers get their own line under its name */
 .ds-row.wrap { flex-wrap: wrap; gap: 0 8px; }
 .ds-row.wrap .ds-val { flex: 1 0 100%; max-width: none; padding-left: 1.5em; font-size: 10.5px; }
+/* a live R[n] value: click to set it on the controller */
+.ds-val.editable { cursor: text; border-bottom: 1px dotted var(--faint); }
+.ds-val.editable:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.ds-valin { width: 7em; padding: 0 4px; font: inherit; text-align: right; height: auto; }
+.cmt-edit.val-edit { text-align: right; max-width: 9em; }
+.cmt-edit.busy { opacity: 0.6; }

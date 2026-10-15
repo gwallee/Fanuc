@@ -166,6 +166,17 @@ async function post(route, body) {
     const dead = await fetch(BASE + '/api/robot/list?ip=127.0.0.1:1').then((r) => r.status);
     check(dead === 502, 'an unreachable controller returns 502, not a hang (status ' + dead + ')');
     check(Date.now() - t3 < 30000, 'and it answers well inside 30s (' + (Date.now() - t3) + 'ms)');
+
+    // R[n] value writes: a bad value is refused by the bridge, never sent
+    // (the ComSet write itself is HTTP on port 80 — not fakeable here; its
+    // URL is pinned in run-tests.js)
+    for (const v of ['1e3', '', '12abc']) {
+      const rv = await fetch(BASE + '/api/robot/regvalue', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip: '127.0.0.1', index: 1, value: v })
+      });
+      check(rv.status === 400, 'regvalue refuses ' + JSON.stringify(v) + ' before touching the robot (status ' + rv.status + ')');
+    }
   } catch (e) {
     failures++;
     console.error('FAIL  unexpected error: ' + (e.stack || e.message));

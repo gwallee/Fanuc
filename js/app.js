@@ -1250,6 +1250,90 @@
     return td;
   }
 
+  /* ---- setting an R[n] value on the controller ----
+   * The second thing the bridge writes over HTTP, and the first that can
+   * change what the robot DOES: a running program reads the new value on its
+   * next line. So it is R[n] only, against a live robot only (never backup
+   * data — that would be setting a value nobody has looked at), always
+   * confirmed by name and old → new value, sent once, and proven by reading
+   * NUMREG.VA back. */
+  function canWriteRegs() {
+    return !!(state.server && state.robot.ip && state.robot.registers && !state.robot.registers.error);
+  }
+
+  function robotRegister(index) {
+    var regs = canWriteRegs() ? state.robot.registers : [];
+    for (var i = 0; i < regs.length; i++) if (regs[i].index === index) return regs[i];
+    return null;
+  }
+
+  /* Ask, write, read back. done(ok) runs once either way; on success the
+   * loaded register row already holds what the controller stored. */
+  function writeRegValue(index, text, done) {
+    var r = robotRegister(index);
+    var v = String(text).trim();
+    var key = 'R[' + index + (r && r.comment ? ':' + r.comment : '') + ']';
+    if (!/^-?\d+(\.\d+)?$/.test(v) || v.length > 16) {
+      toast(key + ': a register value is a number like 12, -3 or 1.5');
+      done(false);
+      return;
+    }
+    var robotName = (state.knownRobots || []).filter(function (x) { return x.ip === state.robot.ip; }).map(function (x) { return x.name; })[0];
+    if (!confirm('Set ' + key + ' on ' + (robotName ? robotName + ' (' + state.robot.ip + ')' : state.robot.ip) +
+        '\n\n    ' + (r ? r.value : '?') + '  →  ' + v +
+        '\n\nA running program reads the new value on its next line.')) {
+      done(false);
+      return;
+    }
+    postJSON('/api/robot/regvalue', {
+      ip: state.robot.ip, index: index, value: v,
+      user: state.robot.ftpUser || undefined, pass: state.robot.ftpPass || undefined
+    }).then(function (b) {
+      // show what the controller holds; only an unconfirmed write shows what was sent
+      if (r && typeof b.stored === 'number') r.value = b.stored;
+      else if (r && b.ok) r.value = parseFloat(v);
+      if (!b.ok) throw new Error(b.error || 'the controller did not take the value');
+      if (!b.verified && b.verifyError) toast('Sent ' + key + ' = ' + v + ' — but could not read it back to confirm: ' + b.verifyError);
+      else toast(key + ' = ' + b.stored, 2500);
+      done(true);
+    }).catch(function (e) {
+      toast('Could not set ' + key + ': ' + e.message, 7000);
+      done(false);
+    });
+  }
+
+  /* The value as an input (Robot tab table). Commits on Enter or leaving a
+   * changed field, like the comment cell beside it; Escape puts it back. */
+  function regValueCell(r) {
+    var td = h('td', { class: 'n' });
+    if (!canWriteRegs()) { td.textContent = String(r.value); return td; }
+    var inp = h('input', {
+      type: 'text', class: 'cmt-edit val-edit', value: String(r.value), maxlength: '16',
+      title: 'Set R[' + r.index + '] on the controller — asks first'
+    });
+    var busy = false;
+    inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+      else if (e.key === 'Escape') { inp.value = String(r.value); inp.blur(); }
+    });
+    inp.addEventListener('change', function () {
+      if (busy || inp.value.trim() === String(r.value)) return;
+      busy = true;
+      inp.disabled = true;
+      inp.classList.add('busy');
+      writeRegValue(r.index, inp.value, function (ok) {
+        busy = false;
+        inp.disabled = false;
+        inp.classList.remove('busy');
+        inp.value = String(r.value);   // what the controller holds, either way
+        if (ok) { inp.classList.add('ok'); setTimeout(function () { inp.classList.remove('ok'); }, 2500); }
+        if (state.showData) renderDataSide();
+      });
+    });
+    td.appendChild(inp);
+    return td;
+  }
+
   function loadRobotErrors() {
     var ip = state.robot.ip;
     state.robot.errors = null;
@@ -2764,7 +2848,7 @@
 
   function dsRegRow(r) {
     return { key: 'R[' + r.index + ']', name: 'R[' + r.index + (r.comment ? ':' + r.comment : '') + ']',
-             cls: 'tok-reg', value: String(r.value), vcls: 'tok-num' };
+             cls: 'tok-reg', value: String(r.value), vcls: 'tok-num', reg: r.index };
   }
   function dsPrRow(r) {
     var val = r.uninit ? 'Uninit' : (VA.posregValueStr ? VA.posregValueStr(r) : '');
@@ -2819,6 +2903,54 @@
   var dsLastKeys = [];      // the keys last highlighted — re-applied after a redraw
   var dsDocKey = null;      // the open docs those keys were taken from
 
+  /* A live R[n] value in the sidebar edits in place: click it, type, Enter
+   * (or click away) to set it on the controller — writeRegValue asks first.
+   * Escape, or leaving it unchanged, sends nothing. */
+  function dsValueEditor(valEl, r) {
+    valEl.classList.add('editable');
+    valEl.title = 'Click to set ' + r.key + ' on the controller';
+    valEl.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      if (valEl.querySelector('input')) return;
+      var was = valEl.textContent;
+      var inp = h('input', { type: 'text', class: 'ds-valin', value: was, maxlength: '16' });
+      var settled = false;
+      function finish(commit) {
+        if (settled) return;
+        settled = true;
+        var v = inp.value.trim();
+        if (!commit || v === was || v === '') { valEl.textContent = was; return; }
+        inp.disabled = true;
+        writeRegValue(r.reg, v, function () { renderDataSide(); });
+      }
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+        else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+      });
+      inp.addEventListener('blur', function () { finish(true); });
+      inp.addEventListener('dblclick', function (e) { e.stopPropagation(); });
+      valEl.textContent = '';
+      valEl.appendChild(inp);
+      inp.focus();
+      inp.select();
+    });
+  }
+
+  /* Why a view is empty, in the terms of the file it comes from. */
+  function dsEmptyText(seg) {
+    if (seg === 'used') return 'This program uses no registers or I/O.';
+    var r = state.robot;
+    var f = seg === 'r' ? ['NUMREG.VA', r.registers] : seg === 'pr' ? ['POSREG.VA', r.posregs]
+          : ['IOSTATE.DG', r.ioState || r.rawIO];
+    if (state.server && r.ip) {
+      if (seg === 'io' && r.ioLoading) return 'Reading IOSTATE.DG from ' + r.ip + '…';
+      if (f[1] && f[1].error) return 'Could not read ' + f[0] + ': ' + f[1].error;
+      if (!f[1]) return 'Reading ' + f[0] + ' from ' + r.ip + '…';
+      return f[0] + ' on ' + r.ip + ' has nothing to list.';
+    }
+    return 'No controller data. Connect to a robot, or open a backup folder holding ' + f[0] + '.';
+  }
+
   function renderDataSide() {
     var side = document.getElementById('dataside');
     if (!side) return;
@@ -2869,6 +3001,7 @@
           h('span', { class: 'ds-val ' + r.vcls, text: r.value })
         ]);
         el.addEventListener('dblclick', function () { crossRefToken(r.key); });
+        if (r.reg !== undefined && canWriteRegs()) dsValueEditor(el.lastChild, r);
         el._text = (r.name + ' ' + r.value).toLowerCase();
         el._head = head;
         list.appendChild(el);
@@ -6777,7 +6910,7 @@
         ol.appendChild(li);
       });
       box.appendChild(ol);
-      box.appendChild(h('p', { class: 'muted', text: 'The bridge mostly READS from robots — programs, register values, I/O. It writes only where you ask it to and it can check the result: sending a .LS back, and renaming a register or I/O point. Nothing it does can move a robot.' }));
+      box.appendChild(h('p', { class: 'muted', text: 'The bridge mostly READS from robots — programs, register values, I/O. It writes only where you ask it to, and reads back every write to check it: sending a .LS back, renaming a register or I/O point, and setting an R[n] value. Nothing it does starts a program or commands motion — but a running program acts on a new R[n] value at its next line, so that write always asks first.' }));
       pane.appendChild(box);
       return;
     }
@@ -6812,7 +6945,7 @@
       return;
     }
     if (!state.robot.ip) {
-      pane.appendChild(h('p', { class: 'muted', text: 'Enter the controller IP. The bridge reads the program list, register values (NUMREG.VA) and I/O configuration from the robot. Registers and I/O points can be renamed in place once connected.' }));
+      pane.appendChild(h('p', { class: 'muted', text: 'Enter the controller IP. The bridge reads the program list, register values (NUMREG.VA) and I/O configuration from the robot. Once connected, registers and I/O points can be renamed in place, and R[n] values set (asks first).' }));
       return;
     }
 
@@ -7137,7 +7270,7 @@
           if (x) x.refs.slice(0, 6).forEach(function (ref) { used.appendChild(chip(ref, ref.write ? 'write' : 'read')); });
           tbl.appendChild(h('tr', {}, [
             h('td', { class: 'n', text: 'R[' + r.index + ']' }),
-            h('td', { class: 'n', text: String(r.value) }),
+            regValueCell(r),
             commentCell('R', r.index, r.comment, function (text) { r.comment = text; }),
             used
           ]));

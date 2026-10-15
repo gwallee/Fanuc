@@ -743,6 +743,31 @@ check(CS.storedComment('IOSTATE.DG', 'DOUT[  65] OFF  Vac-1 ON\n', 'DO', 65) ===
   'an I/O rename is verified against IOSTATE.DG');
 check(CS.storedComment('IOSTATE.DG', 'DIN[   1]  ON  Auto Mode\n', 'DO', 1) === null,
   'DI[1] and DO[1] are not confused when verifying');
+
+console.log('\n-- setting R[n] values on the controller (ComSet sFc=2) --');
+// Read off the controller's Numeric Registers page (ComGet?sFc=28): each value
+// box calls sendRegValue(v, 'iValN', 2), and klserver.js turns that into
+// sValue / sIndx / sRealFlag=v.indexOf('.') / sFc. Pinned: a wrong code
+// writes some other table on a live robot.
+check(CS.REG_VALUE_FC === 2, 'register value write code pinned: sFc=2');
+const iv = CS.planRegValue(8, '5');
+check(iv.url === '/karel/ComSet?sValue=5&sIndx=8&sRealFlag=-1&sFc=2',
+  'an integer goes with sRealFlag=-1, as the robot page sends it: ' + iv.url);
+const rv = CS.planRegValue(12, '-1.25');
+check(rv.real && rv.url === '/karel/ComSet?sValue=-1.25&sIndx=12&sRealFlag=2&sFc=2',
+  'a real carries the decimal point position as sRealFlag: ' + rv.url);
+['', ' ', '1e3', '.5', '5.', '0x10', '1,5', '12abc', '--1', '1'.repeat(17)].forEach((bad) => {
+  check(!!CS.planRegValue(1, bad).error, JSON.stringify(bad) + ' is refused as a register value');
+});
+check(!!CS.planRegValue(1, '2147483648').error && !CS.planRegValue(1, '-2147483648').error,
+  'integers stop at the 32-bit range');
+check(!!CS.planRegValue(0, '1').error && !!CS.planRegValue(10000, '1').error,
+  'index 0 and past the cap are refused');
+check(CS.storedRegValue("  [8] = 5  'Task-JMP LBL'\n  [12] = -1.250000e+00  ''\n", 12) === -1.25,
+  'the read-back finds the value in NUMREG.VA');
+check(CS.regValueMatches(0.10000000149011612, 0.1) && CS.regValueMatches(5, 5) &&
+  !CS.regValueMatches(4, 5) && !CS.regValueMatches(null, 5),
+  'a real is matched at float32 precision; anything else must be equal');
 console.log('\n-- TP syntax: shapes, grammar, snippets --');
 const S = require('../js/tpsyntax.js');
 const SH = require('../js/tpshapes.js');
