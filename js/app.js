@@ -63,17 +63,17 @@
     ignoreIoState: true,   // Compare: skip the controller's inline I/O state (persisted)
     ignoreLineNums: true,  // Compare: skip the leading /MN line number (persisted)
     robotCheck: null,      // last "check robot for changes" run — manual, never polled
-    /* Studio-5000-style document tabs in the Code view. A doc is a program
-     * ('P:NAME') or a data view ('D:regs' | 'D:prs' | 'D:io'), so live
-     * registers can sit in a tab — or docked beside the code — instead of
-     * needing a second browser window. */
+    /* Studio-5000-style document tabs in the Code view: each doc is a
+     * program ('P:NAME'). Live registers and I/O are the data sidebar. */
     docs: { left: [], right: [] },   // the two tab strips of the Code view
     active: { left: null, right: null },  // each strip's shown doc; right null = no split
     editSides: { left: false, right: false },   // which split halves are editors
     editDrafts: {},        // NAME -> unsaved editor text, survives tab switches and renders
     splitPct: 50,          // side-by-side: left half's share of the width (persisted)
     showAllProgs: false,   // sidebar: also list programs not prefixed A_/_ (persisted)
-    dataFilter: {},        // data-view filter text, per doc id — survives re-renders
+    dataFilter: {},        // data-sidebar filter text — survives re-renders
+    showData: true,        // Code tab: the registers/I/O sidebar on the right (persisted)
+    dataSeg: 'used',       // its view: 'used' | 'r' | 'pr' | 'io' (persisted)
     theme: 'auto'          // 'auto' (follow the system) | 'light' | 'dark' (persisted)
   };
 
@@ -160,6 +160,8 @@
       if (p.theme === 'light' || p.theme === 'dark' || p.theme === 'auto') state.theme = p.theme;
       if (typeof p.splitPct === 'number' && p.splitPct >= 20 && p.splitPct <= 80) state.splitPct = p.splitPct;
       if (typeof p.showAllProgs === 'boolean') state.showAllProgs = p.showAllProgs;
+      if (typeof p.showData === 'boolean') state.showData = p.showData;
+      if (['used', 'r', 'pr', 'io'].indexOf(p.dataSeg) !== -1) state.dataSeg = p.dataSeg;
       if (typeof p.ignoreLineNums === 'boolean') state.ignoreLineNums = p.ignoreLineNums;
       if (typeof p.syncSplit === 'boolean') state.syncSplit = p.syncSplit;
       if (p.flowLayout === 'column' || p.flowLayout === 'chart') state.flowLayout = p.flowLayout;
@@ -187,7 +189,7 @@
         flowMini: state.flowMini, flowHideNav: state.flowHideNav, hideNav: state.hideNav,
         xrefFolded: state.xrefFolded, xrefHideUnused: state.xrefHideUnused,
         lastRobot: state.lastRobot || null, theme: state.theme, splitPct: state.splitPct,
-        showAllProgs: state.showAllProgs
+        showAllProgs: state.showAllProgs, showData: state.showData, dataSeg: state.dataSeg
       }));
     } catch (e) { /* session-only */ }
   }
@@ -1115,16 +1117,23 @@
     });
   }
 
+  /* A robot read finished. The Robot tab rebuilds; anywhere else only the
+   * data sidebar repaints — a full render() would rebuild an open editor. */
+  function robotDataLoaded() {
+    if (state.tab === 'robot') render();
+    else renderDataSide();
+  }
+
   function loadRobotRegisters() {
     var ip = state.robot.ip;
     api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=NUMREG.VA' + ftpQS()).then(function (b) {
       state.robot.registers = VA.parseNumreg(b.content);
       state.robot.loadedAt = new Date();
       rebuildDerived();
-      if (state.tab === 'robot') render();
+      robotDataLoaded();
     }).catch(function (e) {
       state.robot.registers = { error: e.message };
-      if (state.tab === 'robot') render();
+      robotDataLoaded();
     });
   }
 
@@ -1133,10 +1142,10 @@
     api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=POSREG.VA' + ftpQS()).then(function (b) {
       state.robot.posregs = VA.parsePosreg(b.content);
       rebuildDerived();
-      if (state.tab === 'robot') render();
+      robotDataLoaded();
     }).catch(function (e) {
       state.robot.posregs = { error: e.message };
-      if (state.tab === 'robot') render();
+      robotDataLoaded();
     });
   }
 
@@ -1144,10 +1153,10 @@
     var ip = state.robot.ip;
     api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=STRREG.VA' + ftpQS()).then(function (b) {
       state.robot.strregs = VA.parseStrreg(b.content);
-      if (state.tab === 'robot') render();
+      robotDataLoaded();
     }).catch(function (e) {
       state.robot.strregs = { error: e.message };
-      if (state.tab === 'robot') render();
+      robotDataLoaded();
     });
   }
 
@@ -1272,6 +1281,7 @@
 
   function loadRobotIO() {
     var ip = state.robot.ip;
+    state.robot.ioLoading = true;   // the data sidebar asks once, not on every repaint
     // IOSTATE.DG carries live state + comments in ASCII (DIOCFGSV.IO is binary
     // on many controllers)
     api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=IOSTATE.DG' + ftpQS()).then(function (b) {
@@ -1281,17 +1291,20 @@
       state.robot.rawIO = null;
       state.robot.ioComments = points.filter(function (p) { return p.comment; });
       rebuildDerived();
-      if (state.tab === 'robot') render();
+      state.robot.ioLoading = false;
+      robotDataLoaded();
     }).catch(function () {
       api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=DIOCFGSV.IO' + ftpQS()).then(function (b) {
         state.robot.ioState = null;
         state.robot.rawIO = VA.rawLines(b.content);
         state.robot.ioComments = VA.parseIOComments(b.content);
         rebuildDerived();
-        if (state.tab === 'robot') render();
+        state.robot.ioLoading = false;
+        robotDataLoaded();
       }).catch(function (e) {
         state.robot.rawIO = { error: e.message };
-        if (state.tab === 'robot') render();
+        state.robot.ioLoading = false;
+        robotDataLoaded();
       });
     });
   }
@@ -1940,6 +1953,7 @@
     renderConnect();
     renderTabs();
     renderPane();
+    renderDataSide();
     saveViewState();   // a refresh reopens exactly this view
   }
 
@@ -2473,6 +2487,15 @@
     });
     box.addEventListener('click', function (ev) {
       var t = ev.target;
+      // a clicked line is the viewer's "caret line" for the data sidebar
+      var cl = t.closest && t.closest('.cline');
+      if (cl && !t.classList.contains('mk')) {
+        var prev = document.querySelector('.cline.cur');
+        if (prev) prev.classList.remove('cur');
+        cl.classList.add('cur');
+        var src = cl.querySelector('.src');
+        markDataLine(src ? src.textContent : '');
+      }
       if (t.classList.contains('tok-call')) {
         var name = t.getAttribute('data-call').toUpperCase();
         if (state.programs[name]) { state.selected = name; render(); }
@@ -2491,24 +2514,15 @@
   }
 
   /* ================= document tabs (Code view) =================
-   * Studio-5000 habit: everything you have open — programs AND data views —
-   * is a tab, and any tab drags onto the right half of the code to dock
-   * side-by-side. Data views put live registers next to the program that
-   * uses them, which used to take a second browser window. */
-
-  var DATA_DOCS = {
-    'D:regs': 'Registers',
-    'D:prs': 'PRs',
-    'D:io': 'I/O'
-  };
+   * Studio-5000 habit: every open program is a tab, and any tab drags onto
+   * the right half of the code to dock side-by-side. Registers and I/O live
+   * in the data sidebar instead (see renderDataSide); the old 'D:*' data
+   * tabs a saved view may still name are dropped by docValid. */
 
   function docIsProg(id) { return !!id && id.slice(0, 2) === 'P:'; }
   function docProg(id) { return docIsProg(id) ? id.slice(2) : null; }
-  function docLabel(id) { return DATA_DOCS[id] || String(id).slice(2); }
-  function docValid(id) {
-    if (!id) return false;
-    return DATA_DOCS[id] ? true : !!state.programs[id.slice(2)];
-  }
+  function docLabel(id) { return String(id).slice(2); }
+  function docValid(id) { return docIsProg(id) && !!state.programs[id.slice(2)]; }
 
   function paneOf(id) {
     if (state.docs.left.indexOf(id) !== -1) return 'left';
@@ -2669,8 +2683,7 @@
     var strip = h('div', { class: 'doc-tabs', title: 'Drag a tab onto the other half of the code to move it there' });
     state.docs[pane].forEach(function (id) {
       var tab = h('span', {
-        class: 'doc-tab' + (id === state.active[pane] ? ' active' : '') +
-               (DATA_DOCS[id] ? ' data' : ''),
+        class: 'doc-tab' + (id === state.active[pane] ? ' active' : ''),
         title: 'Click to show · drag onto the other half to move it there · middle-click to close',
         draggable: 'true'
       }, [
@@ -2696,113 +2709,231 @@
       });
       strip.appendChild(tab);
     });
-    // data-view openers live on the left strip only, for whatever is not open
-    var haveData = !!(state.extern || (state.server && state.robot.ip));
-    if (pane === 'left') Object.keys(DATA_DOCS).forEach(function (id) {
-      if (paneOf(id)) return;
-      var add = h('button', {
-        class: 'doc-add', draggable: 'true', text: '+ ' + DATA_DOCS[id],
-        title: haveData
-          ? 'Open ' + DATA_DOCS[id] + ' as a tab — or drag it onto the right half of the code to dock it side-by-side'
-          : 'Opens as a tab. No controller data yet — connect to a robot or open a backup folder to fill it.',
-        onclick: function () { activateDoc(id); }
-      });
-      // draggable before it is even open: "+ I/O" dragged onto the right
-      // half docks it in one gesture
-      add.addEventListener('dragstart', function (e) {
-        e.dataTransfer.setData('text/x-doc', id);
-        e.dataTransfer.effectAllowed = 'link';
-      });
-      strip.appendChild(add);
-    });
+    // the data-sidebar toggle sits at the right end of the rightmost strip,
+    // next to the sidebar it opens
+    if (pane === 'right' || !state.docs.right.length) {
+      strip.appendChild(h('span', { style: 'flex:1' }));
+      strip.appendChild(dataSideToggle());
+    }
     return strip;
   }
 
-  /* One data view: live registers / position registers / I/O as a document.
-   * The filter works on the rows already rendered — no re-render, so the
-   * input never loses its caret. */
-  function buildDataView(id) {
-    var box = h('div', { class: 'dataview' });
-    var rows = [];
-    var source = null;
+  /* ================= data sidebar (Code view) =================
+   * Registers, PRs and I/O down the right edge, like the library down the
+   * left. "Used" — the default — lists only what the open program(s) touch,
+   * with live values; R / PR / I/O list everything the controller has. The
+   * rows the caret line (editor) or the clicked line (viewer) mentions are
+   * highlighted, so a line's data is read off without leaving the code. */
 
-    if (id === 'D:regs') {
-      var regs = (state.robot.registers && !state.robot.registers.error && state.robot.registers) ||
-                 (state.extern && state.extern.registers) || [];
-      source = state.robot.registers && !state.robot.registers.error ? 'robot ' + state.robot.ip
-             : (state.extern && state.extern.source);
-      regs.forEach(function (r) {
-        rows.push({
-          text: 'R[' + r.index + (r.comment ? ':' + r.comment : '') + '] = ' + r.value,
-          html: '<span class="tok-reg">R[' + esc(String(r.index)) + (r.comment ? ':' + esc(r.comment) : '') + ']</span> = <span class="tok-num">' + esc(String(r.value)) + '</span>'
-        });
+  function dataSideToggle() {
+    var on = !!state.showData;
+    return h('button', {
+      class: 'btn subtle ds-toggle' + (on ? ' on' : ''),
+      'aria-label': 'Registers and I/O', 'aria-pressed': on ? 'true' : 'false',
+      title: (on ? 'Hide' : 'Show') + ' registers and I/O (Ctrl+.)',
+      html: '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor"/><line x1="10" y1="3" x2="10" y2="13" stroke="currentColor"/>' +
+            (on ? '<rect x="10" y="3" width="4" height="10" fill="currentColor" opacity=".35"/>' : '') + '</svg>',
+      onclick: toggleDataSide
+    });
+  }
+
+  /* No render(): that would rebuild an open editor and lose its caret. The
+   * sidebar redraws itself and the toggles swap in place; the editor's
+   * ResizeObserver keeps the overlay matched to the new width. */
+  function toggleDataSide() {
+    state.showData = !state.showData;
+    savePrefs();
+    renderDataSide();
+    document.querySelectorAll('.ds-toggle').forEach(function (b) { b.replaceWith(dataSideToggle()); });
+  }
+
+  /* What the sidebar can show: robot values first, a backup folder's
+   * otherwise. Every list is keyed the way the analyzer keys its refs —
+   * R[n], PR[n], DI[n] — so "Used" and the caret highlight can look rows up. */
+  function dataSources() {
+    var ex = state.extern || {};
+    var robotRegs = state.robot.registers && !state.robot.registers.error;
+    var robotPrs = state.robot.posregs && !state.robot.posregs.error;
+    return {
+      regs: (robotRegs ? state.robot.registers : ex.registers) || [],
+      prs: (robotPrs ? state.robot.posregs : ex.posregs) || [],
+      io: state.robot.ioState || ex.io || [],
+      source: (robotRegs || robotPrs || state.robot.ioState) ? 'robot ' + state.robot.ip : (ex.source || null)
+    };
+  }
+
+  function dsRegRow(r) {
+    return { key: 'R[' + r.index + ']', name: 'R[' + r.index + (r.comment ? ':' + r.comment : '') + ']',
+             cls: 'tok-reg', value: String(r.value), vcls: 'tok-num' };
+  }
+  function dsPrRow(r) {
+    var val = r.uninit ? 'Uninit' : (VA.posregValueStr ? VA.posregValueStr(r) : '');
+    return { key: 'PR[' + r.index + ']', name: 'PR[' + (r.group && r.group !== 1 ? r.group + ',' : '') + r.index + (r.comment ? ':' + r.comment : '') + ']',
+             cls: 'tok-reg', value: val, vcls: r.uninit ? 'muted' : 'tok-num', wrap: !r.uninit };
+  }
+  function dsIoRow(p) {
+    return { key: p.type + '[' + p.index + ']', name: p.type + '[' + p.index + (p.comment ? ':' + p.comment : '') + ']',
+             cls: 'tok-io', value: p.state || '', vcls: p.state === 'ON' ? 'tok-on' : p.state === 'OFF' ? 'tok-off' : 'muted' };
+  }
+
+  /* The open programs' refs, in number order, each with the controller's
+   * row when there is one (the label the program carries otherwise). */
+  function dsUsedGroups(src) {
+    var progs = [state.active.left, state.active.right].filter(docIsProg)
+      .map(function (id) { return state.programs[docProg(id)]; }).filter(Boolean);
+    function index(list, rowFn) {
+      var m = {};
+      list.forEach(function (x) { var r = rowFn(x); if (!m[r.key] || (x.group || 1) === 1) m[r.key] = r; });
+      return m;
+    }
+    var have = { r: index(src.regs, dsRegRow), pr: index(src.prs, dsPrRow), io: index(src.io, dsIoRow) };
+    var used = { r: {}, pr: {}, io: {} };
+    progs.forEach(function (p) {
+      var a = p.analysis;
+      Object.keys(a.registers).forEach(function (n) {
+        used.r['R[' + n + ']'] = have.r['R[' + n + ']'] ||
+          { key: 'R[' + n + ']', name: 'R[' + n + (a.registers[n].label ? ':' + a.registers[n].label : '') + ']', cls: 'tok-reg', value: '', vcls: 'muted' };
       });
-    } else if (id === 'D:prs') {
-      var prs = (state.robot.posregs && !state.robot.posregs.error && state.robot.posregs) ||
-                (state.extern && state.extern.posregs) || [];
-      source = state.robot.posregs && !state.robot.posregs.error ? 'robot ' + state.robot.ip
-             : (state.extern && state.extern.source);
-      prs.forEach(function (r) {
-        var val = r.uninit ? 'Uninitialized' : (VA.posregValueStr ? VA.posregValueStr(r) : '');
-        rows.push({
-          text: 'PR[' + r.group + ',' + r.index + (r.comment ? ':' + r.comment : '') + '] ' + val,
-          html: '<span class="tok-reg">PR[' + r.group + ',' + r.index + (r.comment ? ':' + esc(r.comment) : '') + ']</span> <span class="' + (r.uninit ? 'muted' : 'tok-num') + '">' + esc(val) + '</span>'
-        });
+      Object.keys(a.posRegs).forEach(function (n) {
+        used.pr['PR[' + n + ']'] = have.pr['PR[' + n + ']'] ||
+          { key: 'PR[' + n + ']', name: 'PR[' + n + (a.posRegs[n].label ? ':' + a.posRegs[n].label : '') + ']', cls: 'tok-reg', value: '', vcls: 'muted' };
       });
-    } else if (id === 'D:io') {
-      var pts = state.robot.ioState || (state.extern && state.extern.io) || [];
-      source = state.robot.ioState ? 'robot ' + state.robot.ip : (state.extern && state.extern.source);
-      pts.forEach(function (p2) {
-        var st = p2.state ? (p2.state === 'ON' ? '<span class="tok-on">ON</span>' : '<span class="tok-off">OFF</span>') : '';
-        rows.push({
-          text: p2.type + '[' + p2.index + (p2.comment ? ':' + p2.comment : '') + '] ' + (p2.state || ''),
-          html: '<span class="tok-io">' + esc(p2.type) + '[' + p2.index + (p2.comment ? ':' + esc(p2.comment) : '') + ']</span> ' + st
-        });
+      Object.keys(a.io).forEach(function (k) {
+        var x = a.io[k];
+        used.io[k] = have.io[k] ||
+          { key: k, name: x.type + '[' + x.index + (x.label ? ':' + x.label : '') + ']', cls: 'tok-io', value: '', vcls: 'muted' };
+      });
+    });
+    function sorted(m) {
+      return Object.keys(m).map(function (k) { return m[k]; }).sort(function (a, b) {
+        var ta = a.key.replace(/\[.*/, ''), tb = b.key.replace(/\[.*/, '');
+        if (ta !== tb) return ta < tb ? -1 : 1;
+        return parseInt(a.key.replace(/^\D+/, ''), 10) - parseInt(b.key.replace(/^\D+/, ''), 10);
       });
     }
+    return [['Registers', sorted(used.r)], ['Position registers', sorted(used.pr)], ['I/O', sorted(used.io)]];
+  }
 
-    var head = h('div', { class: 'dataview-head' });
-    var filter = h('input', { type: 'text', placeholder: 'Filter ' + DATA_DOCS[id].toLowerCase() + '…', class: 'dataview-filter' });
-    // the view is rebuilt on every render (tab switches, robot refreshes…),
-    // so the typed filter lives in state, not in the input
-    filter.value = state.dataFilter[id] || '';
-    head.appendChild(filter);
-    if (source) head.appendChild(h('span', { class: 'muted', text: 'from ' + source }));
+  var DS_SEGS = [['used', 'Used'], ['r', 'R'], ['pr', 'PR'], ['io', 'I/O']];
+  var dsRows = [];          // [{ el, key }] of the sidebar as last drawn
+  var dsLastKeys = [];      // the keys last highlighted — re-applied after a redraw
+  var dsDocKey = null;      // the open docs those keys were taken from
+
+  function renderDataSide() {
+    var side = document.getElementById('dataside');
+    if (!side) return;
+    var show = state.tab === 'code' && !!state.showData && Object.keys(state.programs).length > 0;
+    side.hidden = !show;
+    dsRows = [];
+    if (!show) { side.innerHTML = ''; return; }
+    side.innerHTML = '';
+    var seg = state.dataSeg || 'used';
+    /* Connecting reads the registers but not I/O — the Robot tab reads that
+     * on demand. The sidebar is a demand too: the first time it needs I/O
+     * from a connected robot, read it (once; the result repaints this). */
+    var r0 = state.robot;
+    if ((seg === 'io' || seg === 'used') && state.server && r0.ip &&
+        !r0.ioState && !r0.rawIO && !r0.ioLoading) loadRobotIO();
+    var src = dataSources();
+
+    var segBar = h('div', { class: 'ds-seg', role: 'tablist' });
+    DS_SEGS.forEach(function (s) {
+      segBar.appendChild(h('button', {
+        class: 'ds-segbtn' + (seg === s[0] ? ' on' : ''), role: 'tab', text: s[1],
+        'aria-selected': seg === s[0] ? 'true' : 'false',
+        title: s[0] === 'used' ? 'Only what the open program uses' : 'Everything the controller has',
+        onclick: function () { state.dataSeg = s[0]; savePrefs(); renderDataSide(); }
+      }));
+    });
+    side.appendChild(segBar);
+
+    var filter = h('input', { type: 'search', class: 'ds-filter', placeholder: 'Filter' });
+    filter.value = state.dataFilter.side || '';
+    side.appendChild(filter);
+
+    var groups = seg === 'used' ? dsUsedGroups(src)
+      : seg === 'r' ? [[null, src.regs.map(dsRegRow)]]
+      : seg === 'pr' ? [[null, src.prs.map(dsPrRow)]]
+      : [[null, src.io.map(dsIoRow)]];
+
+    var list = h('div', { class: 'ds-list mono' });
+    var any = false;
+    groups.forEach(function (g) {
+      if (!g[1].length) return;
+      any = true;
+      var head = g[0] ? h('div', { class: 'ds-grp', text: g[0] }) : null;
+      if (head) list.appendChild(head);
+      g[1].forEach(function (r) {
+        var el = h('div', { class: 'ds-row' + (r.wrap ? ' wrap' : ''), title: r.name + (r.value ? ' = ' + r.value : '') + '\nDouble-click to cross-reference' }, [
+          h('span', { class: 'ds-name ' + r.cls, text: r.name }),
+          h('span', { class: 'ds-val ' + r.vcls, text: r.value })
+        ]);
+        el.addEventListener('dblclick', function () { crossRefToken(r.key); });
+        el._text = (r.name + ' ' + r.value).toLowerCase();
+        el._head = head;
+        list.appendChild(el);
+        dsRows.push({ el: el, key: r.key });
+      });
+    });
+    if (!any) list.appendChild(h('p', { class: 'muted ds-empty', text: dsEmptyText(seg) }));
+    side.appendChild(list);
+
+    function applyFilter() {
+      var q = filter.value.trim().toLowerCase();
+      var heads = [];
+      dsRows.forEach(function (r) {
+        var vis = !q || r.el._text.indexOf(q) !== -1;
+        r.el.style.display = vis ? '' : 'none';
+        if (vis && r.el._head && heads.indexOf(r.el._head) === -1) heads.push(r.el._head);
+      });
+      list.querySelectorAll('.ds-grp').forEach(function (hd) { hd.style.display = heads.indexOf(hd) !== -1 ? '' : 'none'; });
+    }
+    filter.addEventListener('input', function () { state.dataFilter.side = filter.value; applyFilter(); });
+    applyFilter();
+
+    var foot = h('div', { class: 'ds-foot' }, [
+      h('span', { class: 'muted', text: src.source ? 'from ' + src.source : 'no controller data' })
+    ]);
     if (state.server && state.robot.ip) {
-      head.appendChild(h('button', {
-        class: 'btn subtle', text: 'Refresh',
-        title: 'Re-read from ' + state.robot.ip,
+      foot.appendChild(h('button', {
+        class: 'btn subtle', text: 'Refresh', title: 'Re-read registers, PRs and I/O from ' + state.robot.ip,
         onclick: function () {
-          if (id === 'D:regs') loadRobotRegisters();
-          else if (id === 'D:prs') loadRobotPosregs();
-          else loadRobotIO();
+          loadRobotRegisters(); loadRobotPosregs(); loadRobotIO();
           toast('Re-reading from ' + state.robot.ip + '…', 2500);
         }
       }));
     }
-    box.appendChild(head);
+    side.appendChild(foot);
+    // a highlight belongs to a line of the program it came from
+    var docKey = state.active.left + '|' + state.active.right;
+    if (docKey !== dsDocKey) { dsDocKey = docKey; dsLastKeys = []; }
+    markDataSide(dsLastKeys, true);
+  }
 
-    var listEl = h('div', { class: 'dataview-rows' });
-    if (!rows.length) {
-      listEl.appendChild(h('p', { class: 'muted', text: 'No data yet. Connect to a robot (Robot tab) or open a backup folder that holds NUMREG.VA / POSREG.VA / IOSTATE.DG.' }));
-    }
-    var els = rows.map(function (r) {
-      var el = h('div', { class: 'dataview-row mono', html: r.html });
-      el._filterText = r.text.toLowerCase();
-      listEl.appendChild(el);
-      return el;
+  /* Highlight the rows a line mentions. Takes a line of TP text (any
+   * listing form — the analyzer's regexes ignore line numbers and ';') or,
+   * internally, the keys themselves. */
+  function lineDataKeys(text) {
+    var a = A.analyzeProgram({ lines: [{ text: text || '', comment: null, num: 0 }] });
+    return Object.keys(a.registers).map(function (n) { return 'R[' + n + ']'; })
+      .concat(Object.keys(a.posRegs).map(function (n) { return 'PR[' + n + ']'; }))
+      .concat(Object.keys(a.io));
+  }
+
+  function markDataSide(keys, quiet) {
+    dsLastKeys = keys || [];
+    var first = null;
+    dsRows.forEach(function (r) {
+      var hit = dsLastKeys.indexOf(r.key) !== -1;
+      r.el.classList.toggle('hit', hit);
+      if (hit && !first) first = r.el;
     });
-    function applyFilter() {
-      var q = filter.value.trim().toLowerCase();
-      els.forEach(function (el) { el.style.display = (!q || el._filterText.indexOf(q) !== -1) ? '' : 'none'; });
-    }
-    filter.addEventListener('input', function () {
-      state.dataFilter[id] = filter.value;
-      applyFilter();
-    });
-    applyFilter();
-    box.appendChild(listEl);
-    return box;
+    if (first && !quiet) first.scrollIntoView({ block: 'nearest' });
+  }
+
+  function markDataLine(text) {
+    if (!state.showData) return;
+    markDataSide(lineDataKeys(text));
   }
 
   function progSelect(value, onchange) {
@@ -2983,8 +3114,6 @@
         } else {
           col.appendChild(h('p', { class: 'muted', text: 'no program' }));
         }
-      } else {
-        col.appendChild(buildDataView(id));
       }
       wrap.appendChild(col);
     });
@@ -3027,12 +3156,6 @@
     pane.appendChild(renderDocTabs('left'));
 
     if (!docValid(state.active.left)) return;
-
-    // a data view, full width
-    if (!docIsProg(state.active.left)) {
-      pane.appendChild(buildDataView(state.active.left));
-      return;
-    }
 
     var p = state.programs[docProg(state.active.left)];
     if (!p) return;
@@ -3408,7 +3531,13 @@
       return null;
     }
 
+    var lastDataLine = null;
     function renderStatus() {
+      // the data sidebar follows the caret line of whichever editor has focus
+      if (document.activeElement === ta) {
+        var cur = ta.value.split('\n')[caretRow()] || '';
+        if (cur !== lastDataLine) { lastDataLine = cur; markDataLine(cur); }
+      }
       statusBar.innerHTML = '';
       if (colRect) {
         var cr = ColSel.normalise(colRect);
@@ -7303,6 +7432,12 @@
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'e' || e.key === 'E')) {
         e.preventDefault();
         crossRefToken(selectedText());
+      }
+      // Ctrl+. : show/hide the registers and I/O sidebar
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === '.' && state.tab === 'code') {
+        e.preventDefault();
+        toggleDataSide();
+        return;
       }
       if (cfgKey(e)) { e.preventDefault(); return; }
       if (e.key === 'Escape' && navOpen()) {

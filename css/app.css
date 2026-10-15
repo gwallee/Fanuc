@@ -1630,24 +1630,44 @@ h3.sec-toggle:hover { color: var(--accent); }
 .doc-tab .doc-label { overflow: hidden; text-overflow: ellipsis; }
 .doc-tab.active { background: var(--bg); color: var(--ink); border-color: var(--accent); font-weight: 600; }
 .doc-tab.docked { border-style: dashed; }
-.doc-tab.data .doc-label::before { content: '≡ '; color: var(--accent); }
 .doc-tab:hover { color: var(--ink); }
 .doc-x { padding: 0 2px; border-radius: 3px; color: var(--muted); }
 .doc-x:hover { background: var(--warn-bg); color: var(--warn); }
-.doc-add {
-  border: 1px dashed var(--line); background: none; color: var(--muted);
-  border-radius: 6px 6px 0 0; padding: 4px 8px; font-size: 11.5px; cursor: pointer;
-}
-.doc-add:hover { color: var(--ink); border-color: var(--accent); }
+.ds-toggle { display: inline-flex; align-items: center; padding: 2px 6px; margin-bottom: 2px; color: var(--muted); }
+.ds-toggle.on { color: var(--accent); }
 
-/* ---- data views ---- */
-.dataview { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.dataview-head { display: flex; align-items: center; gap: 10px; padding: 8px 10px; }
-.dataview-filter { max-width: 260px; }
-.dataview-rows { overflow: auto; padding: 0 10px 12px; font-size: var(--code-size, 13px); }
-.dataview-row { padding: 1px 4px; border-radius: 3px; }
-.dataview-row:hover { background: var(--panel-2); }
-.code-pane .dataview-rows { max-height: none; }
+/* ---- data sidebar (Code view, right edge) ---- */
+.main-body { flex: 1; min-height: 0; display: flex; }
+.main-body > .pane { min-width: 0; }
+.dataside {
+  flex: 0 0 260px; width: 260px; min-height: 0;
+  display: flex; flex-direction: column;
+  border-left: 1px solid var(--line); background: var(--bg);
+}
+.dataside[hidden] { display: none; }
+.ds-seg { display: flex; gap: 2px; padding: 8px 8px 6px; }
+.ds-segbtn {
+  flex: 1; padding: 3px 0; font-size: 11.5px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--muted);
+}
+.ds-segbtn:hover { color: var(--ink); }
+.ds-segbtn.on { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.ds-filter { margin: 0 8px 6px; width: auto; }
+.ds-list { flex: 1; min-height: 0; overflow: auto; font-size: 11.5px; padding-bottom: 6px; }
+.ds-grp { padding: 8px 10px 2px; font-family: "IBM Plex Sans", system-ui, sans-serif; font-size: 11px; color: var(--faint); }
+.ds-row { display: flex; justify-content: space-between; gap: 8px; padding: 1px 10px; line-height: 1.6; cursor: default; }
+.ds-row:hover { background: var(--panel-2); }
+.ds-row.hit { background: var(--occ-bg); }
+.ds-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ds-val { flex: 0 0 auto; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-row .tok-on, .ds-row .tok-off { padding: 0 3px; }
+.ds-empty { padding: 8px 10px; font-family: "IBM Plex Sans", system-ui, sans-serif; }
+.ds-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 5px 8px; border-top: 1px solid var(--line); font-size: 11px; }
+.ds-foot .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cline.cur { background: var(--sel-bg); }
+@media (max-width: 760px) {
+  .dataside, .ds-toggle { display: none; }
+}
 
 /* ---- editing inside a split half ---- */
 @media (min-width: 1001px) {
@@ -1699,3 +1719,6 @@ h3.sec-toggle:hover { color: var(--accent); }
   padding: 0 0 0 2px;
   background: transparent;
 }
+/* a PR's six numbers get their own line under its name */
+.ds-row.wrap { flex-wrap: wrap; gap: 0 8px; }
+.ds-row.wrap .ds-val { flex: 1 0 100%; max-width: none; padding-left: 1.5em; font-size: 10.5px; }
