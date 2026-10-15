@@ -2598,8 +2598,8 @@
   }
 
   /* ================= document tabs (Code view) =================
-   * Studio-5000 habit: every open program is a tab, and any tab drags onto
-   * the right half of the code to dock side-by-side. Registers and I/O live
+   * Studio-5000 habit: every open program is a tab, and a tab dragged off
+   * its strip moves to the other side (see the window drop handler). Registers and I/O live
    * in the data sidebar instead (see renderDataSide); the old 'D:*' data
    * tabs a saved view may still name are dropped by docValid. */
 
@@ -2766,11 +2766,11 @@
   /* `extra` is a control for the strip's right end, before the sidebar
    * toggle (the split's Sync scroll). */
   function renderDocTabs(pane, extra) {
-    var strip = h('div', { class: 'doc-tabs', title: 'Drag a tab onto the other half of the code to move it there' });
+    var strip = h('div', { class: 'doc-tabs', title: 'Drag a tab off this strip to move it to the other side' });
     state.docs[pane].forEach(function (id) {
       var tab = h('span', {
         class: 'doc-tab' + (id === state.active[pane] ? ' active' : ''),
-        title: 'Click to show · drag onto the other half to move it there · middle-click to close',
+        title: 'Click to show · drag off the strip to move it to the other side · middle-click to close',
         draggable: 'true'
       }, [
         h('span', { class: 'doc-label', text: docLabel(id) }),
@@ -3226,25 +3226,13 @@
           return;
         }
 
-        col.appendChild(h('div', { class: 'pane-head' }, [
-          h('button', {
-            class: 'btn subtle', text: 'Edit', title: 'Edit this half in place \u2014 the other half stays open beside it',
-            onclick: function () { beginEdit(name); render(); }
-          }),
-          bothProgs ? h('button', {
-            class: 'btn subtle', text: 'Compare A\u2194B', title: 'Diff these two programs in the Compare tab',
-            onclick: function () { state.pair = { a: docProg(state.active.left), b: docProg(state.active.right) }; state.tab = 'compare'; render(); }
-          }) : null,
-          h('span', { style: 'flex:1' }),
-          h('button', { class: 'btn subtle', text: 'Export .LS', onclick: function () { exportProgram(p); } }),
-          h('button', {
-            class: 'btn subtle', text: 'Remove',
-            title: 'Remove ' + name + ' from the library (files on disk are untouched)',
-            onclick: function () {
-              if (confirm('Remove ' + name + ' from the library? (Your original file is untouched.)')) removeProgram(name);
-            }
-          })
-        ]));
+        col.appendChild(h('div', { class: 'pane-head' }, [issuesBadge(p), h('span', { style: 'flex:1' })]
+          .concat(progActions(p, [
+            bothProgs ? h('button', {
+              class: 'btn', text: 'Compare A\u2194B', title: 'Diff these two programs in the Compare tab',
+              onclick: function () { state.pair = { a: docProg(state.active.left), b: docProg(state.active.right) }; state.tab = 'compare'; render(); }
+            }) : null
+          ]))));
         if (p) {
           var box = buildCodeBox(p);
           box.addEventListener('scroll', onScroll);
@@ -3289,6 +3277,46 @@
     pane.appendChild(wrap);
   }
 
+  /* The program toolbar's buttons, shared by the single view and each split
+   * half so they read the same in both: Edit first, then what the view
+   * adds (`extra`), then the robot, export and remove. */
+  function progActions(p, extra) {
+    var name = p.parsed.name;
+    return [
+      h('button', { class: 'btn', text: 'Edit', title: 'Edit ' + name + ' in place', onclick: function () { beginEdit(name); render(); } })
+    ].concat(extra || [], [
+      (state.server && state.robot.ip) ? h('button', {
+        class: 'btn', text: 'Send to robot',
+        title: 'Upload ' + name + '.LS to ' + state.robot.ip + ' over FTP (snapshot + verify + auto-restore on failure)',
+        onclick: function () {
+          if (!confirm('Send ' + name + '.LS to robot ' + state.robot.ip + ' over FTP?\n\nThe current version on the robot is snapshotted first. If the controller rejects the translation, that snapshot is restored automatically.')) return;
+          sendToRobot(name, p.source, function () { render(); });
+        }
+      }) : null,
+      h('button', { class: 'btn subtle', text: 'Export .LS', onclick: function () { exportProgram(p); } }),
+      h('button', {
+        class: 'btn subtle', text: 'Remove',
+        title: 'Remove ' + name + ' from the library (files on disk are untouched)',
+        onclick: function () {
+          if (confirm('Remove ' + name + ' from the library? (Your original file is untouched.)')) removeProgram(name);
+        }
+      })
+    ]);
+  }
+
+  /* "N issues" — click for the Checks tab filtered to this program. */
+  function issuesBadge(p) {
+    var name = p.parsed.name;
+    var n = findingsFor(name).length;
+    if (!n) return null;
+    return h('span', {
+      class: 'badge warn', text: n + ' issue' + (n > 1 ? 's' : ''),
+      style: 'cursor:pointer',
+      title: 'Marked in the gutter, line ' + flaggedLines(name).join(', ') + '. Click for the Checks tab, filtered to this program.',
+      onclick: function () { state.checksProg = name; state.tab = 'checks'; render(); }
+    });
+  }
+
   function renderCode(pane) {
     syncDocs();
     if (state.docs.right.length) return renderSplit(pane);   // strips render per half
@@ -3301,46 +3329,26 @@
 
     if (state.editing) return renderEditor(pane, p);
 
-    var progFindings = findingsFor(p.parsed.name);
-
+    /* Same buttons, same order, same style as a split half (progActions):
+     * only the program's name and comment, which the split's tabs and
+     * width leave out, are extra here. */
     var bar = h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: p.parsed.name }),
       p.parsed.attrs.COMMENT ? h('span', { class: 'muted', text: p.parsed.attrs.COMMENT }) : null,
-      progFindings.length ? h('span', {
-        class: 'badge warn', text: progFindings.length + ' issue' + (progFindings.length > 1 ? 's' : ''),
-        style: 'cursor:pointer',
-        title: 'Marked in the gutter, line ' + flaggedLines(p.parsed.name).join(', ')
-          + '. Click for the Checks tab, filtered to this program.',
-        onclick: function () { state.checksProg = p.parsed.name; state.tab = 'checks'; render(); }
-      }) : null,
+      issuesBadge(p),
       h('span', { style: 'flex:1' }),
-      codeSizeControl(),
-      h('button', { class: 'btn', text: 'Edit', onclick: function () { beginEdit(p.parsed.name); render(); } }),
+      codeSizeControl()
+    ].concat(progActions(p, [
       h('button', {
-        class: 'btn', text: 'Side-by-side', title: 'Open a second program next to this one (or drag one from the library onto the right half)',
+        class: 'btn', text: 'Side-by-side', title: 'Open a second program next to this one (or drag its tab off the strip)',
         onclick: function () {
           var others = state.docs.left.filter(function (d) { return d !== state.active.left; });
-          if (!others.length) { toast('Open another program or a data view first \u2014 then drag its tab onto the right half.'); return; }
+          if (!others.length) { toast('Open another program first — then drag its tab off the strip.'); return; }
           moveDoc(others[others.length - 1], 'right');
           render();
         }
-      }),
-      (state.server && state.robot.ip) ? h('button', {
-        class: 'btn', text: 'Send to robot',
-        title: 'Upload ' + p.parsed.name + '.LS to ' + state.robot.ip + ' over FTP (snapshot + verify + auto-restore on failure)',
-        onclick: function () {
-          if (!confirm('Send ' + p.parsed.name + '.LS to robot ' + state.robot.ip + ' over FTP?\n\nThe current version on the robot is snapshotted first. If the controller rejects the translation, that snapshot is restored automatically.')) return;
-          sendToRobot(p.parsed.name, p.source, function () { render(); });
-        }
-      }) : null,
-      h('button', { class: 'btn subtle', text: 'Export .LS', onclick: function () { exportProgram(p); } }),
-      h('button', {
-        class: 'btn subtle', text: 'Remove',
-        onclick: function () {
-          if (confirm('Remove ' + p.parsed.name + ' from the library? (Your original file is untouched.)')) removeProgram(p.parsed.name);
-        }
       })
-    ]);
+    ])));
     pane.appendChild(bar);
     var banner = uploadBanner(p.parsed.name);
     if (banner) pane.appendChild(banner);
@@ -7659,12 +7667,26 @@
       document.body.classList.remove('dragging');
       if (!e.dataTransfer) return;
       var progName = e.dataTransfer.getData('text/x-prog');
-      var docId = e.dataTransfer.getData('text/x-doc') ||
-        (progName && state.programs[progName] ? 'P:' + progName : '');
+      var tabId = e.dataTransfer.getData('text/x-doc');
+      /* A dragged TAB has only two places to go: back onto a strip, or over
+       * to the other side. So dropping it on a strip puts it in that strip,
+       * and dropping it anywhere else in the code area sends it across —
+       * no hauling it past the middle of the screen. Off the code area
+       * (library, header, data sidebar) it stays where it was. */
+      if (tabId && docValid(tabId)) {
+        var t = e.target && e.target.closest ? e.target : null;
+        var strip = t && t.closest('.doc-tabs');
+        var from = paneOf(tabId) || 'left';
+        var to = strip ? ((strip.closest('.code-pane') || {}).dataset || {}).side || 'left'
+          : (t && t.closest('.main-body') && !t.closest('.dataside')) ? (from === 'left' ? 'right' : 'left')
+          : from;
+        if (to !== from) dockDoc(tabId, to === 'right');
+        return;
+      }
+      var docId = progName && state.programs[progName] ? 'P:' + progName : '';
       if (docId && docValid(docId)) {
-        // Notepad++/Studio-5000-style: drop a tab or a library program onto
-        // the code view — right half docks it side-by-side, left half
-        // replaces the view
+        // a library program dropped on the code view: right half docks it
+        // side-by-side, left half replaces the view
         var paneEl = document.getElementById('pane');
         var r = paneEl.getBoundingClientRect();
         dockDoc(docId, e.clientX > r.left + r.width / 2);
