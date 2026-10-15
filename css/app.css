@@ -1269,7 +1269,7 @@ tr:last-child td { border-bottom: none; }
   .split-wrap { grid-template-columns: 1fr; }
   /* Stacked, the pane is the only scroller again — there is nothing left
    * for Sync scroll to sync, so don't offer a control that does nothing. */
-  .code-toolbar .sync-toggle { display: none; }
+  .sync-toggle { display: none; }
 }
 
 /* a register/IO comment replaced by the controller's current name */
@@ -1730,3 +1730,13 @@ h3.sec-toggle:hover { color: var(--accent); }
 .cmt-edit.busy { opacity: 0.6; }
 .ds-read { padding: 0 8px 6px; }
 .ds-read .btn { width: 100%; }
+/* the split's Sync scroll, at the right end of the right tab strip */
+.doc-tabs .sync-toggle {
+  display: inline-flex; align-items: center; gap: 4px; margin: 0 6px 2px 0;
+  font-size: 11.5px; color: var(--muted); cursor: pointer; user-select: none; white-space: nowrap;
+}
+.doc-tabs .sync-toggle:hover { color: var(--ink); }
+.doc-tabs .sync-toggle input { margin: 0; accent-color: var(--accent); }
+@media (max-width: 1000px) {
+  .doc-tabs .sync-toggle { display: none; }   /* stacked halves: nothing to sync */
+}

@@ -2763,7 +2763,9 @@
     if (!docIsProg(state.active.right)) state.editSides.right = false;
   }
 
-  function renderDocTabs(pane) {
+  /* `extra` is a control for the strip's right end, before the sidebar
+   * toggle (the split's Sync scroll). */
+  function renderDocTabs(pane, extra) {
     var strip = h('div', { class: 'doc-tabs', title: 'Drag a tab onto the other half of the code to move it there' });
     state.docs[pane].forEach(function (id) {
       var tab = h('span', {
@@ -2797,6 +2799,7 @@
     // next to the sidebar it opens
     if (pane === 'right' || !state.docs.right.length) {
       strip.appendChild(h('span', { style: 'flex:1' }));
+      if (extra) strip.appendChild(extra);
       strip.appendChild(dataSideToggle());
     }
     return strip;
@@ -3156,22 +3159,11 @@
     syncLabel.appendChild(document.createTextNode(' Sync scroll'));
 
     var bothProgs = docIsProg(state.active.left) && docIsProg(state.active.right);
-
-    pane.appendChild(h('div', { class: 'code-toolbar' }, [
-      h('span', { class: 'title', text: 'Side by side' }),
-      h('span', { class: 'muted', text: 'drag a tab or a library program onto either half to view it there' }),
-      h('span', { style: 'flex:1' }),
-      bothProgs && !anyEditSide() ? syncLabel : null,
-      h('button', {
-        class: 'btn subtle', text: 'Close split',
-        title: 'Move the right strip\u2019s tabs back to the left \u2014 nothing closes, drafts stay',
-        onclick: function () {
-          state.docs.left = state.docs.left.concat(state.docs.right);
-          state.docs.right = [];
-          render();
-        }
-      })
-    ]));
+    /* No header row: it only held a how-to line, Sync scroll and Close
+     * split, and the split closes itself once the last tab is dragged back
+     * left. Sync scroll sits in the right strip, beside the sidebar toggle,
+     * so the code gets the height. */
+    var stripExtra = bothProgs && !anyEditSide() ? syncLabel : null;
 
     /* A failed send renders its banner here too — without this, a rejected
      * translation after "Save + send" from a split half reported nothing. */
@@ -3183,7 +3175,7 @@
     [['left', state.active.left], ['right', state.active.right]].forEach(function (side) {
       var id = side[1];
       var col = h('div', { class: 'code-pane ' + side[0], 'data-side': side[0] });
-      col.appendChild(renderDocTabs(side[0]));
+      col.appendChild(renderDocTabs(side[0], side[0] === 'right' ? stripExtra : null));
       if (!id) {
         col.appendChild(h('p', { class: 'muted', text: 'Nothing on this side \u2014 drag a tab over from the other half.' }));
         wrap.appendChild(col);
