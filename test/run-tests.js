@@ -743,29 +743,6 @@ check(CS.storedComment('IOSTATE.DG', 'DOUT[  65] OFF  Vac-1 ON\n', 'DO', 65) ===
   'an I/O rename is verified against IOSTATE.DG');
 check(CS.storedComment('IOSTATE.DG', 'DIN[   1]  ON  Auto Mode\n', 'DO', 1) === null,
   'DI[1] and DO[1] are not confused when verifying');
-console.log('\n-- position write-back --');
-{
-  const mg = fs.readFileSync(path.join(__dirname, '..', 'testdata', '_testmg.ls'), 'latin1');
-  const before = P.parseLS(mg, '_testmg.ls');
-  const s1 = P.setPositionField(mg, 2, 1, 'X', 12.5);
-  const after = P.parseLS(s1, '_testmg.ls');
-  const p2 = after.positions.find((p) => p.id === 2), p2b = before.positions.find((p) => p.id === 2);
-  check(p2 && p2.groups[0].coords.X.value === 12.5 && p2b.groups[0].coords.X.value === -1874.902, 'X of P[2] rewritten (' + p2b.groups[0].coords.X.value + ' -> ' + p2.groups[0].coords.X.value + ')');
-  check(/\tX =    12.500  mm,/.test(s1), 'the new value is padded to the old width so the columns still line up');
-  check(s1.length === mg.length && after.positions.length === before.positions.length && after.lines.length === before.lines.length, 'nothing else in the file moved');
-  check(P.fmtPosValue(0.083) === '.083' && P.fmtPosValue(-0.007) === '-.007' && P.fmtPosValue(179.2234) === '179.223' && P.fmtPosValue(-0.0001) === '.000', 'values print the way the controller prints them');
-  const s2 = P.setPositionField(mg, 3, 1, 'UF', 4);
-  check(P.parseLS(s2, 'x').positions.find((p) => p.id === 3).groups[0].uf === 4, 'UF rewritten');
-  const s3 = P.setPositionField(mg, 1, 1, 'CONFIG', "N U T, 0, 0, 0");
-  check(P.parseLS(s3, 'x').positions.find((p) => p.id === 1).groups[0].config === 'N U T, 0, 0, 0', 'CONFIG rewritten');
-  check(P.setPositionField(mg, 99, 1, 'X', 1) === null && P.setPositionField(mg, 1, 2, 'X', 1) === null && P.setPositionField(mg, 1, 1, 'E1', 1) === null, 'a missing position, group or field is refused rather than guessed');
-  const multi = '/PROG MG\n/MN\n   1:  R[1]=0 ;\n/POS\nP[1]{\n   GP1:\n\tUF : 1, UT : 1,\t\tCONFIG : \'N U T, 0, 0, 0\',\n\tX =   100.000  mm,\tY =     0.000  mm,\tZ =    50.000  mm,\n\tW =     0.000 deg,\tP =     0.000 deg,\tR =     0.000 deg\n   GP2:\n\tUF : 1, UT : 1,\n\tJ1 =    10.000 deg\n};\n/END\n';
-  const m2 = P.setPositionField(multi, 1, 2, 'J1', -45.5);
-  const mp = P.parseLS(m2, 'x').positions[0];
-  check(mp.groups[1].coords.J1.value === -45.5 && mp.groups[0].coords.X.value === 100, 'a second group\'s joint value is rewritten without touching group 1');
-  check(/J1 =    -45.500 deg/.test(m2), 'a longer value simply takes the room it needs');
-}
-
 console.log('\n-- TP syntax: shapes, grammar, snippets --');
 const S = require('../js/tpsyntax.js');
 const SH = require('../js/tpshapes.js');

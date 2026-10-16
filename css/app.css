@@ -509,19 +509,6 @@ body.dragging .drop-hint, body.dragging .pane { outline: 2px dashed var(--accent
   color: var(--muted);
 }
 .pos-table td.n, .xref-table td.n { font-variant-numeric: tabular-nums; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }
-/* Positions tab: every value is a field, drawn as plain text until it is
- * hovered or focused so the table still reads as a table. */
-.pos-table input.pos-in {
-  font: inherit; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; font-variant-numeric: tabular-nums;
-  width: 92px; text-align: right; padding: 2px 5px; margin: -3px -5px;
-  border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--ink);
-}
-.pos-table input.pos-in.small { width: 40px; }
-.pos-table input.pos-in.cfg { width: 150px; text-align: left; }
-.pos-table input.pos-in:hover:not(:disabled) { border-color: var(--line); background: var(--panel-2); }
-.pos-table input.pos-in:focus-visible { outline: none; border-color: var(--accent); background: var(--bg); box-shadow: 0 0 0 1px var(--accent); }
-.pos-table input.pos-in:disabled { color: var(--muted); }
-
 /* ---------- version history (Code tab) ---------- */
 .hist-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 2px 0 10px; }
 .hist-head .title { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600; font-size: 14px; }

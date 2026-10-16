@@ -360,8 +360,8 @@
 
   /* ---- version history ----
    * Every time a program's source is replaced — an editor save, an import
-   * over an existing copy, Find & Replace, a position edit, a restore — the
-   * text being replaced is kept, so a save is never the only copy. One list
+   * over an existing copy, Find & Replace, a restore — the text being
+   * replaced is kept, so a save is never the only copy. One list
    * per program, per library; capped per program and library-wide, oldest
    * out first. Identical text is never kept twice in a row. */
   var HIST_PREFIX = 'fanuc-tp-studio.history.v1.';
@@ -3162,7 +3162,7 @@
       h('button', {
         class: 'btn subtle' + (state.historyOpen === p.parsed.name ? ' active' : ''),
         text: 'History' + (versionsOf(p.parsed.name).length ? ' (' + versionsOf(p.parsed.name).length + ')' : ''),
-        title: 'Earlier versions of this program kept in this browser \u2014 every save, import, replace or position edit keeps the text it replaced',
+        title: 'Earlier versions of this program kept in this browser \u2014 every save, import or replace keeps the text it replaced',
         onclick: function () {
           state.historyOpen = state.historyOpen === p.parsed.name ? null : p.parsed.name;
           state.historySel = 0;
@@ -3193,7 +3193,7 @@
       h('span', { class: 'title', text: 'Versions of ' + name }),
       h('span', { class: 'muted', text: list.length
         ? list.length + ' earlier version' + (list.length === 1 ? '' : 's') + ' kept in this browser, newest first \u2014 pick one to see what changed since'
-        : 'No earlier versions yet \u2014 one is kept each time a save, import, replace or position edit changes this program.' }),
+        : 'No earlier versions yet \u2014 one is kept each time a save, import or replace changes this program.' }),
       h('span', { style: 'flex:1' }),
       list.length ? h('button', {
         class: 'btn subtle', text: 'Delete history',
@@ -5653,48 +5653,6 @@
       pane.appendChild(h('p', { class: 'muted', text: 'This program has no /POS section (it may use only position registers).' }));
       return;
     }
-    /* Every value is a field: type, then Enter or Tab, and the number is
-     * written into the /POS block of the library copy — only that number;
-     * the controller's own layout around it stays. The table is NOT
-     * re-rendered on a commit (that would take the focus away mid-row); the
-     * program object is swapped underneath and the field shows the stored
-     * value. While the editor holds unsaved text for this program the
-     * fields are locked, since two copies of the source would diverge. */
-    var name = p.parsed.name;
-    var locked = state.editDrafts[name] !== undefined;
-
-    function writeField(id, group, field, value) {
-      var cur = state.programs[name];
-      if (!cur) return false;
-      var src2 = P.setPositionField(cur.source, id, group, field, value);
-      if (src2 === null) { toast('Could not find that field in the /POS section of ' + name + '.'); return false; }
-      if (src2 !== cur.source) {
-        recordVersion(name, cur.source, 'replaced by a position edit');
-        replaceProgramSource(name, src2);
-        renderTabs();   // the Checks count may move; the table stays put
-      }
-      return true;
-    }
-    function field(value, cls, commit) {
-      var inp = h('input', {
-        class: 'pos-in' + (cls ? ' ' + cls : ''), type: 'text', spellcheck: 'false',
-        title: locked ? 'Save or discard the editor text for ' + name + ' first' : 'Type a value, then Enter or Tab to write it into the program \u2014 Escape puts the old one back'
-      });
-      inp.value = value;
-      if (locked) inp.disabled = true;
-      var shown = value;
-      inp.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
-        else if (e.key === 'Escape') { inp.value = shown; inp.blur(); }
-      });
-      inp.addEventListener('change', function () {
-        var r = commit(inp.value.trim());
-        if (r === false) inp.value = shown;
-        else { shown = r; inp.value = r; }
-      });
-      return inp;
-    }
-
     var wrap = h('div', { class: 'table-wrap' });
     var tbl = h('table', { class: 'pos-table' });
     var head = h('tr');
@@ -5708,35 +5666,20 @@
         tr.appendChild(h('td', { class: 'n', text: gi === 0 ? 'P[' + pos.id + ']' : '' }));
         tr.appendChild(h('td', { text: gi === 0 ? pos.name : '' }));
         tr.appendChild(h('td', { class: 'n', text: g.group }));
-        ['UF', 'UT'].forEach(function (k) {
-          var cur = k === 'UF' ? g.uf : g.ut;
-          tr.appendChild(h('td', { class: 'n' }, [cur === null ? document.createTextNode('\u2014') : field(String(cur), 'small', function (text) {
-            if (!/^\d{1,2}$/.test(text)) { toast(k + ' is a whole number, 0\u201399.'); return false; }
-            return writeField(pos.id, g.group, k, parseInt(text, 10)) ? String(parseInt(text, 10)) : false;
-          })]));
-        });
-        tr.appendChild(h('td', { class: 'n' }, [g.config ? field(g.config, 'cfg', function (text) {
-          if (!text || /'/.test(text)) { toast('A configuration string looks like N U T, 0, 0, 0 \u2014 no quotes.'); return false; }
-          return writeField(pos.id, g.group, 'CONFIG', text) ? text : false;
-        }) : document.createTextNode(g.rep === 'joint' ? 'joint' : '\u2014')]));
+        tr.appendChild(h('td', { class: 'n', text: g.uf === null ? '—' : g.uf }));
+        tr.appendChild(h('td', { class: 'n', text: g.ut === null ? '—' : g.ut }));
+        tr.appendChild(h('td', { class: 'n', text: g.config || (g.rep === 'joint' ? 'joint' : '—') }));
         var keys = g.rep === 'joint' ? ['J1', 'J2', 'J3', 'J4', 'J5', 'J6'] : ['X', 'Y', 'Z', 'W', 'P', 'R'];
         keys.forEach(function (k) {
           var c = g.coords[k];
-          tr.appendChild(h('td', { class: 'n' }, [c ? field(c.value.toFixed(3), '', function (text) {
-            var v = parseFloat(text);
-            if (!isFinite(v)) { toast('Not a number: ' + text); return false; }
-            return writeField(pos.id, g.group, k, v) ? v.toFixed(3) : false;
-          }) : document.createTextNode('\u2014')]));
+          tr.appendChild(h('td', { class: 'n', text: c ? c.value.toFixed(3) : '—' }));
         });
         tbl.appendChild(tr);
       });
     });
     wrap.appendChild(tbl);
     pane.appendChild(wrap);
-    pane.appendChild(h('p', { class: 'muted', text: 'Cartesian values in mm / deg in the position\u2019s user frame (UF). Joint-format rows show axis angles J1\u2013J6. ' +
-      (locked
-        ? 'The editor holds unsaved text for this program \u2014 save or discard it before editing positions here.'
-        : 'Values are editable: Enter or Tab writes the number into the /POS section of the library copy (the text it replaces is kept in History). The robot is untouched until you send the program.') }));
+    pane.appendChild(h('p', { class: 'muted', text: 'Cartesian values in mm / deg in the position’s user frame (UF). Joint-format rows show axis angles J1–J6.' }));
   }
 
   /* ---- cross-reference tab ---- */

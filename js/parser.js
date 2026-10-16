@@ -197,62 +197,6 @@
     return g;
   }
 
-  /* A position value the way the controller prints one: three decimals, no
-   * leading zero on a fraction (.083, -.007). */
-  function fmtPosValue(v) {
-    var s = (Math.round(v * 1000) / 1000).toFixed(3);
-    if (s === '-0.000') s = '0.000';
-    return s.replace(/^(-?)0\./, '$1.');
-  }
-
-  /* Write one field of a taught position back into the listing text:
-   * field is a coordinate (X Y Z W P R, J1…J9, E1…E3), 'UF', 'UT' or
-   * 'CONFIG'; group is the GPn the value belongs to (1 for a single-group
-   * position). Only the value's own characters change — the controller's
-   * tabs, padding and line endings stay, and a shorter number is padded to
-   * the width the old one had so the columns keep lining up. Returns the new
-   * source, or null when there is no such position, group or field. */
-  function setPositionField(source, id, group, field, value) {
-    var posAt = source.search(/^\/POS\b/m);
-    if (posAt === -1) return null;
-    var tail = source.slice(posAt);
-    var blockRe = new RegExp('P\\[' + id + '(?:\\s*:\\s*"[^"]*")?\\]\\s*\\{([\\s\\S]*?)\\}\\s*;');
-    var bm = blockRe.exec(tail);
-    if (!bm) return null;
-    var body = bm[1];
-    var bodyAt = posAt + bm.index + bm[0].indexOf('{') + 1;
-    var gStart = 0, gEnd = body.length;
-    var markers = [], gm, gre = /\bGP(\d+)\s*:/g;
-    while ((gm = gre.exec(body)) !== null) markers.push({ n: parseInt(gm[1], 10), start: gm.index, end: gm.index + gm[0].length });
-    if (markers.length) {
-      var k = -1;
-      for (var i = 0; i < markers.length; i++) if (markers[i].n === group) { k = i; break; }
-      if (k === -1) return null;
-      gStart = markers[k].end;
-      gEnd = k + 1 < markers.length ? markers[k + 1].start : body.length;
-    } else if (group !== 1) return null;
-    var seg = body.slice(gStart, gEnd), re, out;
-    if (field === 'UF' || field === 'UT') {
-      re = new RegExp('(\\b' + field + '\\s*:\\s*)(\\d+)');
-      if (!re.test(seg)) return null;
-      out = seg.replace(re, function (_, head) { return head + String(Math.max(0, Math.floor(Number(value)))); });
-    } else if (field === 'CONFIG') {
-      re = /(\bCONFIG\s*:\s*')([^']*)(')/;
-      if (!re.test(seg)) return null;
-      out = seg.replace(re, function (_, head, _old, q) { return head + String(value).replace(/'/g, '') + q; });
-    } else {
-      re = new RegExp('(\\b' + field + '\\s*=\\s*)(-?[\\d.]+)');
-      if (!re.test(seg)) return null;
-      out = seg.replace(re, function (_, head, old) {
-        var s = fmtPosValue(Number(value));
-        while (s.length < old.length) s = ' ' + s;
-        return head + s;
-      });
-    }
-    var newBody = body.slice(0, gStart) + out + body.slice(gEnd);
-    return source.slice(0, bodyAt) + newBody + source.slice(bodyAt + body.length);
-  }
-
   /* FANUC load errors (ASBN-009 "on line 76") count PHYSICAL file lines —
    * header included — not teach-pendant line numbers. Map one to the other
    * using the exact source that was uploaded. */
@@ -264,7 +208,7 @@
     return { raw: t.trim(), progLine: m ? parseInt(m[1], 10) : null };
   }
 
-  var api = { parseLS: parseLS, unwrapMd: unwrapMd, mapFileLine: mapFileLine, applyLineEdits: applyLineEdits, setPositionField: setPositionField, fmtPosValue: fmtPosValue };
+  var api = { parseLS: parseLS, unwrapMd: unwrapMd, mapFileLine: mapFileLine, applyLineEdits: applyLineEdits };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucParser = api;
 })(typeof window !== 'undefined' ? window : globalThis);
