@@ -31,6 +31,9 @@ const ROOT = __dirname;
 const SNAPSHOT_DIR = path.join(ROOT, 'backups', 'pre-upload');
 const PORT = parseInt(process.argv[2], 10) || 8642;
 const ROBOT_TIMEOUT_MS = 6000;
+/* The controller's web server port. 80 on every real robot; the tests point
+ * it at a mock controller on a high port. */
+const ROBOT_HTTP_PORT = parseInt(process.env.FANUC_STUDIO_ROBOT_HTTP_PORT, 10) || 80;
 /* Liveness check for a saved robot: short, because the answer people want is
  * "is it there right now", and a dead address on the LAN fails far quicker
  * than this anyway. Only a silently-dropping firewall runs it to the end. */
@@ -99,7 +102,7 @@ function robotGet(host, filePath, timeoutMs) {
   const limit = timeoutMs || ROBOT_TIMEOUT_MS;
   return new Promise((resolve, reject) => {
     const req = http.request(
-      { host, port: 80, path: filePath, method: 'GET', timeout: limit },
+      { host, port: ROBOT_HTTP_PORT, path: filePath, method: 'GET', timeout: limit },
       (r) => {
         if (r.statusCode !== 200) {
           r.resume();
@@ -113,6 +116,12 @@ function robotGet(host, filePath, timeoutMs) {
           chunks.push(c);
         });
         r.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        /* A controller that drops the connection after the headers leaves
+         * the response unfinished: no 'end', and the socket timeout only
+         * covers silence before the socket is gone. Without these the
+         * promise never settled and the API call hung for good. */
+        r.on('error', (e) => reject(new Error('the robot dropped the connection mid-file: ' + e.message)));
+        r.on('aborted', () => reject(new Error('the robot dropped the connection mid-file')));
       }
     );
     req.on('timeout', () => { req.destroy(new Error('robot did not answer within ' + limit / 1000 + 's — check the IP and that HTTP is enabled on the controller')); });
@@ -154,7 +163,19 @@ async function handleApi(req, res, u) {
   const q = u.searchParams;
 
   if (u.pathname === '/api/ping') {
-    return json(res, 200, { ok: true, app: 'fanuc-tp-studio-bridge', version: 2 });
+    return json(res, 200, { ok: true, app: 'fanuc-tp-studio-bridge', version: 2, local: isLoopback(req) });
+  }
+
+  /* Stop the bridge. Only from the bridge PC itself: the app offers it when
+   * it is running on localhost, so a bridge started without a console window
+   * (the fanucstudio: link, a Startup shortcut) still has an off switch. A
+   * phone on the plant network gets a 403. */
+  if (u.pathname === '/api/quit' && req.method === 'POST') {
+    if (!isLoopback(req)) return fail(res, 403, 'the bridge can only be stopped from the PC it runs on');
+    json(res, 200, { ok: true });
+    console.log('[bridge] stopped from the app');
+    setTimeout(() => process.exit(0), 150);
+    return;
   }
 
   if (u.pathname === '/api/robots' && req.method === 'GET') {
@@ -304,7 +325,7 @@ async function handleApi(req, res, u) {
     let done = 0;
     await pool(hosts, SCAN_CONCURRENCY, async (ip) => {
       if (aborted) return;
-      const r = await probePort(ip, 80, SCAN_TIMEOUT_MS);
+      const r = await probePort(ip, ROBOT_HTTP_PORT, SCAN_TIMEOUT_MS);
       if (r.ok) open.push(ip);
       done++;
       if (done % 16 === 0 || done === hosts.length) send({ type: 'progress', done: done, total: hosts.length });
@@ -522,6 +543,58 @@ async function handleApi(req, res, u) {
       }
       result.ok = true;
       result.verified = true;
+      }, undefined, false);
+    } catch (e) {
+      result.error = result.error || e.message;
+    }
+    return json(res, 200, result);
+  }
+
+  /* Delete a program from the controller, with the same safety net as the
+   * upload: the robot's copy is snapshotted to backups/pre-upload/ FIRST, and
+   * a program that cannot be read is not deleted at all — no snapshot, no
+   * delete. The program lives on MD: as NAME.TP (NAME.LS is the listing the
+   * controller generates on request), so the .TP goes first and the .LS is
+   * tried for a controller that only knows the name it listed. The listing
+   * is read back afterwards to prove the program is gone: a controller
+   * refuses to delete a program that is selected on the pendant or held by
+   * a live task, and that refusal is reported with the robot's own words. */
+  if (u.pathname === '/api/robot/delete' && req.method === 'POST') {
+    const body = await readBody(req);
+    let payload;
+    try { payload = JSON.parse(body); } catch (e) { return fail(res, 400, 'invalid JSON body'); }
+    const { ip, name, user, pass } = payload;
+    if (!ip || !ROBOT_HOST.test(String(ip).split(':')[0])) return fail(res, 400, 'missing or invalid ip');
+    if (!name || !/^[A-Za-z0-9_-]+(?:\.LS)?$/i.test(name)) return fail(res, 400, 'name must be NAME or NAME.LS');
+    const t = parseTarget(ip);
+    const base = String(name).toUpperCase().replace(/\.LS$/, '');
+    const result = { ok: false, name: base + '.LS', snapshot: null, deleted: false };
+    try {
+      await pooledFtp(t, user, pass, async (ftp) => {
+        let prev = null;
+        try { prev = await ftp.retr(base + '.LS'); }
+        catch (e) { result.error = 'Could not read ' + base + '.LS from the robot, so nothing was deleted: ' + e.message; return; }
+        if (!prev || !prev.length) { result.error = base + '.LS came back empty from the robot, so nothing was deleted.'; return; }
+        fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        result.snapshot = path.join(SNAPSHOT_DIR, t.ip.replace(/[:.]/g, '-') + '_' + base + '_' + stamp + '_deleted.LS');
+        fs.writeFileSync(result.snapshot, prev);
+        let refusal = null;
+        try { await ftp.dele(base + '.TP'); }
+        catch (e1) {
+          try { await ftp.dele(base + '.LS'); }
+          catch (e2) { refusal = /550|553|450/.test(String(e1.code)) ? e2.message : e1.message; }
+        }
+        let still = false;
+        try { const back = await ftp.retr(base + '.LS'); still = !!(back && back.length); } catch (e) { still = false; }
+        if (still) {
+          result.error = refusal
+            ? 'The controller refused to delete ' + base + ': ' + refusal + ' — a program that is selected on the pendant or held by a live task (PAUSED counts) cannot be deleted; ABORT it first.'
+            : 'The controller accepted the delete but ' + base + ' is still on the robot.';
+          return;
+        }
+        result.ok = true;
+        result.deleted = true;
       }, undefined, false);
     } catch (e) {
       result.error = result.error || e.message;
@@ -860,7 +933,7 @@ function probePort(host, port, timeoutMs) {
 }
 
 function probeRobot(t) {
-  return probePort(t.host, 80, PROBE_TIMEOUT_MS).then((r) => ({ ip: t.ip, ok: r.ok, ms: r.ms, error: r.error }));
+  return probePort(t.host, ROBOT_HTTP_PORT, PROBE_TIMEOUT_MS).then((r) => ({ ip: t.ip, ok: r.ok, ms: r.ms, error: r.error }));
 }
 
 /* ---- subnet scan ---- */
@@ -1089,6 +1162,12 @@ async function pooledFtp(t, user, pass, fn, connectTimeout, retryOnStale) {
 
 async function withFtp(t, q, fn) {
   return pooledFtp(t, q.get('user') || undefined, q.get('pass') || undefined, fn, undefined, true);
+}
+
+/* Did this request come from the bridge PC itself? */
+function isLoopback(req) {
+  const a = (req.socket && req.socket.remoteAddress) || '';
+  return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
 }
 
 function readBody(req) {

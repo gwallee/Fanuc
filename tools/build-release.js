@@ -23,7 +23,7 @@ const STAGE = path.join(DIST, 'FanucStudio');
 const OUT = path.join(DIST, 'FanucStudio-portable-win-x64.zip');
 
 const APP_FILES = [
-  'index.html', 'server.js', 'README.md', 'Start FANUC Studio.bat', 'start.sh',
+  'index.html', 'server.js', 'README.md', 'Start FANUC Studio.bat', 'Start FANUC Studio hidden.vbs', 'start.sh',
   'manifest.webmanifest', 'sw.js', 'FANUC Studio.ico',
   'css', 'js', 'lib', 'icons'
 ];
@@ -76,6 +76,11 @@ fs.writeFileSync(path.join(STAGE, 'READ ME FIRST.txt'), [
   'Install as an app (own window, taskbar icon): with the bridge running,',
   'open http://localhost:8642 in Chrome or Edge and click the install icon',
   'in the address bar. Click the small ^ in its title bar to hide it.',
+  'The installed app can start the bridge itself: open it, and if the',
+  'bridge is down it offers "Start the bridge" (no console window). Running',
+  'the .bat once registers that link. "Stop bridge" is on the Robot tab.',
+  'For a bridge that is always on, put a shortcut to',
+  '"Start FANUC Studio hidden.vbs" in your Startup folder (Win+R, shell:startup).',
   '',
   'Offline file viewing only? Double-clicking index.html also works,',
   'without the bridge (no robot access that way).',

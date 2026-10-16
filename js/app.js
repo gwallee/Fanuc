@@ -669,6 +669,61 @@
       .catch(function () { state.server = false; renderConnect(); });
   }
 
+  /* ---- starting and stopping the bridge from the app ----
+   * A page cannot start a program, but Windows can: running the .bat once
+   * registers the fanucstudio: link, and opening it runs the hidden
+   * launcher beside the bridge. So when the installed app opens (from the
+   * service worker's cache) and finds the bridge down, it offers the link,
+   * then watches /api/ping until the bridge answers. Stopping goes through
+   * /api/quit, which the bridge only honours from its own PC. */
+  var bridgeWait = null;
+  function canOfferBridgeStart() {
+    return /Windows/i.test(navigator.userAgent) && /^https?:$/.test(location.protocol) &&
+      /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  }
+  function startBridge() {
+    if (bridgeWait) return;
+    try { location.href = 'fanucstudio:start'; } catch (e) { /* the browser said no — the hint stays */ }
+    var tries = 0;
+    var hint = document.getElementById('server-hint');
+    if (hint) hint.innerHTML = 'Starting the bridge\u2026 <span class="muted">(if Windows asked, allow it to open FANUC TP Program Studio)</span>';
+    bridgeWait = setInterval(function () {
+      tries++;
+      fetch('/api/ping').then(function (r) { return r.json(); }).then(function (b) {
+        if (!(b && b.ok)) throw new Error('not yet');
+        clearInterval(bridgeWait);
+        bridgeWait = null;
+        toast('The bridge is running.');
+        detectServer();
+        render();
+      }).catch(function () {
+        if (tries < 20) return;
+        clearInterval(bridgeWait);
+        bridgeWait = null;
+        renderConnect();
+        toast('The bridge did not start. Run \u201cStart FANUC Studio.bat\u201d once \u2014 it registers the link this button uses \u2014 then try again.', 9000);
+      });
+    }, 1500);
+  }
+  function bridgeStartButton() {
+    if (!canOfferBridgeStart()) return null;
+    return h('button', {
+      class: 'btn primary', text: 'Start the bridge',
+      title: 'Opens fanucstudio:start, which runs \u201cStart FANUC Studio hidden.vbs\u201d beside the bridge \u2014 no console window. Needs \u201cStart FANUC Studio.bat\u201d to have been run once on this PC.',
+      onclick: startBridge
+    });
+  }
+  function stopBridge() {
+    if (!confirm('Stop the bridge? Robot access, folder access and the phone address go away until it is started again. The library in this browser is untouched.')) return;
+    fetch('/api/quit', { method: 'POST' }).then(function (r) { return r.json(); }).then(function (b) {
+      if (b.error) throw new Error(b.error);
+      state.server = false;
+      toast('Bridge stopped.');
+      renderConnect();
+      render();
+    }).catch(function (e) { toast('Could not stop the bridge: ' + e.message, 7000); });
+  }
+
   function ftpQS() {
     var s = '';
     if (state.robot.ftpUser) s += '&user=' + encodeURIComponent(state.robot.ftpUser);
@@ -1416,6 +1471,31 @@
     }).catch(function (e) {
       state.upload = { ok: false, name: name + '.LS', error: e.message };
       onDone(state.upload);
+    });
+  }
+
+  /* Delete a program from the connected robot. The bridge snapshots the
+   * robot's copy first and refuses when it cannot read it, so nothing is ever
+   * simply gone; the library copy here stays. */
+  function deleteFromRobot(name, onDone) {
+    fetch('/api/robot/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ip: state.robot.ip, name: name + '.LS',
+        user: state.robot.ftpUser || undefined, pass: state.robot.ftpPass || undefined
+      })
+    }).then(function (r) { return r.json(); }).then(function (b) {
+      if (b.ok) {
+        state.robot.files = (state.robot.files || []).filter(function (f) { return f.toUpperCase() !== name.toUpperCase() + '.LS'; });
+        toast(name + ' deleted from ' + state.robot.ip + (b.snapshot ? ' \u2014 its copy was saved in backups\\pre-upload first' : '') + '. The library copy here is untouched.', 8000);
+      } else {
+        toast(b.error || 'The robot did not delete ' + name + '.', 10000);
+      }
+      if (onDone) onDone(b);
+    }).catch(function (e) {
+      toast('Delete failed: ' + e.message, 8000);
+      if (onDone) onDone({ ok: false, error: e.message });
     });
   }
 
@@ -2221,7 +2301,16 @@
       dirRow.style.display = 'none';
       if (dot) dot.hidden = true;
       hint.hidden = false;
-      hint.innerHTML = 'Robot &amp; folder-path access need the bridge:<br><code>node server.js</code> then open <code>http://localhost:8642</code>. The Robot tab has details.';
+      hint.innerHTML = '';
+      var sb = bridgeWait ? null : bridgeStartButton();
+      if (sb) {
+        hint.appendChild(h('div', { class: 'muted', text: 'The bridge is not running \u2014 robot and folder access need it.' }));
+        hint.appendChild(sb);
+      } else if (bridgeWait) {
+        hint.textContent = 'Starting the bridge\u2026';
+      } else {
+        hint.innerHTML = 'Robot &amp; folder-path access need the bridge:<br><code>node server.js</code> then open <code>http://localhost:8642</code>. The Robot tab has details.';
+      }
     }
     var phoneBtn = document.getElementById('btn-phone');
     // Only the bridge serves this app to other devices; a file:// page has
@@ -3156,6 +3245,14 @@
         onclick: function () {
           if (!confirm('Send ' + p.parsed.name + '.LS to robot ' + state.robot.ip + ' over FTP?\n\nThe current version on the robot is snapshotted first. If the controller rejects the translation, that snapshot is restored automatically.')) return;
           sendToRobot(p.parsed.name, p.source, function () { render(); });
+        }
+      }) : null,
+      (state.server && state.robot.ip && (state.robot.files || []).some(function (f) { return f.toUpperCase() === p.parsed.name.toUpperCase() + '.LS'; })) ? h('button', {
+        class: 'btn subtle', text: 'Delete from robot',
+        title: 'Remove ' + p.parsed.name + ' from ' + state.robot.ip + ' \u2014 the robot\u2019s copy is snapshotted to backups\\pre-upload first; the library copy stays',
+        onclick: function () {
+          if (!confirm('Delete ' + p.parsed.name + ' from robot ' + state.robot.ip + '?\n\nThe robot\u2019s copy is saved to backups\\pre-upload first, and the copy in this library stays. The controller refuses if the program is selected on the pendant or held by a live task.')) return;
+          deleteFromRobot(p.parsed.name, function () { render(); });
         }
       }) : null,
       h('button', { class: 'btn subtle', text: 'Export .LS', onclick: function () { exportProgram(p); } }),
@@ -6909,7 +7006,14 @@
         ol.appendChild(li);
       });
       box.appendChild(ol);
-      box.appendChild(h('p', { class: 'muted', text: 'The bridge mostly READS from robots — programs, register values, I/O. It writes only where you ask it to and it can check the result: sending a .LS back, and renaming a register or I/O point. Nothing it does can move a robot.' }));
+      box.appendChild(h('p', { class: 'muted', text: 'The bridge mostly READS from robots — programs, register values, I/O. It writes only where you ask it to and it can check the result: sending a .LS back, renaming a register or I/O point, deleting a program you name. Nothing it does can move a robot.' }));
+      var sb = bridgeStartButton();
+      if (sb) {
+        box.appendChild(h('div', { class: 'hist-actions' }, [
+          sb,
+          h('span', { class: 'muted', text: 'Starts it on this PC with no console window (the .bat has to have been run once, which registers the link). For a bridge that is always on, put a shortcut to \u201cStart FANUC Studio hidden.vbs\u201d in your Startup folder.' })
+        ]));
+      }
       pane.appendChild(box);
       return;
     }
@@ -6928,6 +7032,14 @@
     form.appendChild(userIn);
     form.appendChild(passIn);
     form.appendChild(h('button', { class: 'btn primary', text: state.robot.ip ? 'Reconnect' : 'Connect', onclick: function () { state.robot.ftpUser = userIn.value.trim(); state.robot.ftpPass = passIn.value; if (ipIn.value.trim()) connectRobot(ipIn.value.trim()); } }));
+    if (/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) {
+      form.appendChild(h('span', { style: 'flex:1' }));
+      form.appendChild(h('button', {
+        class: 'btn subtle', text: 'Stop bridge',
+        title: 'Shut the bridge down on this PC \u2014 the way to stop one started without a console window',
+        onclick: stopBridge
+      }));
+    }
     pane.appendChild(form);
     pane.appendChild(scanPanel());
     /* Above the connection-dependent sections on purpose: connecting and

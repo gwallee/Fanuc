@@ -72,6 +72,26 @@ async function post(route, body) {
     check(r.ok === false && !r.restored && !r.snapshot, 'failure reported, no snapshot (program was new)');
     check(!('NEWPROG.LS' in files), 'nothing left behind on the robot');
 
+    console.log('\n-- delete from robot: snapshot first, verify after --');
+    files['OLDPROG.LS'] = '/PROG OLDPROG\n/MN\n   1:  R[9]=9 ;\n/END\n';
+    r = await post('/api/robot/delete', { ip: ROBOT, name: 'OLDPROG.LS' });
+    check(r.ok === true && r.deleted === true, 'delete reported done');
+    check(!('OLDPROG.LS' in files), 'the program is gone from the robot');
+    check(r.snapshot && fs.existsSync(r.snapshot) && fs.readFileSync(r.snapshot, 'utf8').includes('R[9]=9'), 'the robot\'s copy was snapshotted first: ' + path.basename(r.snapshot || ''));
+    r = await post('/api/robot/delete', { ip: ROBOT, name: 'NOSUCH.LS' });
+    check(r.ok === false && !r.snapshot && /nothing was deleted/.test(r.error), 'a program the robot has not got is refused, nothing snapshotted: ' + r.error);
+    r = await post('/api/robot/delete', { ip: ROBOT, name: '../etc/passwd' });
+    check(r.error && /NAME/.test(r.error), 'a name that is not a program name is refused');
+
+    console.log('\n-- delete from robot: a program on a live task is refused --');
+    files['BUSY.LS'] = '/PROG BUSY\n/MN\n   1:  R[8]=8 ;\n/END\n';
+    ftpServer.locked = ['BUSY'];
+    r = await post('/api/robot/delete', { ip: ROBOT, name: 'BUSY.LS' });
+    check(r.ok === false && /refused|in use/.test(r.error) && /ABORT/.test(r.error), 'the controller\'s refusal is reported with what to do about it: ' + r.error);
+    check('BUSY.LS' in files, 'the program is still on the robot');
+    check(r.snapshot && fs.existsSync(r.snapshot), 'the snapshot was still taken before the attempt');
+    ftpServer.locked = [];
+
     console.log('\n-- backup with date + incremental suffix --');
     const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'fanuc-bk-'));
     const b1 = await post('/api/robot/backup', { ip: ROBOT, dest });

@@ -20,11 +20,18 @@ Windows: double-click **`Start FANUC Studio.bat`** — it starts the bridge and 
 node server.js           # zero dependencies; then open http://localhost:8642
 ```
 
+**Using the installed app instead of a browser tab.** Chrome and Edge install the app from the address bar (own window, taskbar icon), and the installed app does not need the .bat's browser tab — or the .bat at all, once it has been run once:
+
+- The .bat registers a **`fanucstudio:` link** for your Windows user (no admin). When the installed app opens and finds the bridge down — it still opens, from the service worker's cache — the sidebar and the Robot tab offer **Start the bridge**. That opens the link, Windows runs **`Start FANUC Studio hidden.vbs`** beside the bridge (no console window, no browser tab; allow it once when Windows asks), and the app picks the bridge up as soon as it answers
+- **Stop bridge** on the Robot tab shuts it down again — the off switch for a bridge with no window. The bridge only honours that from the PC it runs on; a phone on the plant network cannot stop it
+- `Start FANUC Studio.bat /nobrowser` starts the bridge without opening a tab, for a shortcut of your own. For a bridge that is simply always on, put a shortcut to the `.vbs` in your Startup folder (Win+R, `shell:startup`)
+
 The bridge serves this same app and adds what a browser alone cannot do — browsers can't reach a FANUC controller directly (plain HTTP/FTP, no CORS), so the bridge proxies for them:
 
 - **Bulk import** — **Import all N programs** reads them four at a time rather than firing every request at once, renders after each one so the chips fill in green as they land (amber while in flight), and shows a progress bar with a **Stop**. The library re-analysis and the localStorage write happen once at the end instead of once per program, which is most of the wall clock on a 57-program controller
 - **Robot by IP** — reads the program list, any `.LS`, live register values (`NUMREG.VA`), string registers (`STRREG.VA`), and I/O configuration (`DIOCFGSV.IO`). Tries the controller web server (`http://<robot-ip>/MD/`) first and falls back to FTP automatically, so either protocol being enabled is enough. Optional FTP credentials (default anonymous).
 - **Safe upload over FTP** — sending a `.LS` to the controller triggers LS→TP translation, and a translation error makes the controller **delete the program**. The bridge makes that impossible to lose work to: it snapshots the robot's current version first, uploads, reads the file back to verify it survived, and if it's gone it **auto-restores the snapshot** — then the UI keeps your editor open so the fix is one keystroke away. Snapshots land in `backups/pre-upload/`.
+- **Delete from robot** — the other half of the upload path. **Delete from robot** on the Code toolbar (shown when the connected robot has the program) removes it from the controller, with the same safety net: the robot's copy is snapshotted to `backups/pre-upload/` **first** (suffixed `_deleted`), and a program the bridge cannot read is not deleted at all — no snapshot, no delete. The listing is read back afterwards to prove it is gone. A controller refuses to delete a program that is selected on the pendant or held by a live task (PAUSED counts), and the refusal comes back in the robot's own words with what to do about it. The library copy stays
 - **Rename registers and I/O in place** — the Robot tab's tables are editable: type over a name, leave the field, and the controller has it. A register's *name is its comment* (`R[1:Task ID]` is `R[1]` plus the comment held in the controller's own table, which every listing is generated from), so renaming means writing that comment. The bridge writes it the way the robot's own comment page does — a plain `GET /karel/ComSet?sComment=…&sIndx=…&sFc=…`, with the function codes read off that page's own script rather than guessed — then **re-reads the file and reports what the controller actually stored**, so a rename is proven rather than assumed. Saving on blur matches the pendant page's own behavior; Enter commits, Escape puts the old name back, and a field you only tab through sends nothing. Covers `R[]`, `PR[]`, `SR[]` and every I/O type the controller's comment tool offers (`DI`/`DO`, `RI`/`RO`, `GI`/`GO`, `AI`/`AO`, flags); `UI`, `UO`, `SI`, `SO` have no comment write on the controller at all and stay read-only, as does anything loaded from a backup folder — there is no controller there to write to. Names are checked before they go anywhere: the controller's own length cap (16 characters for registers, 24 for I/O), printable ASCII only, and no quotes or brackets, since the controller writes the comment back out inside both
 - **Backups** — both kinds live on the saved-robots rows. **Quick backup** on a row grabs `.LS` + `.VA` from that robot right now (folder suffixed `_quick`) — fast, ideal right before making changes, no connecting needed. Full backups run as the sweep below. Every backup lands in a dated folder `<robot-name-or-ip>_<YYYY-MM-DD>_<NN>/`; `NN` auto-increments for same-day backups (per destination folder, so a robot's own folder keeps its own numbering), and the robot name is read from the controller when available.
 
@@ -154,6 +161,9 @@ js/explain.js     instruction → plain-English rules (unit-tested; not wired
                   into the UI since the per-line Explain toggle was removed)
 js/vaparse.js     NUMREG.VA / POSREG.VA / STRREG.VA / DIOCFGSV.IO / IOSTATE.DG /
                   ERRALL.LS / PRGSTATE.DG parsing
+Start FANUC Studio hidden.vbs
+                  the bridge with no console window — what the fanucstudio:
+                  link runs; the file to put in Startup for an always-on bridge
 js/qr.js          QR encoder for the "open on your phone" code (byte mode,
                   level M, versions 1-10) — zero deps
 js/app.js         UI
@@ -166,11 +176,18 @@ samples/          demo cell used as test fixtures: MAIN, PICK, PLACE,
 test/run-tests.js      unit tests:         node test/run-tests.js
 test/server-tests.js   bridge integration: node test/server-tests.js
                        (runs against a mock FANUC FTP controller, including
-                       the translation-failure → auto-restore path)
+                       the translation-failure → auto-restore path and the
+                       snapshot-first delete)
+test/http-tests.js     the HTTP path to a controller: node test/http-tests.js
+                       (listing and files from the MD: pages, the ComSet
+                       comment write with its read-back proof, the scanner's
+                       identity check, a controller dropping a connection
+                       mid-file, the static app server, /api/quit)
+test/mock-http.js      the mock controller web server that drives
 test/backup-tests.js   backups:            node test/backup-tests.js
                        (default and per-robot folders, folder browsing,
                        and the multi-robot sweep, end to end over FTP)
-test/mock-ftp.js       the mock controller both integration tests drive
+test/mock-ftp.js       the mock FTP controller server-tests and backup-tests drive
 ```
 
 `FANUC_STUDIO_STATE` moves `robots.json` / `settings.json` / the default
