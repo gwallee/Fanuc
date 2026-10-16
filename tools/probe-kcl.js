@@ -4,13 +4,11 @@
  *
  *   node tools/probe-kcl.js 10.5.6.233 --user KCL --pass 1234
  *
- * Once logged in it types exactly these, all read-only:
- *     HELP SET          — lists the SET sub-commands this KCL accepts
- *                         (i.e. what CAN be written: ports, registers, vars)
- *     HELP SET PORT     — the exact form for writing an I/O port
- *     SHOW VAR $VERSION — proves a read works
- * plus Enter to page long output. It sends NO SET command and changes
- * nothing. Paste the whole transcript back.
+ * Once logged in it runs read-only HELP/SHOW commands (the defaults discover
+ * how a position register is stored, since KCL has no SET POSREG and a PR can
+ * only be written through SET VAR on $POSREG). Override with --run "<cmd>".
+ * The tool REFUSES to send anything but HELP/SHOW/LIST/DIR, so it cannot
+ * change the controller. Paste the whole transcript back.
  *
  * The prompt on this controller looks like "$.#5KCL>" and the console
  * streams async status lines, so the driver is time-based: it waits for the
@@ -26,12 +24,30 @@ function opt(name, def) { const i = process.argv.indexOf('--' + name); return i 
 const USER = opt('user', '');
 const PASS = opt('pass', '');
 
-/* The read-only commands, each with how long to let its output stream. */
-const COMMANDS = [
-  ['HELP SET', 5000],
-  ['HELP SET PORT', 4000],
-  ['SHOW VAR $VERSION', 3000]
+/* The read-only commands to run, each with how long to let its output
+ * stream. Override with one or more --run "<cmd>" (e.g. --run "SHOW VAR $FNO").
+ * Only HELP / SHOW / LIST / DIR commands are ever allowed — see the guard
+ * below — so this tool cannot be used to change anything on the controller. */
+function collectRuns() {
+  const out = [];
+  for (let i = 3; i < process.argv.length; i++) {
+    if (process.argv[i] === '--run' && process.argv[i + 1]) { out.push([process.argv[i + 1], 4000]); i++; }
+  }
+  return out;
+}
+const DEFAULT_COMMANDS = [
+  ['HELP SET VAR', 4500],       // how SET VAR takes a value — the only KCL route to a PR
+  ['SHOW VAR $POSREG[1,1]', 3500],  // how one position register is represented
+  ['SHOW VAR $POSREG[1]', 3500]
 ];
+const READONLY_FIRST = /^(HELP|SHOW|LIST|DIR|TYPE)\b/i;
+const COMMANDS = (collectRuns().length ? collectRuns() : DEFAULT_COMMANDS)
+  .filter(function (c) {
+    if (READONLY_FIRST.test(c[0].trim())) return true;
+    console.error('refusing non-read-only command: ' + JSON.stringify(c[0]) + ' (this probe only sends HELP/SHOW)');
+    return false;
+  });
+if (!COMMANDS.length) { console.error('no read-only commands to run'); process.exit(1); }
 
 /* Minimal, well-behaved telnet: strip IAC negotiation out of the data stream
  * and answer it (accept server ECHO/SGA, decline the rest). */
@@ -121,9 +137,9 @@ function finish(why) {
   const clean = acc
     .replace(/\r/g, '')
     .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
-    .replace(/\.#\d/g, ' ')                 // the "$.#5" status markers
-    .replace(/[^\x09\x0a\x20-\x7e]/g, '')
-    .replace(/[ \t]{2,}/g, '  ');
+    .replace(/[^\x09\x0a\x20-\x7e]/g, '')   // ESC and other control bytes
+    .replace(/#\d/g, '')                      // the "#5" status markers the controller interleaves
+    .replace(/[ \t]{2,}/g, ' ');
   console.log('KCL probe of ' + host + ' — ' + new Date().toISOString());
   console.log('(read-only: only HELP and SHOW were typed; nothing was changed)\n');
   console.log('result: ' + why + '\n');
