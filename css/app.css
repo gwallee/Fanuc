@@ -509,6 +509,36 @@ body.dragging .drop-hint, body.dragging .pane { outline: 2px dashed var(--accent
   color: var(--muted);
 }
 .pos-table td.n, .xref-table td.n { font-variant-numeric: tabular-nums; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }
+/* Positions tab: every value is a field, drawn as plain text until it is
+ * hovered or focused so the table still reads as a table. */
+.pos-table input.pos-in {
+  font: inherit; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; font-variant-numeric: tabular-nums;
+  width: 92px; text-align: right; padding: 2px 5px; margin: -3px -5px;
+  border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--ink);
+}
+.pos-table input.pos-in.small { width: 40px; }
+.pos-table input.pos-in.cfg { width: 150px; text-align: left; }
+.pos-table input.pos-in:hover:not(:disabled) { border-color: var(--line); background: var(--panel-2); }
+.pos-table input.pos-in:focus-visible { outline: none; border-color: var(--accent); background: var(--bg); box-shadow: 0 0 0 1px var(--accent); }
+.pos-table input.pos-in:disabled { color: var(--muted); }
+
+/* ---------- version history (Code tab) ---------- */
+.hist-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 2px 0 10px; }
+.hist-head .title { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600; font-size: 14px; }
+.hist { display: flex; gap: 12px; align-items: flex-start; }
+.hist-list { flex: 0 0 250px; border: 1px solid var(--line); border-radius: 6px; overflow: auto; max-height: 70vh; background: var(--panel); }
+.hist-item { padding: 8px 10px; cursor: pointer; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.hist-item:last-child { border-bottom: none; }
+.hist-item:hover { background: var(--panel-2); }
+.hist-item.active { background: var(--accent-bg); }
+.hist-when { font-weight: 600; }
+.hist-body { flex: 1 1 auto; min-width: 0; }
+.hist-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; font-size: 12.5px; }
+.btn.subtle.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+@media (max-width: 760px) {
+  .hist { flex-direction: column; }
+  .hist-list { flex-basis: auto; width: 100%; max-height: 32vh; }
+}
 .attr-table td:first-child { color: var(--muted); white-space: nowrap; width: 1%; padding-right: 22px; }
 tr:last-child td { border-bottom: none; }
 
@@ -697,12 +727,43 @@ tr:last-child td { border-bottom: none; }
 /* ---------- editor: syntax check, snippets ----------
  * Marks live in the overlay <pre>; nothing here may change a glyph's advance
  * width, so it is underlines and background tints only. */
+/* Whole-row marks: only for row-level findings (no line number, no " ;"),
+ * or on a browser without the Highlight API. */
 .editor-hl .ln-err { background: var(--write-bg); text-decoration: underline wavy var(--write); text-underline-offset: 3px; }
+.editor-hl .ln-sty { text-decoration: underline dashed var(--muted); text-underline-offset: 3px; }
 .editor-hl .ln-unk { text-decoration: underline dotted var(--warn); text-underline-offset: 3px; }
+/* Span marks: the token at fault and nothing else. ::highlight() takes
+ * colour, background and text-decoration only, which is all these need. */
+::highlight(tp-syn-error) { background-color: var(--write-bg); text-decoration: underline wavy var(--write); }
+::highlight(tp-syn-style) { text-decoration: underline dashed var(--muted); }
+::highlight(tp-syn-unknown) { text-decoration: underline dotted var(--warn); }
+::highlight(tp-find) { background-color: var(--occ-bg); }
 .editor-status { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; padding: 6px 2px 0; font-size: 12.5px; min-height: 24px; }
 .editor-status .msg { color: var(--muted); }
 .editor-status .msg.err { color: var(--write); }
+.editor-status .msg.sty { color: var(--muted); font-style: italic; }
 .editor-status .msg.unk { color: var(--warn); }
+.editor-problems .msg.sty { color: var(--muted); font-style: italic; }
+
+/* ---------- editor: find / replace / go to line ---------- */
+.editor-find {
+  display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+  padding: 6px 8px; margin-bottom: 6px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
+  font-size: 12.5px;
+}
+.editor-find .find-group { display: inline-flex; align-items: center; gap: 4px; }
+.editor-find input {
+  font: inherit; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12.5px;
+  padding: 4px 8px; border: 1px solid var(--line); border-radius: 4px;
+  background: var(--panel-2); color: var(--ink); width: 220px;
+}
+.editor-find input.find-goto { width: 64px; text-align: right; }
+.editor-find input:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+.editor-find .btn.opt { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; padding: 4px 7px; }
+.editor-find .btn.opt.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+.editor-find .find-count { min-width: 64px; font-variant-numeric: tabular-nums; }
+.code-pane .editor-find { margin: 6px 6px 0; }
 .editor-status .ex { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink); }
 .editor-status .toggle { color: var(--accent); cursor: pointer; text-decoration: underline dotted; }
 .editor-problems { max-height: 132px; overflow: auto; border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; font-size: 12.5px; }
@@ -1619,6 +1680,9 @@ h3.sec-toggle:hover { color: var(--accent); }
 .doc-tab.active { background: var(--bg); color: var(--ink); border-color: var(--accent); font-weight: 600; }
 .doc-tab.docked { border-style: dashed; }
 .doc-tab.data .doc-label::before { content: '≡ '; color: var(--accent); }
+/* unsaved editor text behind this tab */
+.doc-tab.dirty .doc-label::after { content: ' ●'; color: var(--warn); }
+.prog-item.dirty .name::after { content: ' ●'; color: var(--warn); font-weight: 400; }
 .doc-tab:hover { color: var(--ink); }
 .doc-x { padding: 0 2px; border-radius: 3px; color: var(--muted); }
 .doc-x:hover { background: var(--warn-bg); color: var(--warn); }

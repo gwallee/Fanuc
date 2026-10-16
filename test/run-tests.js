@@ -743,6 +743,29 @@ check(CS.storedComment('IOSTATE.DG', 'DOUT[  65] OFF  Vac-1 ON\n', 'DO', 65) ===
   'an I/O rename is verified against IOSTATE.DG');
 check(CS.storedComment('IOSTATE.DG', 'DIN[   1]  ON  Auto Mode\n', 'DO', 1) === null,
   'DI[1] and DO[1] are not confused when verifying');
+console.log('\n-- position write-back --');
+{
+  const mg = fs.readFileSync(path.join(__dirname, '..', 'testdata', '_testmg.ls'), 'latin1');
+  const before = P.parseLS(mg, '_testmg.ls');
+  const s1 = P.setPositionField(mg, 2, 1, 'X', 12.5);
+  const after = P.parseLS(s1, '_testmg.ls');
+  const p2 = after.positions.find((p) => p.id === 2), p2b = before.positions.find((p) => p.id === 2);
+  check(p2 && p2.groups[0].coords.X.value === 12.5 && p2b.groups[0].coords.X.value === -1874.902, 'X of P[2] rewritten (' + p2b.groups[0].coords.X.value + ' -> ' + p2.groups[0].coords.X.value + ')');
+  check(/\tX =    12.500  mm,/.test(s1), 'the new value is padded to the old width so the columns still line up');
+  check(s1.length === mg.length && after.positions.length === before.positions.length && after.lines.length === before.lines.length, 'nothing else in the file moved');
+  check(P.fmtPosValue(0.083) === '.083' && P.fmtPosValue(-0.007) === '-.007' && P.fmtPosValue(179.2234) === '179.223' && P.fmtPosValue(-0.0001) === '.000', 'values print the way the controller prints them');
+  const s2 = P.setPositionField(mg, 3, 1, 'UF', 4);
+  check(P.parseLS(s2, 'x').positions.find((p) => p.id === 3).groups[0].uf === 4, 'UF rewritten');
+  const s3 = P.setPositionField(mg, 1, 1, 'CONFIG', "N U T, 0, 0, 0");
+  check(P.parseLS(s3, 'x').positions.find((p) => p.id === 1).groups[0].config === 'N U T, 0, 0, 0', 'CONFIG rewritten');
+  check(P.setPositionField(mg, 99, 1, 'X', 1) === null && P.setPositionField(mg, 1, 2, 'X', 1) === null && P.setPositionField(mg, 1, 1, 'E1', 1) === null, 'a missing position, group or field is refused rather than guessed');
+  const multi = '/PROG MG\n/MN\n   1:  R[1]=0 ;\n/POS\nP[1]{\n   GP1:\n\tUF : 1, UT : 1,\t\tCONFIG : \'N U T, 0, 0, 0\',\n\tX =   100.000  mm,\tY =     0.000  mm,\tZ =    50.000  mm,\n\tW =     0.000 deg,\tP =     0.000 deg,\tR =     0.000 deg\n   GP2:\n\tUF : 1, UT : 1,\n\tJ1 =    10.000 deg\n};\n/END\n';
+  const m2 = P.setPositionField(multi, 1, 2, 'J1', -45.5);
+  const mp = P.parseLS(m2, 'x').positions[0];
+  check(mp.groups[1].coords.J1.value === -45.5 && mp.groups[0].coords.X.value === 100, 'a second group\'s joint value is rewritten without touching group 1');
+  check(/J1 =    -45.500 deg/.test(m2), 'a longer value simply takes the room it needs');
+}
+
 console.log('\n-- TP syntax: shapes, grammar, snippets --');
 const S = require('../js/tpsyntax.js');
 const SH = require('../js/tpshapes.js');
@@ -754,14 +777,17 @@ check(SH.lines > 10000 && SH.programs > 100, 'dictionary built from a real-sized
 const ok = (t) => S.check(t, SH).level === 'ok';
 const err = (t) => S.check(t, SH).level === 'error';
 const unk = (t) => S.check(t, SH).level === 'unknown';
+const sty = (t) => S.check(t, SH).level === 'style';
+// the text a verdict underlines
+const at = (t) => { const r = S.check(t, SH); return r.at ? t.slice(r.at[0], r.at[1]) : null; };
 check(ok('R[8:Task-JMP LBL]=0 ;') && ok('J PR[1:Home] R[202:Speed-J]% CNT50') && ok('IF (DO[33:At Home]),JMP LBL[200]'), 'controller-written lines are known shapes');
 check(S.check('J PR[1] R[202]% CNT50', SH).count > 100, 'a known shape reports how often the robots use it');
 check(err('IF (R[1]=1,JMP LBL[1]'), 'unclosed parenthesis is an error');
 check(err('R[1]=(R[2]+1'), 'unbalanced parenthesis in an assignment is an error');
 check(err("SR[1]='abc"), 'unterminated string is an error');
 check(err('1500=R[2]'), 'a number on the left of = is an error');
-check(err('R[1]=-1') && ok('R[1]=(-1)'), 'a bare negative literal is an error, in parentheses it is fine');
-check(err('F[1]=ON') && ok('F[1]=(ON)'), 'a flag written without parentheses is an error');
+check(sty('R[1]=-1') && ok('R[1]=(-1)'), 'a bare negative literal is a style note (the controller writes parentheses), never an error');
+check(sty('F[1]=ON') && ok('F[1]=(ON)'), 'a flag written without parentheses is a style note');
 check(err('J P[1] FINE') && err('J P[1] 100%') && err('J P[1] 500mm/sec FINE') && err('L P[1] 100% FINE'), 'motion lines: missing speed, missing termination, wrong unit for J and L');
 check(err('L P[1] 500 mm/sec FINE'), 'a space before the speed unit is an error');
 check(ok('L PR[20] 500mm/sec CNT50 Offset') && !err('L P[1] 200mm/sec CNT100 TB 0.5sec,DO[1]=ON') && ok('J PR[R[20]] 75% CNT100 Offset'), 'motion options and an indirect PR pass');
@@ -769,10 +795,34 @@ check(err('IF R[1]>5 JMP LBL[1]') && ok('IF R[1]>5,JMP LBL[1]'), 'plain IF needs
 check(err('IF !DI[1],JMP LBL[1]') && ok('IF (!DI[1]),JMP LBL[1]'), '"!" needs the mixed-logic parentheses');
 check(err('IF (R[1]=1) THEN R[2]=0') && ok('IF (R[1]=1) THEN'), 'nothing may follow THEN');
 check(err('WAIT 0.5sec') && ok('WAIT    .10(sec)') && ok('WAIT (DI[17:Conv Pk Rdy])'), 'timed wait needs (sec); mixed-logic wait passes');
-check(err('CALL _TRANSIT(-90)') && ok('CALL _TRANSIT((-90))'), 'a negative call argument needs its own parentheses');
+check(sty('CALL _TRANSIT(-90)') && ok('CALL _TRANSIT((-90))'), 'a negative call argument without its own parentheses is a style note');
 check(err('SELECT R[1]=1,R[2]=0') && ok('SELECT R[1]=1,JMP LBL[1]') && ok('=20,JMP LBL[921]') && ok('ELSE,CALL _RECOVER'), 'SELECT rows take JMP or CALL only');
 check(unk('L P[1] 500mm/sec FINE Wobble'), 'an unknown motion option is "unknown", not an error');
+check(unk('R[1]=R[2] XOR R[3]') && at('R[1]=R[2] XOR R[3]') === 'XOR', 'a stray word in an expression is unknown, and the word itself is what gets underlined');
 check(S.check('R[1]=R[2] XOR R[3]', SH).nearest.length > 0, 'an unknown form offers nearest known shapes');
+// verdicts name the token at fault, not the row
+check(at('J P[1] FINE') === 'FINE' && at('L P[1] 500 mm/sec FINE') === '500 mm/sec' && at('L P[1] 500mm/sec CNT 50') === 'CNT',
+  'motion errors underline the speed or termination at fault');
+check(at('R[1]=-1') === '-1' && at('1500=R[2]') === '1500' && at('PR[1]=5') === '5' && at('R[1]=') === '=',
+  'assignment verdicts underline the side at fault');
+check(at('IF (DI[1]') === '(DI[1]' && at('R[1]=(R[2]+1') === '(R[2]+1' && at('IF (DI[1] ORR DI[2]),JMP LBL[1]') === 'ORR' && at('WAIT DI[1]=ON,LBL[1]') === ',LBL[1]',
+  'bracket, condition and WAIT verdicts underline the exact place');
+check(at('L PR[1] 100mm/sec FINE Wobble') === 'Wobble' && at('CALL _T(1,-90)') === '-90' && at('IF (R[1]=1) THEN R[2]=0') === 'R[2]=0',
+  'option, argument and THEN verdicts underline the exact place');
+// a form the grammar vouches for is never "unknown" for being absent from one plant's backups
+check(ok('TIMER[1]=START') && ok('OVERRIDE=50%') && ok('WAIT DI[1]=ON TIMEOUT,LBL[1]') && ok('RUN PROG') && ok('SR[1]=\'x\'') && ok('CALL PROG(1,R[2])'),
+  'grammar-approved forms are ok without a dictionary hit');
+check(ok('UALM[1]') && ok('MESSAGE[hello world]') && ok('END') && ok('TIMER[3]=RESET') && S.check('UALM[1]', SH).builtin === true,
+  'standard forms the grammar is silent on are known from the built-in list');
+check(S.normalize('MESSAGE[PALLET FULL - EXCHANGING]') === 'MESSAGE[s]', 'pendant message text is variable, like a string');
+check(unk('PAYLOAD[1] AND PR[1]') && S.check('PAYLOAD[1] AND PR[1]', SH).at === undefined,
+  'a silent form absent from both lists is unknown as a whole row');
+{
+  // the Insert menu must never offer a line the editor would then underline
+  const flagged = S.snippets(SH).filter((s) => s.group !== 'Most used on your robots')
+    .map((s) => s.text.split('\n').filter((l) => S.check(l + ' ;', SH).level !== 'ok')).flat();
+  check(flagged.length === 0, 'every snippet line passes the check (' + flagged.join(' | ') + ')');
+}
 // family matching: scalar types are interchangeable, repeats collapse to two
 check(S.family('F[n]=((GI[n]>N OR GI[n]<N) AND (GI[n]>N OR GI[n]<N) AND (GI[n]>N OR GI[n]<N))') ===
       'V[n]=(C)', 'family collapses types, repeats and boolean expressions');
@@ -796,11 +846,14 @@ check(S.family('DO[n]=(F[n] OR F[n] OR F[n] OR F[n])') === S.family('GO[n]=(DI[n
 }
 check(ok('! a remark') && ok('//PAUSE') && ok(''), 'comments, disabled lines and blanks are never flagged');
 // row-level checks over a listing, plus renumber and formatRow
-const rowSrc = '/PROG RS\r\n/MN\r\n   1:  R[1]=0 ;\r\n   2:  R[2]=1\r\n   3:J P[1] 100% FINE ;\r\n  R[3]=2 ;\r\n   5:  CALL VERY_LONG(1,\r\n    :  2) ;\r\n/POS\r\n/END';
+const rowSrc = '/PROG RS\r\n/MN\r\n   1:  R[1]=0 ;\r\n   2:  R[2]=1\r\n   3:J P[1] 100% FINE ;\r\n  R[3]=2 ;\r\n   5:  CALL VERY_LONG(1,\r\n    :  2) ;\r\n   6:  IF (DI[1] ORR\r\n    :  DI[2]),JMP LBL[1] ;\r\n/POS\r\n/END';
 const rowIssues = S.checkSource(rowSrc, SH);
-check(rowIssues.length === 3 && rowIssues[0].row === 3 && /end with " ;"/.test(rowIssues[0].message), 'a row without " ;" is flagged (got ' + rowIssues.length + ')');
+check(rowIssues.length === 3 && rowIssues[0].row === 3 && /end with " ;"/.test(rowIssues[0].message) && rowIssues[0].spans.length === 0, 'a row without " ;" is flagged, as a whole row (got ' + rowIssues.length + ')');
 check(rowIssues[1].row === 5 && /line number/.test(rowIssues[1].message), 'a row without a line number is flagged');
-check(rowIssues[2].level === 'unknown' && rowIssues[2].rows.length === 2 && rowIssues[2].shape === 'CALL PROG(N,N)', 'a wrapped CALL is checked as one instruction spanning two rows (shape ' + rowIssues[2].shape + ')');
+check(S.instructions(rowSrc).filter((i) => i.num === 5)[0].text === 'CALL VERY_LONG(1, 2) ;', 'a wrapped CALL is read as one instruction spanning two rows');
+check(rowIssues[2].level === 'unknown' && rowIssues[2].rows.length === 2 && rowIssues[2].spans.length === 1 &&
+      rowIssues[2].spans[0].row === 8 && rowSrc.split(/\r\n/)[8].slice(rowIssues[2].spans[0].start, rowIssues[2].spans[0].end) === 'ORR',
+  'a span inside a wrapped instruction lands on the right row and columns');
 const renumbered = S.renumber(rowSrc);
 check(/\r\n   4:  R\[3\]/.test(renumbered) === false && /\r\n   3:J P\[1\]/.test(renumbered) && /   4:  CALL VERY_LONG\(1,\r\n    :  2\) ;/.test(renumbered), 'renumber counts only numbered rows and keeps continuation rows (CRLF kept)');
 check(S.formatRow(12, 'R[1]=0') === '  12:  R[1]=0 ;' && S.formatRow(3, 'J P[1] 100% FINE') === '   3:J P[1] 100% FINE ;', 'formatRow writes rows the way the controller does');

@@ -71,6 +71,9 @@
     active: { left: null, right: null },  // each strip's shown doc; right null = no split
     editSides: { left: false, right: false },   // which split halves are editors
     editDrafts: {},        // NAME -> unsaved editor text, survives tab switches and renders
+    history: {},           // NAME -> [{t, why, source}] earlier versions of this library's programs (persisted per library)
+    historyOpen: null,     // program whose version list the Code tab is showing
+    historySel: 0,         // which version in that list is picked
     splitPct: 50,          // side-by-side: left half's share of the width (persisted)
     showAllProgs: false,   // sidebar: also list programs not prefixed A_/_ (persisted)
     dataFilter: {},        // data-view filter text, per doc id — survives re-renders
@@ -287,6 +290,14 @@
 
   function addProgram(source, filename, origin) {
     var parsed = P.parseLS(source, filename);
+    var prev = state.programs[parsed.name];
+    if (prev && prev.source !== parsed.source) {
+      var o = origin || {};
+      recordVersion(parsed.name, prev.source,
+        o.type === 'robot' ? 'replaced by an import from robot ' + o.ip
+        : o.type === 'dir' ? 'replaced by a folder load'
+        : 'replaced by a file import');
+    }
     state.programs[parsed.name] = {
       parsed: parsed,
       analysis: A.analyzeProgram(parsed),
@@ -347,6 +358,82 @@
     } catch (e) { /* storage unavailable — session-only mode */ }
   }
 
+  /* ---- version history ----
+   * Every time a program's source is replaced — an editor save, an import
+   * over an existing copy, Find & Replace, a position edit, a restore — the
+   * text being replaced is kept, so a save is never the only copy. One list
+   * per program, per library; capped per program and library-wide, oldest
+   * out first. Identical text is never kept twice in a row. */
+  var HIST_PREFIX = 'fanuc-tp-studio.history.v1.';
+  var HIST_MAX_PER = 15, HIST_MAX_CHARS = 1500000;
+  function histKey(id) { return HIST_PREFIX + id; }
+  function loadHistory(id) {
+    try {
+      var hh = JSON.parse(localStorage.getItem(histKey(id)) || '{}');
+      return hh && typeof hh === 'object' ? hh : {};
+    } catch (e) { return {}; }
+  }
+  function dropOldestVersion() {
+    var name = null, t = Infinity;
+    Object.keys(state.history).forEach(function (n) {
+      var l = state.history[n];
+      if (l.length && l[l.length - 1].t < t) { t = l[l.length - 1].t; name = n; }
+    });
+    if (name === null) return false;
+    state.history[name].pop();
+    if (!state.history[name].length) delete state.history[name];
+    return true;
+  }
+  function persistHistory() {
+    try {
+      var json = JSON.stringify(state.history);
+      while (json.length > HIST_MAX_CHARS && dropOldestVersion()) json = JSON.stringify(state.history);
+      localStorage.setItem(histKey(state.library), json);
+    } catch (e) { toast('Version history could not be saved \u2014 browser storage is full.'); }
+  }
+  function recordVersion(name, source, why) {
+    if (typeof source !== 'string' || !source) return;
+    var list = state.history[name] || (state.history[name] = []);
+    if (list.length && list[0].source === source) return;
+    list.unshift({ t: Date.now(), why: why, source: source });
+    if (list.length > HIST_MAX_PER) list.length = HIST_MAX_PER;
+    persistHistory();
+  }
+  function versionsOf(name) { return state.history[name] || []; }
+  function fmtTime(t) {
+    var d = new Date(t);
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' +
+           d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  }
+
+  /* Swap a program's text for another version of itself: re-parse, keep
+   * its origin, follow a /PROG rename, and refresh everything derived. The
+   * caller records the version being replaced first. */
+  function replaceProgramSource(name, src) {
+    var p = state.programs[name];
+    if (!p) return null;
+    var parsed = P.parseLS(src, name + '.LS');
+    if (parsed.name !== name) {
+      delete state.programs[name];
+      renameDocRefs('P:' + name, 'P:' + parsed.name);
+      if (state.selected === name) { state.selected = parsed.name; docSelSync = parsed.name; }
+    }
+    state.programs[parsed.name] = { parsed: parsed, analysis: A.analyzeProgram(parsed), source: parsed.source, origin: p.origin };
+    rebuildDerived();
+    persist();
+    return parsed;
+  }
+
+  function restoreVersion(name, entry) {
+    var p = state.programs[name];
+    if (!p) return;
+    if (progDirty(name) && !confirm('Restoring discards the unsaved editor text for ' + name + '. Continue?')) return;
+    recordVersion(name, p.source, 'replaced by restoring the version from ' + fmtTime(entry.t));
+    delete state.editDrafts[name];
+    replaceProgramSource(name, entry.source);
+    toast('Restored ' + name + ' \u2014 the text it replaced is in its history.');
+  }
+
   function loadLibraryStore(id) {
     try {
       var raw = localStorage.getItem(libStoreKey(id));
@@ -374,6 +461,8 @@
     persist();                      // save the outgoing library
     libGen++;
     state.library = id;
+    state.history = loadHistory(id);
+    state.historyOpen = null;
     state.programs = {};
     state.selected = null;
     state.editing = false;
@@ -425,6 +514,7 @@
         }
       }
       state.library = localStorage.getItem(ACTIVE_LIB_KEY) || LOCAL_LIB;
+      state.history = loadHistory(state.library);
       loadLibraryStore(state.library);
       state.selected = Object.keys(state.programs)[0] || null;
       loadViewState();   // reopen the tabs and program from before the refresh
@@ -1737,8 +1827,8 @@
 
     s = s.replace(/(MESSAGE\[)([^\]]*)(\])/g, '<span class="tok-kw">$1</span><span class="tok-str">$2</span><span class="tok-kw">$3</span>');
     s = s.replace(/\bLBL\[[^\]]*\]/g, function (m0) { return '<span class="tok-lbl">' + m0 + '</span>'; });
-    s = s.replace(/\b(CALL|RUN)\s+([A-Z_][A-Z0-9_]*)/g, function (_, kw, name) {
-      return '<span class="tok-kw">' + kw + '</span> <span class="tok-call" data-call="' + name + '">' + name + '</span>';
+    s = s.replace(/\b(CALL|RUN)(\s+)([A-Z_][A-Z0-9_]*)/g, function (_, kw, ws, name) {
+      return '<span class="tok-kw">' + kw + '</span>' + ws + '<span class="tok-call" data-call="' + name + '">' + name + '</span>';
     });
     s = s.replace(/\b(PR|AR|SR|GP\d+)\[[^\]]*\]/g, function (m0, kind) {
       if (ln && kind === 'PR') {
@@ -1768,12 +1858,21 @@
       return '<span class="tok-io">' + m0 + '</span>';
     });
     s = s.replace(/\bP\[[^\]]*\]/g, function (m0) { return '<span class="tok-num">' + m0 + '</span>'; });
-    s = s.replace(/\bON\b/g, '<span class="tok-on">ON</span>');
-    s = s.replace(/\bOFF\b/g, '<span class="tok-off">OFF</span>');
-    s = s.replace(/\b(IF|THEN|ELSE|ENDIF|SELECT|FOR|ENDFOR|TO|JMP|WAIT|TIMEOUT|SKIP|CONDITION|PULSE|END|ABORT|PAUSE|UALM|OVERRIDE|PAYLOAD|UFRAME_NUM|UTOOL_NUM|MOD|DIV|AND|OR|NOT|START|STOP|RESET|Offset|Tool_Offset)\b/g,
-      '<span class="tok-kw">$1</span>');
-    s = s.replace(/\b(FINE|CNT\d+|ACC\d+|max_speed|BREAK|RTCP|Wjnt|PTH)\b/g, '<span class="tok-num">$1</span>');
+    /* The word passes run on the TEXT between tags only: a program named
+     * RESET or START sits in data-call="…" by now, and a keyword span
+     * inside that attribute broke the click-to-open link. */
+    s = outsideTags(s, function (t) {
+      t = t.replace(/\bON\b/g, '<span class="tok-on">ON</span>');
+      t = t.replace(/\bOFF\b/g, '<span class="tok-off">OFF</span>');
+      t = t.replace(/\b(IF|THEN|ELSE|ENDIF|SELECT|FOR|ENDFOR|TO|JMP|WAIT|TIMEOUT|SKIP|CONDITION|PULSE|END|ABORT|PAUSE|UALM|OVERRIDE|PAYLOAD|UFRAME_NUM|UTOOL_NUM|MOD|DIV|AND|OR|NOT|START|STOP|RESET|Offset|Tool_Offset)\b/g,
+        '<span class="tok-kw">$1</span>');
+      return t.replace(/\b(FINE|CNT\d+|ACC\d+|max_speed|BREAK|RTCP|Wjnt|PTH)\b/g, '<span class="tok-num">$1</span>');
+    });
     return s;
+  }
+
+  function outsideTags(s, fn) {
+    return s.split(/(<[^>]*>)/).map(function (part, i) { return i % 2 ? part : fn(part); }).join('');
   }
 
   /* Highlight raw .LS text for the editor overlay. Unlike highlight(), which
@@ -2028,7 +2127,8 @@
       else if (p.parsed.attrs.COMMENT) meta += ' · ' + p.parsed.attrs.COMMENT;
       var dif = robotDiffers(n);
       var item = h('button', {
-        class: 'prog-item' + (n === state.selected ? ' active' : ''),
+        class: 'prog-item' + (n === state.selected ? ' active' : '') + (progDirty(n) ? ' dirty' : ''),
+        'data-prog': n,
         draggable: 'true',
         title: (p.origin.dir ? 'From ' + p.origin.dir + '/ · ' : '') + 'Click to open · drag onto the code view to open side-by-side',
         onclick: function () { setNav(false); activateDoc('P:' + n); }
@@ -2332,10 +2432,18 @@
     });
   }
 
+  /* Highlight-API sets the editor registered point into a <pre> that a
+   * rebuild of the pane throws away; drop them with it. */
+  function clearEditorHighlights() {
+    if (!(window.CSS && CSS.highlights)) return;
+    ['tp-syn-error', 'tp-syn-style', 'tp-syn-unknown', 'tp-find'].forEach(function (k) { CSS.highlights.delete(k); });
+  }
+
   function renderPane() {
     var pane = document.getElementById('pane');
     pane.className = 'pane';
     pane.innerHTML = '';
+    clearEditorHighlights();
     var needsProgram = ['code', 'summary', 'flow', 'positions'].indexOf(state.tab) !== -1;
     if (!Object.keys(state.programs).length && needsProgram) {
       pane.appendChild(h('div', { class: 'placeholder' }, [
@@ -2645,7 +2753,9 @@
     state.docs[pane].forEach(function (id) {
       var tab = h('span', {
         class: 'doc-tab' + (id === state.active[pane] ? ' active' : '') +
-               (DATA_DOCS[id] ? ' data' : ''),
+               (DATA_DOCS[id] ? ' data' : '') +
+               (docIsProg(id) && progDirty(docProg(id)) ? ' dirty' : ''),
+        'data-doc': id,
         title: 'Click to show · drag onto the other half to move it there · middle-click to close',
         draggable: 'true'
       }, [
@@ -2898,13 +3008,14 @@
             h('span', { class: 'title mono', text: 'Editing ' + name }),
             ed.status,
             h('span', { style: 'flex:1' }),
+            ed.findBtn,
             TPS ? ed.snipWrap : null,
             TPS ? h('button', {
               class: 'btn', text: 'Renumber',
               title: 'Number the /MN rows 1, 2, 3… after inserting or deleting lines by hand',
               onclick: function () { ed.ta.value = TPS.renumber(ed.ta.value); ed.paint(); ed.ta.focus(); }
             }) : null,
-            h('button', { class: 'btn primary', text: 'Save', title: 'Save to library — re-parses and re-runs every check', onclick: function () { ed.save(false); } }),
+            h('button', { class: 'btn primary', text: 'Save', title: 'Save to library (Ctrl+S) — re-parses and re-runs every check', onclick: function () { ed.save(false); } }),
             (p.origin.type === 'dir' && state.server)
               ? h('button', { class: 'btn', text: 'Save + disk', title: 'Save to library and to ' + p.origin.path, onclick: function () { ed.save(true); } })
               : null,
@@ -2922,6 +3033,7 @@
               }
             })
           ]));
+          col.appendChild(ed.findBar);
           col.appendChild(ed.el);
           col.appendChild(ed.statusBar);
           col.appendChild(ed.problems);
@@ -3048,6 +3160,16 @@
       }) : null,
       h('button', { class: 'btn subtle', text: 'Export .LS', onclick: function () { exportProgram(p); } }),
       h('button', {
+        class: 'btn subtle' + (state.historyOpen === p.parsed.name ? ' active' : ''),
+        text: 'History' + (versionsOf(p.parsed.name).length ? ' (' + versionsOf(p.parsed.name).length + ')' : ''),
+        title: 'Earlier versions of this program kept in this browser \u2014 every save, import, replace or position edit keeps the text it replaced',
+        onclick: function () {
+          state.historyOpen = state.historyOpen === p.parsed.name ? null : p.parsed.name;
+          state.historySel = 0;
+          render();
+        }
+      }),
+      h('button', {
         class: 'btn subtle', text: 'Remove',
         onclick: function () {
           if (confirm('Remove ' + p.parsed.name + ' from the library? (Your original file is untouched.)')) removeProgram(p.parsed.name);
@@ -3057,7 +3179,65 @@
     pane.appendChild(bar);
     var banner = uploadBanner(p.parsed.name);
     if (banner) pane.appendChild(banner);
-    pane.appendChild(buildCodeBox(p));
+    if (state.historyOpen === p.parsed.name) renderHistory(pane, p);
+    else pane.appendChild(buildCodeBox(p));
+  }
+
+  /* ---- version history panel ----
+   * The versions down the side, newest first; the picked one diffed against
+   * the current text on the right, with Restore. Restoring is itself a
+   * replacement, so the text it displaces lands in the same list. */
+  function renderHistory(pane, p) {
+    var name = p.parsed.name, list = versionsOf(name);
+    pane.appendChild(h('div', { class: 'hist-head' }, [
+      h('span', { class: 'title', text: 'Versions of ' + name }),
+      h('span', { class: 'muted', text: list.length
+        ? list.length + ' earlier version' + (list.length === 1 ? '' : 's') + ' kept in this browser, newest first \u2014 pick one to see what changed since'
+        : 'No earlier versions yet \u2014 one is kept each time a save, import, replace or position edit changes this program.' }),
+      h('span', { style: 'flex:1' }),
+      list.length ? h('button', {
+        class: 'btn subtle', text: 'Delete history',
+        onclick: function () {
+          if (!confirm('Forget all ' + list.length + ' earlier version(s) of ' + name + '? The current program is untouched.')) return;
+          delete state.history[name];
+          persistHistory();
+          render();
+        }
+      }) : null,
+      h('button', { class: 'btn subtle', text: 'Back to code', onclick: function () { state.historyOpen = null; render(); } })
+    ]));
+    if (!list.length) return;
+    var sel = Math.min(state.historySel || 0, list.length - 1);
+    var wrap = h('div', { class: 'hist' });
+    var ul = h('div', { class: 'hist-list' });
+    list.forEach(function (v, i) {
+      ul.appendChild(h('div', {
+        class: 'hist-item' + (i === sel ? ' active' : ''),
+        onclick: function () { state.historySel = i; render(); }
+      }, [
+        h('div', { class: 'hist-when', text: 'until ' + fmtTime(v.t) }),
+        h('div', { class: 'muted', text: v.why + ' \u00b7 ' + v.source.split(/\r\n|\r|\n/).length + ' rows' })
+      ]));
+    });
+    wrap.appendChild(ul);
+    var v = list[sel];
+    var body = h('div', { class: 'hist-body' }, [
+      h('div', { class: 'hist-actions' }, [
+        h('button', {
+          class: 'btn primary', text: 'Restore this version',
+          onclick: function () {
+            if (!confirm('Replace the current ' + name + ' with the version from ' + fmtTime(v.t) + '?\n\nThe current text is kept in the history. The robot is untouched until you send.')) return;
+            restoreVersion(name, v);
+            state.historyOpen = null;
+            render();
+          }
+        }),
+        h('span', { class: 'muted', text: 'Left: that version. Right: the program now. Restoring replaces the library copy only.' })
+      ]),
+      renderDiffBody(v.source, p.source, true, name + ' \u2014 until ' + fmtTime(v.t), name + ' \u2014 current')
+    ]);
+    wrap.appendChild(body);
+    pane.appendChild(wrap);
   }
 
   /* The one live editor (full-page or a split half). Dirty means the text no
@@ -3074,6 +3254,25 @@
     return Object.keys(state.editDrafts).some(function (n) {
       return state.programs[n] && state.editDrafts[n] !== state.programs[n].source;
     });
+  }
+
+  /* One program's draft differs from its saved source. */
+  function progDirty(name) {
+    var d = state.editDrafts[name];
+    return d !== undefined && !!state.programs[name] && d !== state.programs[name].source;
+  }
+
+  /* The ● on a document tab and a sidebar entry whose draft is unsaved.
+   * Painted in place on every keystroke — a render() here would rebuild
+   * the textarea under the typist. */
+  function paintDirtyTabs() {
+    var tabs = document.querySelectorAll('.doc-tab[data-doc]'), i;
+    for (i = 0; i < tabs.length; i++) {
+      var id = tabs[i].getAttribute('data-doc');
+      tabs[i].classList.toggle('dirty', docIsProg(id) && progDirty(docProg(id)));
+    }
+    var items = document.querySelectorAll('.prog-item[data-prog]');
+    for (i = 0; i < items.length; i++) items[i].classList.toggle('dirty', progDirty(items[i].getAttribute('data-prog')));
   }
 
   /* A program was renamed by editing its /PROG header — every open doc
@@ -3112,30 +3311,79 @@
 
     /* ---- syntax check ----
      * Every repaint re-checks the whole listing (a few hundred lines is
-     * nothing) and marks the rows in the overlay: a wavy underline for what
-     * the controller will refuse, a dotted one for a form no robot in the
-     * dictionary uses. The strip under the editor explains the row the caret
-     * is on; the list jumps to any of them. */
+     * nothing) and marks what it found in the overlay: a wavy underline for
+     * what the controller will refuse, a dashed one for a form the controller
+     * writes differently, a dotted one for a form nothing vouches for. A
+     * verdict that names its span is underlined THERE — the speed, the stray
+     * word, the unmatched bracket — and the rest of the row stays plain; only
+     * a row-level finding (no line number, no " ;") marks the whole row. The
+     * spans go through the CSS Custom Highlight API, so the overlay's markup
+     * is untouched; a browser without it falls back to marking the row. The
+     * strip under the editor explains the row the caret is on; the list
+     * jumps to any of them. */
     var issues = [], byRow = {};
     var statusBar = h('div', { class: 'editor-status' });
     var problems = h('div', { class: 'editor-problems' });
     problems.hidden = true;
+    var LN_CLASS = { error: 'ln-err', style: 'ln-sty', unknown: 'ln-unk' };
+    var MSG_CLASS = { error: 'err', style: 'sty', unknown: 'unk' };
+    var LEVEL_RANK = { error: 3, style: 2, unknown: 1 };
+    var canSpan = !!(window.Highlight && window.CSS && CSS.highlights);
 
     function paint() {
       var rows = ta.value.split('\n');
       issues = TPS ? TPS.checkSource(ta.value, TP_DICT) : [];
       byRow = {};
       issues.forEach(function (iss) {
-        iss.rows.forEach(function (r) { if (!byRow[r] || iss.level === 'error') byRow[r] = iss; });
+        iss.rows.forEach(function (r) { if (!byRow[r] || LEVEL_RANK[iss.level] > LEVEL_RANK[byRow[r].level]) byRow[r] = iss; });
       });
       // the trailing newline keeps the last line scrollable in step with the textarea
       hl.innerHTML = rows.map(function (raw, i) {
         var html = highlightSourceLine(raw);
         var iss = byRow[i];
-        return iss ? '<span class="' + (iss.level === 'error' ? 'ln-err' : 'ln-unk') + '">' + html + '</span>' : html;
+        if (!iss || (canSpan && iss.spans && iss.spans.length)) return html;
+        return '<span class="' + LN_CLASS[iss.level] + '">' + html + '</span>';
       }).join('\n') + '\n';
+      if (canSpan) paintSpans(rows);
+      if (findState.open) refind(false);
       syncScroll();
       renderStatus();
+    }
+
+    /* Character offsets into the textarea → DOM positions in the overlay,
+     * for the Highlight API. The overlay's text IS the textarea's text (the
+     * markup only wraps it), so an offset into ta.value is an offset into
+     * the <pre>'s text nodes, found by binary search over their starts. */
+    function overlayLocator() {
+      var nodes = [], starts = [], total = 0;
+      var walker = document.createTreeWalker(hl, NodeFilter.SHOW_TEXT), tn;
+      while ((tn = walker.nextNode())) { nodes.push(tn); starts.push(total); total += tn.nodeValue.length; }
+      return function (ch) {
+        if (!nodes.length) return null;
+        var lo = 0, hi = nodes.length - 1;
+        while (lo < hi) { var mid = (lo + hi + 1) >> 1; if (starts[mid] <= ch) lo = mid; else hi = mid - 1; }
+        return { node: nodes[lo], offset: Math.max(0, Math.min(ch - starts[lo], nodes[lo].nodeValue.length)) };
+      };
+    }
+    function rangeAt(locate, s, e) {
+      var a = locate(s), b = locate(e);
+      if (!a || !b) return null;
+      var r = new Range();
+      r.setStart(a.node, a.offset);
+      r.setEnd(b.node, b.offset);
+      return r;
+    }
+    function paintSpans(rows) {
+      var locate = overlayLocator();
+      var sets = { error: new Highlight(), style: new Highlight(), unknown: new Highlight() };
+      issues.forEach(function (iss) {
+        (iss.spans || []).forEach(function (sp) {
+          var base = rowStart(rows, sp.row);
+          var r = rangeAt(locate, base + sp.start, base + sp.end);
+          if (r) sets[iss.level].add(r);
+        });
+      });
+      Object.keys(sets).forEach(function (l) { CSS.highlights.set('tp-syn-' + l, sets[l]); });
     }
     /* The overlay must have EXACTLY the textarea's client box. The textarea
      * carries scrollbars and the overlay does not, so with inset:0 the
@@ -3203,9 +3451,10 @@
           text: it.key + (it.name ? ' : ' + it.name : ' — no comment on the robot')
         }));
       }
-      var errs = issues.filter(function (i) { return i.level === 'error'; }).length;
-      var unks = issues.length - errs;
+      var errs = 0, stys = 0, unks = 0;
+      issues.forEach(function (i) { if (i.level === 'error') errs++; else if (i.level === 'style') stys++; else unks++; });
       var text = errs ? errs + ' syntax error' + (errs === 1 ? '' : 's') : 'no syntax errors';
+      if (stys) text += ' · ' + stys + ' style note' + (stys === 1 ? '' : 's');
       if (unks) text += ' · ' + unks + ' unrecognised form' + (unks === 1 ? '' : 's');
       if (!TP_DICT) text += ' · grammar only (no shape dictionary built)';
       statusBar.appendChild(h('span', { class: 'msg' + (errs ? ' err' : ''), text: text }));
@@ -3215,7 +3464,7 @@
       }));
       var iss = byRow[caretRow()];
       if (iss) {
-        statusBar.appendChild(h('span', { class: 'msg ' + (iss.level === 'error' ? 'err' : 'unk'), text: (iss.num !== null ? 'line ' + iss.num + ': ' : '') + iss.message }));
+        statusBar.appendChild(h('span', { class: 'msg ' + MSG_CLASS[iss.level], text: (iss.num !== null ? 'line ' + iss.num + ': ' : '') + iss.message }));
         if (iss.nearest && iss.nearest.length) {
           statusBar.appendChild(h('span', { class: 'msg', text: 'closest forms your robots use:' }));
           iss.nearest.forEach(function (n) { statusBar.appendChild(h('span', { class: 'ex', text: n.example, title: 'used ' + n.count + ' time' + (n.count === 1 ? '' : 's') })); });
@@ -3231,6 +3480,12 @@
                 ? 'your robots use this form (as ' + r.example + ')'
                 : 'this form appears ' + r.count + ' time' + (r.count === 1 ? '' : 's') + ' on your robots'
             }));
+          } else if (r.level === 'ok' && (r.grammar || r.builtin)) {
+            statusBar.appendChild(h('span', {
+              class: 'msg',
+              text: r.builtin ? 'a standard form — no program on your robots happens to use it'
+                              : 'well-formed — no program on your robots uses this exact form'
+            }));
           }
         }
       }
@@ -3238,7 +3493,7 @@
       issues.forEach(function (i) {
         problems.appendChild(h('div', { onclick: function () { gotoRow(i.row); } }, [
           h('span', { class: 'n', text: i.num !== null ? String(i.num) : '?' }),
-          h('span', { class: i.level === 'error' ? 'msg err' : 'msg unk', text: i.message })
+          h('span', { class: 'msg ' + MSG_CLASS[i.level], text: i.message })
         ]));
       });
     }
@@ -3267,7 +3522,7 @@
       var start = pos + first.indexOf(':') + 1 + (/^\s*\d+:  /.test(first) ? 2 : 0);
       ta.focus();
       ta.setSelectionRange(start, pos + first.length - 2);
-      paint();
+      afterEdit();
     }
 
     var snipWrap = h('span', { class: 'snip-wrap' });
@@ -3334,15 +3589,242 @@
       onclick: openMenu
     }));
 
+    /* ---- find / replace / go to line ----
+     * A bar under the toolbar, hidden until Ctrl+F (Ctrl+H lands in the
+     * replace box, Ctrl+G in go-to-line). Every match lights up in the
+     * overlay through the Highlight API; the CURRENT one is the textarea's
+     * own selection, so Replace means "replace what is selected, then find
+     * the next" — the same gesture as every other editor. Go to line takes
+     * the TP line number (the "12:" the listing prints), not the file row. */
+    var findState = { open: false, matches: [], re: null };
+    function optBtn(label, title) {
+      var b = h('button', { class: 'btn opt', text: label, title: title });
+      b.on = false;
+      b.addEventListener('click', function () { b.on = !b.on; b.classList.toggle('active', b.on); refind(true); fIn.focus(); });
+      return b;
+    }
+    var fIn = h('input', { type: 'search', placeholder: 'Find\u2026', 'aria-label': 'Find in this program' });
+    var fCase = optBtn('Aa', 'Match case'), fWord = optBtn('|w|', 'Whole word'), fRegex = optBtn('.*', 'Regular expression');
+    var fCount = h('span', { class: 'find-count muted' });
+    var rIn = h('input', { type: 'text', placeholder: 'Replace with\u2026', 'aria-label': 'Replace with' });
+    var gIn = h('input', { type: 'text', inputmode: 'numeric', class: 'find-goto', placeholder: 'Line', 'aria-label': 'Go to TP line' });
+    var findBar = h('div', { class: 'editor-find' }, [
+      h('span', { class: 'find-group' }, [
+        fIn, fCase, fWord, fRegex, fCount,
+        h('button', { class: 'btn subtle', text: '\u2191', title: 'Previous match (Shift+F3, Shift+Enter)', onclick: function () { step(-1); } }),
+        h('button', { class: 'btn subtle', text: '\u2193', title: 'Next match (F3, Enter)', onclick: function () { step(1); } })
+      ]),
+      h('span', { class: 'find-group' }, [
+        rIn,
+        h('button', { class: 'btn', text: 'Replace', title: 'Replace the selected match and move to the next', onclick: replaceOne }),
+        h('button', { class: 'btn', text: 'Replace all', title: 'Replace every match in this program', onclick: replaceAll })
+      ]),
+      h('span', { class: 'find-group' }, [
+        h('span', { class: 'muted', text: 'Go to line' }),
+        gIn,
+        h('button', { class: 'btn subtle', text: 'Go', title: 'Jump to that TP line number (Ctrl+G)', onclick: gotoTyped })
+      ]),
+      h('span', { style: 'flex:1' }),
+      h('button', { class: 'btn subtle', text: '\u00d7', title: 'Close (Escape)', onclick: closeFind })
+    ]);
+    findBar.hidden = true;
+    var findBtn = h('button', {
+      class: 'btn subtle', text: 'Find',
+      title: 'Find and replace in this program (Ctrl+F, Ctrl+H) \u00b7 go to a line (Ctrl+G)',
+      onclick: function () { if (findState.open) closeFind(); else openFind(false); }
+    });
+
+    function findRegex() {
+      var q = fIn.value;
+      if (!q) return null;
+      var pat = fRegex.on ? q : q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (fWord.on) pat = '(?<![A-Za-z0-9_])(?:' + pat + ')(?![A-Za-z0-9_])';
+      try { return new RegExp(pat, 'g' + (fCase.on ? '' : 'i')); } catch (e) { return { error: true }; }
+    }
+    function cloneRe(re, global) { return new RegExp(re.source, re.flags.replace('g', '') + (global ? 'g' : '')); }
+    function paintCount() {
+      var n = findState.matches.length;
+      if (!findState.re) { fCount.textContent = findState.badPattern ? 'not a valid pattern' : ''; return; }
+      var s = ta.selectionStart, e = ta.selectionEnd, cur = -1;
+      for (var k = 0; k < n; k++) if (findState.matches[k][0] === s && findState.matches[k][1] === e) { cur = k; break; }
+      fCount.textContent = !n ? 'no matches' : (cur === -1 ? n : (cur + 1) + ' of ' + n) + (n === 5000 ? '+' : '');
+    }
+    /* Recompute the match list (and the overlay lights). moveTo selects the
+     * first match at or after the caret — what typing into the box wants;
+     * a repaint after an edit only refreshes the lights. */
+    function refind(moveTo) {
+      var re = findRegex();
+      findState.matches = [];
+      findState.re = null;
+      findState.badPattern = !!(re && re.error);
+      if (canSpan) CSS.highlights.delete('tp-find');
+      if (re && !re.error) {
+        findState.re = re;
+        var v = ta.value, m;
+        while ((m = re.exec(v)) !== null && findState.matches.length < 5000) {
+          if (!m[0].length) { re.lastIndex++; continue; }
+          findState.matches.push([m.index, m.index + m[0].length]);
+        }
+        if (canSpan) {
+          var locate = overlayLocator(), set = new Highlight();
+          findState.matches.forEach(function (mm) { var r = rangeAt(locate, mm[0], mm[1]); if (r) set.add(r); });
+          CSS.highlights.set('tp-find', set);
+        }
+      }
+      if (moveTo && findState.matches.length) {
+        var from = ta.selectionStart, i = 0;
+        for (var k = 0; k < findState.matches.length; k++) if (findState.matches[k][0] >= from) { i = k; break; }
+        selectMatch(i);
+      } else paintCount();
+    }
+    function charWidth() {
+      var probe = h('span', { text: 'MMMMMMMMMM' });
+      hl.appendChild(probe);
+      var w = probe.getBoundingClientRect().width / 10;
+      probe.remove();
+      return w || 8;
+    }
+    /* Bring the selection into view. The textarea does not scroll to a
+     * selection set from script, so the row is placed by line height and the
+     * column by the measured glyph width — the font is monospace, so that
+     * is exact. */
+    function revealSelection() {
+      var rows = ta.value.split('\n');
+      var row = ta.value.slice(0, ta.selectionStart).split('\n').length - 1;
+      var col = ta.selectionStart - rowStart(rows, row);
+      var lh = parseFloat(getComputedStyle(ta).lineHeight) || 20;
+      var top = row * lh + 10;
+      if (top < ta.scrollTop + 4 || top + lh > ta.scrollTop + ta.clientHeight - 4) ta.scrollTop = Math.max(0, top - ta.clientHeight / 2);
+      var left = col * charWidth() + 14;
+      if (left < ta.scrollLeft + 4 || left > ta.scrollLeft + ta.clientWidth - 80) ta.scrollLeft = Math.max(0, left - ta.clientWidth / 3);
+    }
+    function selectMatch(i) {
+      var m = findState.matches[i];
+      if (!m) return;
+      ta.setSelectionRange(m[0], m[1]);
+      revealSelection();
+      paintCount();
+      renderStatus();
+    }
+    function step(dir) {
+      if (!findState.re) refind(false);
+      var ms = findState.matches, n = ms.length, s = ta.selectionStart, e = ta.selectionEnd, i = -1, k;
+      if (!n) { paintCount(); return; }
+      if (dir > 0) {
+        for (k = 0; k < n; k++) if (ms[k][0] > s || (ms[k][0] === s && ms[k][1] > e)) { i = k; break; }
+        if (i === -1) i = 0;
+      } else {
+        for (k = n - 1; k >= 0; k--) if (ms[k][0] < s) { i = k; break; }
+        if (i === -1) i = n - 1;
+      }
+      selectMatch(i);
+    }
+    /* Edits made from script (replace, snippets) do not fire 'input', so
+     * they call this to do what a keystroke does: keep the draft, repaint,
+     * refresh the dirty marks. */
+    function afterEdit() {
+      state.editDrafts[oldName] = ta.value;
+      paint();
+      paintDirtyTabs();
+    }
+    function replaceOne() {
+      if (!findState.re) refind(false);
+      var ms = findState.matches, s = ta.selectionStart, e = ta.selectionEnd, cur = -1;
+      for (var k = 0; k < ms.length; k++) if (ms[k][0] === s && ms[k][1] === e) { cur = k; break; }
+      if (cur === -1) { step(1); return; }   // nothing selected yet: show the first match first
+      var text = ta.value.slice(s, e);
+      var rep = fRegex.on ? text.replace(cloneRe(findState.re, false), rIn.value) : rIn.value;
+      ta.setRangeText(rep, s, e, 'end');
+      afterEdit();
+      step(1);
+      ta.focus();
+    }
+    function replaceAll() {
+      if (!findState.re) refind(false);
+      var n = findState.matches.length;
+      if (!n) { paintCount(); return; }
+      var v = rIn.value;
+      var out = ta.value.replace(cloneRe(findState.re, true), fRegex.on ? v : function () { return v; });
+      var caret = ta.selectionStart;
+      ta.setRangeText(out, 0, ta.value.length, 'preserve');
+      ta.setSelectionRange(Math.min(caret, out.length), Math.min(caret, out.length));
+      afterEdit();
+      toast('Replaced ' + n + ' occurrence' + (n === 1 ? '' : 's') + ' \u2014 not saved yet');
+      ta.focus();
+    }
+    function gotoTpLine(n) {
+      var rows = ta.value.split('\n');
+      var re = new RegExp('^\\s*' + n + '\\s*:');
+      for (var i = 0; i < rows.length; i++) if (re.test(rows[i])) { gotoRow(i); return true; }
+      if (n >= 1 && n <= rows.length) { gotoRow(n - 1); return true; }   // no such TP line: the file row, then
+      return false;
+    }
+    function gotoTyped() {
+      var n = parseInt(gIn.value, 10);
+      if (!n) { gIn.focus(); return; }
+      if (!gotoTpLine(n)) toast('No line ' + n + ' in this program.');
+    }
+    function openFind(withReplace) {
+      findBar.hidden = false;
+      findState.open = true;
+      var sel = ta.value.slice(ta.selectionStart, ta.selectionEnd);
+      if (sel && sel.indexOf('\n') === -1 && sel.length <= 80) fIn.value = sel;
+      refind(true);
+      var box = withReplace ? rIn : fIn;
+      box.focus();
+      box.select();
+    }
+    function openGoto() {
+      findBar.hidden = false;
+      findState.open = true;
+      refind(false);
+      gIn.focus();
+      gIn.select();
+    }
+    function closeFind() {
+      findBar.hidden = true;
+      findState.open = false;
+      if (canSpan) CSS.highlights.delete('tp-find');
+      ta.focus();
+    }
+    fIn.addEventListener('input', function () { refind(true); });
+    fIn.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); step(e.shiftKey ? -1 : 1); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
+    });
+    rIn.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); replaceOne(); rIn.focus(); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
+    });
+    gIn.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); gotoTyped(); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
+    });
+    /* Editor keys. Ctrl+S saves to the library — the safe target, never the
+     * robot. The same handler sits on the find bar so the shortcuts work
+     * from its boxes too. */
+    function editorKeys(e) {
+      var mod = e.ctrlKey || e.metaKey;
+      if (mod && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); openFind(false); }
+      else if (mod && !e.altKey && (e.key === 'h' || e.key === 'H')) { e.preventDefault(); openFind(true); }
+      else if (mod && !e.shiftKey && !e.altKey && (e.key === 'g' || e.key === 'G')) { e.preventDefault(); openGoto(); }
+      else if (mod && !e.shiftKey && !e.altKey && (e.key === 's' || e.key === 'S')) { e.preventDefault(); save(false); }
+      else if (e.key === 'F3') { e.preventDefault(); if (!findState.open) openFind(false); else step(e.shiftKey ? -1 : 1); }
+      else if (e.key === 'Escape' && findState.open && e.target === ta) { closeFind(); }
+    }
+    ta.addEventListener('keydown', editorKeys);
+    findBar.addEventListener('keydown', editorKeys);
+
     ta.addEventListener('input', function () {
       state.editDrafts[oldName] = ta.value;
+      paintDirtyTabs();
       if (repaintQueued) return;
       repaintQueued = true;
       requestAnimationFrame(function () { repaintQueued = false; paint(); });
     });
     ta.addEventListener('scroll', syncScroll);
-    ta.addEventListener('keyup', renderStatus);
-    ta.addEventListener('click', renderStatus);
+    ta.addEventListener('keyup', function () { renderStatus(); if (findState.open) paintCount(); });
+    ta.addEventListener('click', function () { renderStatus(); if (findState.open) paintCount(); });
     paint();
     /* Size the overlay once in the DOM, and open at the CODE, not the
      * header — nobody edits /ATTR. The caret lands after /MN and the view
@@ -3375,6 +3857,8 @@
      * not. Editing the RIGHT half must not yank the left half over to the
      * saved program, so only a left/full edit moves the selection. */
     function store(src) {
+      var cur = state.programs[oldName];
+      if (cur && cur.source !== src) recordVersion(oldName, cur.source, 'replaced by an editor save');
       var parsed = P.parseLS(src, oldName + '.LS');
       if (parsed.name !== oldName) {
         delete state.programs[oldName];
@@ -3446,6 +3930,7 @@
       // repaint hook all live in here — hand them out so any editor surface
       // (full page or a split half) can mount them
       statusBar: statusBar, problems: problems, snipWrap: snipWrap,
+      findBar: findBar, findBtn: findBtn,
       paint: paint, renderStatus: renderStatus
     };
   }
@@ -3465,13 +3950,14 @@
       status,
       h('span', { style: 'flex:1' }),
       codeSizeControl(),
+      ed.findBtn,
       TPS ? ed.snipWrap : null,
       TPS ? h('button', {
         class: 'btn', text: 'Renumber',
         title: 'Number the /MN rows 1, 2, 3… after inserting or deleting lines by hand',
         onclick: function () { ta.value = TPS.renumber(ta.value); ed.paint(); ta.focus(); }
       }) : null,
-      h('button', { class: 'btn primary', text: 'Save to library', onclick: function () { save(false); } }),
+      h('button', { class: 'btn primary', text: 'Save to library', title: 'Ctrl+S', onclick: function () { save(false); } }),
       (p.origin.type === 'dir' && state.server)
         ? h('button', { class: 'btn', text: 'Save to library + disk', title: p.origin.path, onclick: function () { save(true); } })
         : null,
@@ -3481,6 +3967,7 @@
       h('button', { class: 'btn subtle', text: 'Cancel', onclick: function () { state.editing = false; delete state.editDrafts[oldName]; render(); } })
     ]);
     pane.appendChild(bar);
+    pane.appendChild(ed.findBar);
     var banner = uploadBanner(p.parsed.name);
     if (banner) pane.appendChild(banner);
     if (p.origin.type === 'robot' && !(state.server && state.robot.ip)) {
@@ -5166,6 +5653,48 @@
       pane.appendChild(h('p', { class: 'muted', text: 'This program has no /POS section (it may use only position registers).' }));
       return;
     }
+    /* Every value is a field: type, then Enter or Tab, and the number is
+     * written into the /POS block of the library copy — only that number;
+     * the controller's own layout around it stays. The table is NOT
+     * re-rendered on a commit (that would take the focus away mid-row); the
+     * program object is swapped underneath and the field shows the stored
+     * value. While the editor holds unsaved text for this program the
+     * fields are locked, since two copies of the source would diverge. */
+    var name = p.parsed.name;
+    var locked = state.editDrafts[name] !== undefined;
+
+    function writeField(id, group, field, value) {
+      var cur = state.programs[name];
+      if (!cur) return false;
+      var src2 = P.setPositionField(cur.source, id, group, field, value);
+      if (src2 === null) { toast('Could not find that field in the /POS section of ' + name + '.'); return false; }
+      if (src2 !== cur.source) {
+        recordVersion(name, cur.source, 'replaced by a position edit');
+        replaceProgramSource(name, src2);
+        renderTabs();   // the Checks count may move; the table stays put
+      }
+      return true;
+    }
+    function field(value, cls, commit) {
+      var inp = h('input', {
+        class: 'pos-in' + (cls ? ' ' + cls : ''), type: 'text', spellcheck: 'false',
+        title: locked ? 'Save or discard the editor text for ' + name + ' first' : 'Type a value, then Enter or Tab to write it into the program \u2014 Escape puts the old one back'
+      });
+      inp.value = value;
+      if (locked) inp.disabled = true;
+      var shown = value;
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+        else if (e.key === 'Escape') { inp.value = shown; inp.blur(); }
+      });
+      inp.addEventListener('change', function () {
+        var r = commit(inp.value.trim());
+        if (r === false) inp.value = shown;
+        else { shown = r; inp.value = r; }
+      });
+      return inp;
+    }
+
     var wrap = h('div', { class: 'table-wrap' });
     var tbl = h('table', { class: 'pos-table' });
     var head = h('tr');
@@ -5179,20 +5708,35 @@
         tr.appendChild(h('td', { class: 'n', text: gi === 0 ? 'P[' + pos.id + ']' : '' }));
         tr.appendChild(h('td', { text: gi === 0 ? pos.name : '' }));
         tr.appendChild(h('td', { class: 'n', text: g.group }));
-        tr.appendChild(h('td', { class: 'n', text: g.uf === null ? '—' : g.uf }));
-        tr.appendChild(h('td', { class: 'n', text: g.ut === null ? '—' : g.ut }));
-        tr.appendChild(h('td', { class: 'n', text: g.config || (g.rep === 'joint' ? 'joint' : '—') }));
+        ['UF', 'UT'].forEach(function (k) {
+          var cur = k === 'UF' ? g.uf : g.ut;
+          tr.appendChild(h('td', { class: 'n' }, [cur === null ? document.createTextNode('\u2014') : field(String(cur), 'small', function (text) {
+            if (!/^\d{1,2}$/.test(text)) { toast(k + ' is a whole number, 0\u201399.'); return false; }
+            return writeField(pos.id, g.group, k, parseInt(text, 10)) ? String(parseInt(text, 10)) : false;
+          })]));
+        });
+        tr.appendChild(h('td', { class: 'n' }, [g.config ? field(g.config, 'cfg', function (text) {
+          if (!text || /'/.test(text)) { toast('A configuration string looks like N U T, 0, 0, 0 \u2014 no quotes.'); return false; }
+          return writeField(pos.id, g.group, 'CONFIG', text) ? text : false;
+        }) : document.createTextNode(g.rep === 'joint' ? 'joint' : '\u2014')]));
         var keys = g.rep === 'joint' ? ['J1', 'J2', 'J3', 'J4', 'J5', 'J6'] : ['X', 'Y', 'Z', 'W', 'P', 'R'];
         keys.forEach(function (k) {
           var c = g.coords[k];
-          tr.appendChild(h('td', { class: 'n', text: c ? c.value.toFixed(3) : '—' }));
+          tr.appendChild(h('td', { class: 'n' }, [c ? field(c.value.toFixed(3), '', function (text) {
+            var v = parseFloat(text);
+            if (!isFinite(v)) { toast('Not a number: ' + text); return false; }
+            return writeField(pos.id, g.group, k, v) ? v.toFixed(3) : false;
+          }) : document.createTextNode('\u2014')]));
         });
         tbl.appendChild(tr);
       });
     });
     wrap.appendChild(tbl);
     pane.appendChild(wrap);
-    pane.appendChild(h('p', { class: 'muted', text: 'Cartesian values in mm / deg in the position’s user frame (UF). Joint-format rows show axis angles J1–J6.' }));
+    pane.appendChild(h('p', { class: 'muted', text: 'Cartesian values in mm / deg in the position\u2019s user frame (UF). Joint-format rows show axis angles J1\u2013J6. ' +
+      (locked
+        ? 'The editor holds unsaved text for this program \u2014 save or discard it before editing positions here.'
+        : 'Values are editable: Enter or Tab writes the number into the /POS section of the library copy (the text it replaces is kept in History). The robot is untouched until you send the program.') }));
   }
 
   /* ---- cross-reference tab ---- */
@@ -5483,6 +6027,7 @@
     progs.forEach(function (n) {
       var p = state.programs[n];
       undo[n] = p.source;
+      recordVersion(n, p.source, 'replaced by Find & Replace');
       var src = P.applyLineEdits(p.source, byProg[n]);
       var parsed = P.parseLS(src, n + '.LS');
       state.programs[n] = { parsed: parsed, analysis: A.analyzeProgram(parsed), source: src, origin: p.origin };
@@ -5540,6 +6085,7 @@
     Object.keys(r.undo).forEach(function (n) {
       var p = state.programs[n];
       if (!p) return;
+      recordVersion(n, p.source, 'replaced by undoing Find & Replace');
       var parsed = P.parseLS(r.undo[n], n + '.LS');
       state.programs[n] = { parsed: parsed, analysis: A.analyzeProgram(parsed), source: r.undo[n], origin: p.origin };
     });
@@ -7070,6 +7616,14 @@
 
     window.addEventListener('popstate', onPopState);
 
+    /* Closing or reloading the tab with unsaved editor text asks first.
+     * Drafts live in memory only, so this is the last line of defence. */
+    window.addEventListener('beforeunload', function (e) {
+      if (!editorDirty()) return;
+      e.preventDefault();
+      e.returnValue = '';   // what Chrome still wants in order to show the prompt
+    });
+
     // Ctrl+E: cross-reference the selection (Studio 5000 habit)
     window.addEventListener('keydown', function (e) {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'e' || e.key === 'E')) {
@@ -7105,6 +7659,9 @@
       if (!confirm('Remove all programs from the ' + libLabel(state.library) + ' library? Other robots’ libraries and your original files are untouched.')) return;
       state.programs = {};
       state.selected = null;
+      state.history = {};
+      state.historyOpen = null;
+      try { localStorage.removeItem(histKey(state.library)); } catch (e) { /* storage unavailable */ }
       rebuildDerived();
       persist();
       render();

@@ -18,10 +18,19 @@
  *
  * check() answers with a level:
  *   'error'   — the grammar is sure the controller will refuse it
- *   'unknown' — nothing is provably wrong, but no robot in the dictionary
- *               uses this form (a new option, a typo in a keyword, or just a
- *               form these cells never needed)
- *   'ok'      — a known shape (with how often it appears, and an example)
+ *   'style'   — the controller WRITES this differently (R[1]=(-1), F[1]=(ON),
+ *               CALL P((-90))); it may well load, and is rewritten if it does.
+ *               Never blocks an upload
+ *   'unknown' — nothing is provably wrong, but the grammar has no rule for
+ *               the form and no robot in the dictionary uses it, or a word in
+ *               an expression is not one the grammar knows
+ *   'ok'      — a known shape (with how often it appears, and an example), a
+ *               standard form from the manual, or a form the grammar itself
+ *               vouches for. A line the grammar approves is never "unknown"
+ *               merely because this plant's robots happen not to use it
+ * Every verdict but 'ok' names WHERE when it can: `at` is [start, end) into
+ * the instruction text, so the editor underlines the token at fault — the
+ * speed, the stray word, the unmatched bracket — rather than the whole row.
  * The controller's own translator remains the final authority; the upload
  * path's snapshot-and-restore is the backstop for what this cannot see.
  *
@@ -36,6 +45,7 @@
   function normalize(text) {
     var t = String(text == null ? '' : text).replace(/\s*;\s*$/, '').trim();
     t = t.replace(/'[^']*'/g, "'s'");                                     // string literals
+    t = t.replace(/\bMESSAGE\[[^\]]*\]/g, 'MESSAGE[s]');                  // pendant message text
     t = t.replace(/\$[A-Za-z0-9_.\[\]]+/g, '$sysvar');                     // $MCR.$GENOVERRIDE
     t = t.replace(/\b(CALL|RUN)\s+[A-Za-z_][A-Za-z0-9_]*/g, '$1 PROG');    // program names
     t = t.replace(/\[\s*GP\d+\s*:\s*\d+(?:\s*,\s*\d+)?\s*(?::[^\]]*)?\]/g, '[GPn:n]');
@@ -47,22 +57,35 @@
     return t;
   }
 
-  /* ---------- structural checks (certain errors) ---------- */
+  /* ---------- structural checks (certain errors) ----------
+   * Every verdict can say WHERE: `at` is [start, end) into the text the rule
+   * was handed, and callers add their own offset so the span lands in the
+   * whole instruction. Length-preserving blanking keeps those offsets true. */
+
+  function blankStrings(s) {
+    return s.replace(/'[^']*'/g, function (m) { return "'" + spaces(m.length - 2) + "'"; });
+  }
+  function spaces(n) { var o = ''; while (n-- > 0) o += ' '; return o; }
+  // the inside of every [ ] (one level of nesting) to blanks — a comment can
+  // hold anything, including the very characters the rules look for
+  function blankBrackets(s) {
+    return s.replace(new RegExp(BR, 'g'), function (m) { return '[' + spaces(m.length - 2) + ']'; });
+  }
 
   function unbalanced(t) {
     var quotes = (t.match(/'/g) || []).length;
-    if (quotes % 2) return 'a string is missing its closing quote';
-    var s = t.replace(/'[^']*'/g, "''");
-    var paren = 0, brack = 0, i, c;
+    if (quotes % 2) return { error: 'a string is missing its closing quote', at: [t.lastIndexOf("'"), t.length] };
+    var s = blankStrings(t);
+    var parens = [], bracks = [], i, c;
     for (i = 0; i < s.length; i++) {
       c = s[i];
-      if (c === '(') paren++;
-      else if (c === ')') { if (--paren < 0) return 'a ")" with no "(" before it'; }
-      else if (c === '[') brack++;
-      else if (c === ']') { if (--brack < 0) return 'a "]" with no "[" before it'; }
+      if (c === '(') parens.push(i);
+      else if (c === ')') { if (!parens.length) return { error: 'a ")" with no "(" before it', at: [i, i + 1] }; parens.pop(); }
+      else if (c === '[') bracks.push(i);
+      else if (c === ']') { if (!bracks.length) return { error: 'a "]" with no "[" before it', at: [i, i + 1] }; bracks.pop(); }
     }
-    if (paren) return paren === 1 ? 'a "(" is never closed' : paren + ' "(" are never closed';
-    if (brack) return brack === 1 ? 'a "[" is never closed' : brack + ' "[" are never closed';
+    if (parens.length) return { error: parens.length === 1 ? 'a "(" is never closed' : parens.length + ' "(" are never closed', at: [parens[0], s.length] };
+    if (bracks.length) return { error: bracks.length === 1 ? 'a "[" is never closed' : bracks.length + ' "[" are never closed', at: [bracks[0], s.length] };
     return null;
   }
 
@@ -101,6 +124,25 @@
   var TARGET = new RegExp('^(?:' + ITEM + '|\\$[A-Za-z0-9_.$\\[\\]]+|UFRAME_NUM|UTOOL_NUM|OVERRIDE|PAYLOAD|TIMER_OVERLAP\\[\\d+\\])\\s*$');
   var POS = '(?:P|PR)' + BR;
 
+  /* Words that may stand bare inside an expression or condition — anything
+   * else that is not an item (WORD[...]), a number or a $variable is a typo
+   * or a form the grammar does not know, and is underlined on its own. */
+  var EXPR_WORDS = /^(?:ON|OFF|AND|OR|NOT|MOD|DIV|LPOS|JPOS|PULSE|START|STOP|RESET|sec|msec|mm|deg|STRLEN|FINDSTR|SUBSTR|SQRT|SIN|COS|TAN|ASIN|ACOS|ATAN|ATAN2|LN|EXP|ABS|TRUNC|ROUND|max_speed|TIMEOUT|LBL|UF|UT|GP\d+)$/;
+
+  function strayWord(s, off) {
+    var b = blankStrings(s);
+    b = blankBrackets(b);
+    b = b.replace(/\$[A-Za-z0-9_.$\[\]]+/g, function (m) { return spaces(m.length); });
+    var re = /[A-Za-z_][A-Za-z0-9_]*/g, m;
+    while ((m = re.exec(b)) !== null) {
+      var w = m[0];
+      if (b[m.index + w.length] === '[') continue;            // an item: WORD[...]
+      if (EXPR_WORDS.test(w)) continue;
+      return { unknown: '"' + w + '" is not a register, I/O point, number, keyword or operator the grammar knows', at: [off + m.index, off + m.index + w.length] };
+    }
+    return null;
+  }
+
   var MOTION_SPEED = {
     J: new RegExp('^(?:\\d+|' + REG + ')%$'),
     L: new RegExp('^(?:(?:\\d+(?:\\.\\d+)?|' + REG + ')(?:mm\\/sec|cm\\/min|inch\\/min|deg\\/sec|sec|msec)|max_speed|WELD_SPEED)$'),
@@ -115,24 +157,29 @@
     /^T[BA]\s+[^,]+,.+$/,                       // TB 0.5sec,DO[1]=ON · TA 0.2sec,CALL PROG
     /^DB\s+[^,]+,.+$/,                          // DB 100mm,DO[1]=ON
     new RegExp('^Skip,LBL' + BR + '(?:,PR' + BR + '=[LJ]POS)?$'),
-    /^TIME BEFORE .+$/, /^TIME AFTER .+$/, /^DISTANCE BEFORE .+$/, /^Track .+$/
+    /^TIME BEFORE .+$/, /^TIME AFTER .+$/, /^DISTANCE BEFORE .+$/, /^Track .+$/,
+    // arc and spot welding — the instruction's own options, written as the controller does
+    new RegExp('^Arc Start' + BR + '$'), new RegExp('^Arc End' + BR + '$'), /^Arc Start\[.*\]$/, /^Arc End\[.*\]$/,
+    new RegExp('^Weave (?:Sine|Circle|Figure 8|L-Shape|Sine 2|Circle 2|Figure 8 2|L-Shape 2)' + BR + '$'), /^Weave End$/,
+    new RegExp('^SPOT' + BR + '$'), new RegExp('^Search Start' + BR + '$'), /^Search End$/
   ];
   var MOTION_HEAD = new RegExp('^([JLCAS])\\s+(' + POS + ')(\\s*)(.*)$');
   var SECOND_POS = new RegExp('^' + POS + '\\s+');
-  var OPTION_START = /\s+(?=(?:ACC|Offset|Tool_Offset|Wjnt|RTCP|BREAK|PTH|INC|COORD|MROT|CTV|PSPD|VOFFSET|AP_LD|RT_LD|EV|Ind\.EV|T[BA]\s|DB\s|Skip,|TIME\s|DISTANCE\s|Track\s))/;
+  var OPTION_START = /\s+(?=(?:ACC|Offset|Tool_Offset|Wjnt|RTCP|BREAK|PTH|INC|COORD|MROT|CTV|PSPD|VOFFSET|AP_LD|RT_LD|EV|Ind\.EV|T[BA]\s|DB\s|Skip,|TIME\s|DISTANCE\s|Track\s|Arc\s|Weave\s|SPOT\[|Search\s))/;
 
   // split on blanks that are outside every [ ] and ( ), so a comment with a
-  // space in it — R[215:Transit Spd]% — stays one token
+  // space in it — R[215:Transit Spd]% — stays one token. Each token knows
+  // where it started.
   function splitTop(s) {
-    var out = [], cur = '', depth = 0, i, c;
+    var out = [], cur = '', at = 0, depth = 0, i, c;
     for (i = 0; i < s.length; i++) {
       c = s[i];
       if (c === '[' || c === '(') depth++;
       else if (c === ']' || c === ')') depth--;
-      if (/\s/.test(c) && depth === 0) { if (cur) out.push(cur); cur = ''; }
-      else cur += c;
+      if (/\s/.test(c) && depth === 0) { if (cur) out.push({ s: cur, at: at }); cur = ''; }
+      else { if (!cur) at = i; cur += c; }
     }
-    if (cur) out.push(cur);
+    if (cur) out.push({ s: cur, at: at });
     return out;
   }
 
@@ -143,129 +190,174 @@
     var m = t.match(MOTION_HEAD);
     if (!m) return null;
     var kind = m[1], rest = m[4];
-    if (!m[3] && rest) return { error: 'a space is needed between the position and the speed: ' + kind + ' ' + m[2] + ' ' + rest };
+    var posAt = t.length - m[2].length - m[3].length - m[4].length;
+    var posSpan = [posAt, posAt + m[2].length];
+    var restAt = t.length - rest.length;
+    if (!m[3] && rest) return { error: 'a space is needed between the position and the speed: ' + kind + ' ' + m[2] + ' ' + rest, at: [posAt, t.length] };
     // C and A motions name a second point before the speed
-    if ((kind === 'C' || kind === 'A') && SECOND_POS.test(rest)) rest = rest.replace(SECOND_POS, '');
-    var toks = splitTop(rest);
-    var speed = toks.shift() || '', term = toks.shift() || '';
-    if (/^CNT$/.test(term) && toks.length && /^R\[/.test(toks[0])) term += ' ' + toks.shift();
-    var parts = toks.length ? toks.join(' ').split(OPTION_START) : [];
-    if (!speed) return { error: kind + ' motion needs a speed after the position — e.g. ' + kind + ' ' + m[2] + (kind === 'J' ? ' 100% FINE' : ' 500mm/sec FINE') };
-    if (!MOTION_SPEED[kind].test(speed)) {
-      if (/^(?:FINE|CNT)/.test(speed)) return { error: 'the speed comes before the termination: ' + kind + ' ' + m[2] + (kind === 'J' ? ' 100% ' : ' 500mm/sec ') + speed };
-      if (kind === 'J' && /mm\/sec|cm\/min/.test(speed)) return { error: 'a J (joint) move takes a percentage speed, e.g. 100% or R[1]% — mm/sec is for L moves' };
-      if (kind !== 'J' && /%$/.test(speed)) return { error: 'an ' + kind + ' move takes mm/sec, cm/min, deg/sec or sec — a % speed is for J moves' };
-      if (/\s/.test(speed) || /^\d+(?:\.\d+)?\s*$/.test(speed)) return { error: 'the speed needs its unit attached: 500mm/sec, not 500 mm/sec' };
-      return { error: '"' + speed + '" is not a speed the controller understands (100%, R[1]%, 500mm/sec, 20cm/min, max_speed)' };
+    if ((kind === 'C' || kind === 'A') && SECOND_POS.test(rest)) {
+      var second = rest.match(SECOND_POS)[0];
+      rest = rest.slice(second.length);
+      restAt += second.length;
     }
-    if (!term) return { error: 'a motion line ends its speed with a termination: FINE or CNTn' };
+    var toks = splitTop(rest);
+    var speedT = toks.shift() || null, termT = toks.shift() || null;
+    var speed = speedT ? speedT.s : '', term = termT ? termT.s : '';
+    var speedSpan = speedT ? [restAt + speedT.at, restAt + speedT.at + speed.length] : posSpan;
+    var termEnd = termT ? termT.at + term.length : 0;
+    if (/^CNT$/.test(term) && toks.length && /^R\[/.test(toks[0].s)) { var r2 = toks.shift(); term += ' ' + r2.s; termEnd = r2.at + r2.s.length; }
+    var termSpan = termT ? [restAt + termT.at, restAt + termEnd] : speedSpan;
+    var optAt = restAt + (toks.length ? toks[0].at : rest.length);
+    var parts = toks.length ? rest.slice(toks[0].at).split(OPTION_START) : [];
+    if (!speed) return { error: kind + ' motion needs a speed after the position — e.g. ' + kind + ' ' + m[2] + (kind === 'J' ? ' 100% FINE' : ' 500mm/sec FINE'), at: posSpan };
+    if (!MOTION_SPEED[kind].test(speed)) {
+      if (/^(?:FINE|CNT)/.test(speed)) return { error: 'the speed comes before the termination: ' + kind + ' ' + m[2] + (kind === 'J' ? ' 100% ' : ' 500mm/sec ') + speed, at: speedSpan };
+      if (kind === 'J' && /mm\/sec|cm\/min/.test(speed)) return { error: 'a J (joint) move takes a percentage speed, e.g. 100% or R[1]% — mm/sec is for L moves', at: speedSpan };
+      if (kind !== 'J' && /%$/.test(speed)) return { error: 'an ' + kind + ' move takes mm/sec, cm/min, deg/sec or sec — a % speed is for J moves', at: speedSpan };
+      if (/\s/.test(speed) || /^\d+(?:\.\d+)?\s*$/.test(speed)) return { error: 'the speed needs its unit attached: 500mm/sec, not 500 mm/sec', at: termT ? [speedSpan[0], termSpan[1]] : speedSpan };
+      return { error: '"' + speed + '" is not a speed the controller understands (100%, R[1]%, 500mm/sec, 20cm/min, max_speed)', at: speedSpan };
+    }
+    if (!term) return { error: 'a motion line ends its speed with a termination: FINE or CNTn', at: speedSpan };
     if (!MOTION_TERM.test(term)) {
-      if (/^CNT$/i.test(term)) return { error: 'CNT takes a value with no space: CNT50 or CNT R[1]' };
-      return { error: '"' + term + '" is not a termination — FINE, CNT0…CNT100 or CR' };
+      if (/^CNT$/i.test(term)) return { error: 'CNT takes a value with no space: CNT50 or CNT R[1]', at: termSpan };
+      return { error: '"' + term + '" is not a termination — FINE, CNT0…CNT100 or CR', at: termSpan };
     }
     var unknown = parts.map(function (s) { return s.trim(); }).filter(function (o) {
       return o && !MOTION_OPTION.some(function (re) { return re.test(o); });
     });
-    if (unknown.length) return { unknown: 'motion option "' + unknown[0] + '" is not one the dictionary or the grammar knows' };
+    if (unknown.length) {
+      var ua = t.indexOf(unknown[0], optAt);
+      return { unknown: 'motion option "' + unknown[0] + '" is not one the dictionary or the grammar knows', at: ua === -1 ? [optAt, t.length] : [ua, ua + unknown[0].length] };
+    }
     return { ok: true };
   }
 
   function ifLine(t) {
     if (/^IF\s*\(/.test(t)) {
       var open = t.indexOf('('), close = closeOf(t, open);
-      if (close === -1) return { error: 'the IF condition is never closed with ")"' };
+      if (close === -1) return { error: 'the IF condition is never closed with ")"', at: [open, t.length] };
+      var sw = strayWord(t.slice(open + 1, close), open + 1);
       var after = t.slice(close + 1).trim();
-      if (after === 'THEN') return { ok: true };
-      if (/^,\s*\S/.test(after)) return action(after.replace(/^,\s*/, ''), 'IF');
+      var afterAt = t.length - t.slice(close + 1).replace(/^\s+/, '').length;
+      if (after === 'THEN') return sw || { ok: true };
+      if (/^,\s*\S/.test(after)) {
+        var act = after.replace(/^,\s*/, '');
+        return action(act, 'IF', afterAt + (after.length - act.length)) || sw;
+      }
       /* Mixed logic also writes the action with a plain space — the
        * controller itself produces IF (…) JMP LBL[n] and IF (…) CALL PROG. */
-      if (/^(JMP|CALL)\b/.test(after)) return action(after, 'IF');
-      if (!after) return { error: 'IF (condition) needs THEN, or ,action — e.g. IF (DI[1]),JMP LBL[1]' };
-      if (/^THEN/.test(after)) return { error: 'nothing can follow THEN on the same line' };
-      return { error: 'after the closing ")" the controller expects THEN, ,action or JMP/CALL — not "' + after.slice(0, 20) + '"' };
+      if (/^(JMP|CALL)\b/.test(after)) return action(after, 'IF', afterAt) || sw;
+      if (!after) return { error: 'IF (condition) needs THEN, or ,action — e.g. IF (DI[1]),JMP LBL[1]', at: [close, close + 1] };
+      if (/^THEN/.test(after)) return { error: 'nothing can follow THEN on the same line', at: [t.length - after.slice(4).replace(/^\s+/, '').length, t.length] };
+      return { error: 'after the closing ")" the controller expects THEN, ,action or JMP/CALL — not "' + after.slice(0, 20) + '"', at: [afterAt, t.length] };
     }
     var m = t.match(/^IF\s+(.+)$/);
-    if (!m) return { error: 'IF needs a condition' };
-    var body = m[1];
-    if (/!/.test(body.replace(/'[^']*'/g, ''))) return { error: '"!" (NOT) only works in mixed logic — wrap the condition in parentheses: IF (!DI[1]),…' };
+    if (!m) return { error: 'IF needs a condition', at: [0, t.length] };
+    var body = m[1], bodyAt = t.length - body.length;
+    var bang = blankStrings(body).indexOf('!');
+    if (bang !== -1) return { error: '"!" (NOT) only works in mixed logic — wrap the condition in parentheses: IF (!DI[1]),…', at: [bodyAt + bang, bodyAt + bang + 1] };
     var comma = -1, depth = 0, i;
     for (i = 0; i < body.length; i++) {
       if (body[i] === '(' || body[i] === '[') depth++;
       else if (body[i] === ')' || body[i] === ']') depth--;
       else if (body[i] === ',' && depth === 0) { comma = i; break; }
     }
-    if (comma === -1) return { error: 'a plain IF is IF condition,action — the comma and action are missing (use IF (condition) THEN for a block)' };
-    if (/\bTHEN\b/.test(body)) return { error: 'THEN belongs to the mixed-logic form: IF (condition) THEN' };
+    if (comma === -1) return { error: 'a plain IF is IF condition,action — the comma and action are missing (use IF (condition) THEN for a block)', at: [bodyAt, t.length] };
+    var thenAt = body.search(/\bTHEN\b/);
+    if (thenAt !== -1) return { error: 'THEN belongs to the mixed-logic form: IF (condition) THEN', at: [bodyAt + thenAt, bodyAt + thenAt + 4] };
     var cond = body.slice(0, comma).trim();
-    if (!/(?:=|<>|<=|>=|<|>)/.test(cond.replace(/\[[^\]]*\]/g, '[]'))) return { error: 'a plain IF compares with = <> < > <= >= — a bare item needs mixed logic: IF (DI[1]),…' };
-    return action(body.slice(comma + 1).trim(), 'IF');
+    if (!/(?:=|<>|<=|>=|<|>)/.test(blankBrackets(cond))) return { error: 'a plain IF compares with = <> < > <= >= — a bare item needs mixed logic: IF (DI[1]),…', at: [bodyAt, bodyAt + comma] };
+    var sw2 = strayWord(body.slice(0, comma), bodyAt);
+    var actText = body.slice(comma + 1), act2 = actText.trim();
+    return action(act2, 'IF', bodyAt + comma + 1 + (actText.length - actText.replace(/^\s+/, '').length)) || sw2;
   }
 
   var JMP_LBL = new RegExp('^JMP\\s+LBL' + BR + '$');
 
-  function action(a, ctx) {
-    if (JMP_LBL.test(a)) return { ok: true };
-    if (/^CALL\s+[A-Za-z_][A-Za-z0-9_]*(?:\(.*\))?$/.test(a)) return { ok: true };
-    if (/^JMP\s*$/.test(a) || /^JMP\s+[^L]/.test(a)) return { error: 'JMP goes to a label: JMP LBL[n]' };
-    if (ctx === 'SELECT') return { error: 'a SELECT row does JMP LBL[n] or CALL PROG, nothing else' };
+  /* The verdict on an action (the part after an IF's comma, or a SELECT
+   * row's). Returns null when the action is fine so the caller can fall back
+   * to whatever its own checks found. */
+  function action(a, ctx, off) {
+    off = off || 0;
+    var whole = [off, off + a.length];
+    if (JMP_LBL.test(a)) return null;
+    if (/^CALL\s+[A-Za-z_][A-Za-z0-9_]*(?:\(.*\))?$/.test(a)) return null;
+    if (/^JMP\s*$/.test(a) || /^JMP\s+[^L]/.test(a)) return { error: 'JMP goes to a label: JMP LBL[n]', at: whole };
+    if (ctx === 'SELECT') return { error: 'a SELECT row does JMP LBL[n] or CALL PROG, nothing else', at: whole };
     var eq = topLevelEq(a);
-    if (eq !== -1) return assignment(a, eq);
-    if (/^(?:PAUSE|ABORT|END|PULSE|WAIT|RUN)\b/.test(a)) return { ok: true };
-    return { unknown: 'IF action "' + a.slice(0, 24) + '" is not a form the grammar knows (JMP LBL, CALL, or an assignment)' };
+    if (eq !== -1) return assignment(a, eq, off);
+    if (/^(?:PAUSE|ABORT|END|PULSE|WAIT|RUN)\b/.test(a)) return null;
+    return { unknown: 'IF action "' + a.slice(0, 24) + '" is not a form the grammar knows (JMP LBL, CALL, or an assignment)', at: whole };
   }
 
-  function assignment(t, eq) {
-    var lhs = t.slice(0, eq).trim(), rhs = t.slice(eq + 1).trim();
+  /* Returns null when the assignment is fine. */
+  function assignment(t, eq, off) {
+    off = off || 0;
+    var lhsRaw = t.slice(0, eq), lhs = lhsRaw.trim(), rhsRaw = t.slice(eq + 1), rhs = rhsRaw.trim();
+    var lhsSpan = [off, off + lhsRaw.replace(/\s+$/, '').length];
+    var rhsAt = off + eq + 1 + (rhsRaw.length - rhsRaw.replace(/^\s+/, '').length);
+    var rhsSpan = [rhsAt, off + t.length];
     if (!TARGET.test(lhs)) {
-      if (/^\d/.test(lhs)) return { error: 'the left of "=" must be something that can hold a value — "' + lhs + '" is a number' };
-      if (/^(?:P|LBL)\[/.test(lhs)) return { error: lhs.slice(0, lhs.indexOf('[')) + '[…] cannot be assigned to' };
-      return { error: 'the left of "=" must be a register, PR, I/O point, flag, timer or $variable — not "' + lhs.slice(0, 24) + '"' };
+      if (/^\d/.test(lhs)) return { error: 'the left of "=" must be something that can hold a value — "' + lhs + '" is a number', at: lhsSpan };
+      if (/^(?:P|LBL)\[/.test(lhs)) return { error: lhs.slice(0, lhs.indexOf('[')) + '[…] cannot be assigned to', at: lhsSpan };
+      return { error: 'the left of "=" must be a register, PR, I/O point, flag, timer or $variable — not "' + lhs.slice(0, 24) + '"', at: lhsSpan };
     }
-    if (rhs === '') return { error: 'nothing follows the "="' };
-    if (/^-\s*\d/.test(rhs)) return { error: 'a negative value goes in parentheses: ' + lhs + '=(' + rhs + ')' };
-    if (/^TIMER\[/.test(lhs) && !/^(?:START|STOP|RESET)$/.test(rhs)) return { error: 'a timer is set to START, STOP or RESET' };
-    if (/^F\[/.test(lhs) && /^(?:ON|OFF)$/.test(rhs)) return { error: 'a flag is written in parentheses: ' + lhs + '=(' + rhs + ')' };
-    if (/^PR\[\s*\d+\s*(?::[^\]]*)?\]$/.test(lhs) && /^-?\d+(?:\.\d+)?$/.test(rhs)) return { error: 'a whole PR takes a position (PR[n], LPOS, JPOS, P[n]) — a number goes to one component: PR[n,1]=' + rhs };
-    return { ok: true };
+    if (rhs === '') return { error: 'nothing follows the "="', at: [off + eq, off + eq + 1] };
+    if (/^-\s*\d/.test(rhs)) return { style: 'the controller writes a negative value in parentheses: ' + lhs + '=(' + rhs + ')', at: rhsSpan };
+    if (/^TIMER\[/.test(lhs) && !/^(?:START|STOP|RESET)$/.test(rhs)) return { error: 'a timer is set to START, STOP or RESET', at: rhsSpan };
+    if (/^F\[/.test(lhs) && /^(?:ON|OFF)$/.test(rhs)) return { style: 'the controller writes a flag in parentheses: ' + lhs + '=(' + rhs + ')', at: rhsSpan };
+    if (/^PR\[\s*\d+\s*(?::[^\]]*)?\]$/.test(lhs) && /^-?\d+(?:\.\d+)?$/.test(rhs)) return { error: 'a whole PR takes a position (PR[n], LPOS, JPOS, P[n]) — a number goes to one component: PR[n,1]=' + rhs, at: rhsSpan };
+    return strayWord(rhs, rhsAt);
   }
 
   function waitLine(t) {
     if (/^WAIT\s*\(/.test(t)) {
       var open = t.indexOf('('), close = closeOf(t, open);
-      if (close === -1) return { error: 'the WAIT condition is never closed with ")"' };
+      if (close === -1) return { error: 'the WAIT condition is never closed with ")"', at: [open, t.length] };
       var after = t.slice(close + 1).trim();
-      if (!after || /^TIMEOUT\s*,\s*LBL\[[^\]]*\]$/.test(after)) return { ok: true };
-      return { error: 'after WAIT (condition) only TIMEOUT,LBL[n] may follow' };
+      var afterAt = t.length - t.slice(close + 1).replace(/^\s+/, '').length;
+      if (!after || /^TIMEOUT\s*,\s*LBL\[[^\]]*\]$/.test(after)) return strayWord(t.slice(open + 1, close), open + 1) || { ok: true };
+      return { error: 'after WAIT (condition) only TIMEOUT,LBL[n] may follow', at: [afterAt, t.length] };
     }
+    var restAt = t.length - t.replace(/^WAIT\s*/, '').length;
     if (/^WAIT\s+(?:\d+(?:\.\d+)?|\.\d+)\s*\(sec\)$/.test(t) || /^WAIT\s+(?:\d+(?:\.\d+)?|\.\d+)\(sec\)$/.test(t) || /^WAIT\s+R\[[^\]]*\]$/.test(t)) return { ok: true };
-    if (/^WAIT\s+(?:\d+(?:\.\d+)?|\.\d+)\s*(?:sec|$)/.test(t)) return { error: 'a timed wait is WAIT 0.50(sec) — the unit goes in parentheses' };
-    if (/!/.test(t)) return { error: '"!" (NOT) only works in mixed logic — WAIT (!DI[1])' };
-    if (!/\bTIMEOUT\b/.test(t) && /,/.test(t.replace(/\[[^\]]*\]/g, '[]'))) return { error: 'a WAIT with a label is WAIT cond TIMEOUT,LBL[n]' };
-    return { ok: true };
+    if (/^WAIT\s+(?:\d+(?:\.\d+)?|\.\d+)\s*(?:sec|$)/.test(t)) return { error: 'a timed wait is WAIT 0.50(sec) — the unit goes in parentheses', at: [restAt, t.length] };
+    var bang = blankStrings(t).indexOf('!');
+    if (bang !== -1) return { error: '"!" (NOT) only works in mixed logic — WAIT (!DI[1])', at: [bang, bang + 1] };
+    var b = blankBrackets(blankStrings(t));
+    if (!/\bTIMEOUT\b/.test(b) && b.indexOf(',') !== -1) return { error: 'a WAIT with a label is WAIT cond TIMEOUT,LBL[n]', at: [b.indexOf(','), t.length] };
+    var condEnd = b.search(/\bTIMEOUT\b/);
+    return strayWord(t.slice(restAt, condEnd === -1 ? t.length : condEnd), restAt) || { ok: true };
   }
 
   function selectLine(t) {
     var m = t.match(/^SELECT\s+(.+)$/);
-    if (!m) return { error: 'SELECT needs a register: SELECT R[n]=1,JMP LBL[1]' };
-    var b = m[1];
-    if (!/^R\[[^\]]*\]\s*=/.test(b)) return { error: 'SELECT compares a register: SELECT R[n]=value,action' };
-    return selectRow(b.replace(/^R\[[^\]]*\]\s*/, ''));
+    if (!m) return { error: 'SELECT needs a register: SELECT R[n]=1,JMP LBL[1]', at: [0, t.length] };
+    var b = m[1], bAt = t.length - b.length;
+    if (!/^R\[[^\]]*\]\s*=/.test(b)) return { error: 'SELECT compares a register: SELECT R[n]=value,action', at: [bAt, t.length] };
+    var reg = b.match(/^R\[[^\]]*\]\s*/)[0];
+    return selectRow(b.slice(reg.length), bAt + reg.length);
   }
 
   // "=20,JMP LBL[921]" and "ELSE,CALL PROG" continuation rows
-  function selectRow(t) {
+  function selectRow(t, off) {
+    off = off || 0;
     var m = t.match(/^(?:=\s*(?:-?\d+(?:\.\d+)?|R\[[^\]]*\])|ELSE)\s*,\s*(.+)$/);
-    if (!m) return { error: 'a SELECT row is =value,action or ELSE,action' };
-    return action(m[1].trim(), 'SELECT');
+    if (!m) return { error: 'a SELECT row is =value,action or ELSE,action', at: [off, off + t.length] };
+    return action(m[1].trim(), 'SELECT', off + t.length - m[1].length) || { ok: true };
   }
 
   function callLine(t) {
     var m = t.match(/^(CALL|RUN)\s+([A-Za-z_][A-Za-z0-9_]*)(.*)$/);
-    if (!m) return { error: 'CALL needs a program name' };
-    var args = m[3];
+    if (!m) return { error: 'CALL needs a program name', at: [0, t.length] };
+    var args = m[3], argsAt = t.length - args.length;
     if (!args) return { ok: true };
-    if (!/^\(.*\)$/.test(args)) return { error: 'arguments go in parentheses right after the name: CALL ' + m[2] + '(1,R[2])' };
-    if (/(?:^|,)\s*-\d/.test(args.slice(1, -1))) return { error: 'a negative argument is written in its own parentheses: CALL ' + m[2] + '((-90))' };
+    if (!/^\(.*\)$/.test(args)) return { error: 'arguments go in parentheses right after the name: CALL ' + m[2] + '(1,R[2])', at: [argsAt, t.length] };
+    var neg = /(?:^|,)\s*(-\d+(?:\.\d+)?)/.exec(args.slice(1, -1));
+    if (neg) {
+      var nAt = argsAt + 1 + neg.index + neg[0].indexOf('-');
+      return { style: 'the controller writes a negative argument in its own parentheses: CALL ' + m[2] + '((-90))', at: [nAt, nAt + neg[1].length] };
+    }
     return { ok: true };
   }
 
@@ -273,20 +365,39 @@
 
   function grammar(t) {
     var e = unbalanced(t);
-    if (e) return { error: e };
+    if (e) return e;
     if (/^[JLCAS]\s+P/.test(t)) return motion(t) || { ok: true };
-    if (/^IF\b/.test(t)) return ifLine(t);
+    if (/^IF\b/.test(t)) return ifLine(t) || { ok: true };
     if (/^WAIT\b/.test(t)) return waitLine(t);
     if (/^SELECT\b/.test(t)) return selectLine(t);
-    if (/^(?:=|ELSE\s*,)/.test(t)) return selectRow(t);
+    if (/^(?:=|ELSE\s*,)/.test(t)) return selectRow(t, 0);
     if (/^(?:CALL|RUN)\b/.test(t)) return callLine(t);
     if (/^(?:LBL\[|END$|PAUSE$|ABORT$|ELSE$|ENDIF$|ENDFOR$)/.test(t)) return { ok: true };
-    if (/^JMP\b/.test(t)) return JMP_LBL.test(t) ? { ok: true } : { error: 'JMP goes to a label: JMP LBL[n]' };
+    if (/^JMP\b/.test(t)) return JMP_LBL.test(t) ? { ok: true } : { error: 'JMP goes to a label: JMP LBL[n]', at: [0, t.length] };
     var eq = topLevelEq(t);
     // instructions that carry an "=" of their own: conditions, monitors, loops
-    if (eq !== -1 && !/^(?:FOR|SKIP|OFFSET|MESSAGE|UALM|TIMER_OVERLAP|RUN|WHEN|MONITOR|CONDITION|PAYLOAD|MOTION|Track|Vision|VR)\b/i.test(t)) return assignment(t, eq);
+    if (eq !== -1 && !/^(?:FOR|SKIP|OFFSET|MESSAGE|UALM|TIMER_OVERLAP|RUN|WHEN|MONITOR|CONDITION|PAYLOAD|MOTION|Track|Vision|VR)\b/i.test(t)) return assignment(t, eq, 0) || { ok: true };
     return { ok: true, silent: true };   // nothing to say — the dictionary decides
   }
+
+  /* Standard forms from the manual, in normalized shape, so a plant whose
+   * programs never happened to use a timer or a pendant message does not see
+   * every TIMER[1]=START underlined as novel. These are the forms the grammar
+   * stays silent on; the ones it has rules for vouch for themselves. */
+  var BUILTIN_SHAPES = {};
+  ['UALM[n]', 'MESSAGE[s]', 'PAYLOAD[n]', 'PAYLOAD[R[n]]',
+   'FOR R[n]=N TO N', 'FOR R[n]=N DOWNTO N', 'FOR R[n]=R[n] TO R[n]', 'FOR R[n]=N TO R[n]', 'FOR R[n]=R[n] TO N',
+   'FOR R[n]=R[n] DOWNTO R[n]', 'FOR R[n]=R[n] DOWNTO N', 'FOR R[n]=N DOWNTO R[n]', 'ENDFOR',
+   'SKIP CONDITION DI[n]=ON', 'SKIP CONDITION DI[n]=OFF', 'SKIP CONDITION RI[n]=ON', 'SKIP CONDITION RI[n]=OFF',
+   'OFFSET CONDITION PR[n]', 'OFFSET CONDITION PR[n],UFRAME[n]', 'TOOL_OFFSET CONDITION PR[n]', 'TOOL_OFFSET CONDITION PR[n],UTOOL[n]',
+   'MONITOR PROG', 'MONITOR END PROG', 'LOCK PREG', 'UNLOCK PREG', 'COL DETECT ON', 'COL DETECT OFF', 'COL GUARD ADJUST N',
+   'RUN PROG', 'ABORT', 'END', 'PAUSE', 'ELSE', 'ENDIF', 'LBL[n]', 'JMP LBL[n]', 'CALL PROG',
+   'WAIT N(sec)', 'WAIT R[n]', 'OVERRIDE=N%', 'TIMER[n]=START', 'TIMER[n]=STOP', 'TIMER[n]=RESET',
+   'UFRAME_NUM=N', 'UTOOL_NUM=N', 'UFRAME_NUM=R[n]', 'UTOOL_NUM=R[n]', 'UFRAME[n]=PR[n]', 'UTOOL[n]=PR[n]',
+   'DO[n]=PULSE', 'DO[n]=PULSE,Nsec', 'RO[n]=PULSE', 'RO[n]=PULSE,Nsec', 'F[n]=PULSE', 'F[n]=PULSE,Nsec',
+   'WAIT (DI[n])', 'WAIT (!DI[n])', 'WAIT DI[n]=ON', 'WAIT DI[n]=OFF', 'WAIT DI[n]=ON TIMEOUT,LBL[n]', 'WAIT DI[n]=OFF TIMEOUT,LBL[n]',
+   'R[n]=TIMER[n]', 'SR[n]=\'s\'', 'SR[n]=SR[n]', 'SR[n]=R[n]', 'R[n]=STRLEN SR[n]'
+  ].forEach(function (s) { BUILTIN_SHAPES[s] = true; });
 
   /* dict: { shapes: { shape: [count, example] } } — the mined dictionary, or
    * null to run the grammar alone. */
@@ -294,13 +405,19 @@
     var t = String(text == null ? '' : text).replace(/\s*;\s*$/, '').trim();
     if (!t || /^(?:!|\/\/)/.test(t)) return { level: 'ok', comment: true };
     var g = grammar(t);
-    if (g.error) return { level: 'error', message: g.error };
+    if (g.error) return { level: 'error', message: g.error, at: g.at };
+    if (g.style) return { level: 'style', message: g.style, at: g.at };
     var shape = normalize(t);
     var hit = dict && dict.shapes && dict.shapes[shape];
     if (hit) return { level: 'ok', shape: shape, count: hit[0], example: hit[1] };
     var rep = familyHit(shape, dict);
     if (rep) return { level: 'ok', shape: shape, family: true, count: dict.shapes[rep][0], example: dict.shapes[rep][1] };
-    if (g.unknown) return { level: 'unknown', message: g.unknown, shape: shape, nearest: nearest(shape, dict) };
+    if (g.unknown) return { level: 'unknown', message: g.unknown, at: g.at, shape: shape, nearest: nearest(shape, dict) };
+    if (BUILTIN_SHAPES[shape]) return { level: 'ok', shape: shape, builtin: true };
+    /* The grammar looked at this line rule by rule and found nothing wrong.
+     * That is a verdict: a well-formed assignment, IF or CALL is not novel
+     * because this plant's robots never wrote that exact combination. */
+    if (!g.silent) return { level: 'ok', shape: shape, grammar: true };
     /* Motion lines never consult the dictionary beyond this point: the
      * grammar already checks the position, the speed and its unit, the
      * termination, and every option one by one — and legal options combine
@@ -310,7 +427,7 @@
     if (!dict || !dict.shapes) return { level: 'ok' };
     return {
       level: 'unknown', shape: shape, nearest: nearest(shape, dict),
-      message: 'no program on your robots uses this form' + (g.silent ? '' : ' (the grammar sees nothing wrong with it)')
+      message: 'no program on your robots uses this form, and the grammar has no rule for it'
     };
   }
 
@@ -428,11 +545,18 @@
       if (!raw.trim()) { cur = null; continue; }
       m = raw.match(/^\s*(\d+)\s*:(.*)$/);
       if (m) {
-        cur = { row: i, rows: [i], num: parseInt(m[1], 10), text: m[2].trim(), raw: raw };
+        var text = m[2].trim();
+        // segs: where each piece of the joined text sits in its row, so a
+        // verdict's `at` offset can be turned back into row + columns
+        cur = { row: i, rows: [i], num: parseInt(m[1], 10), text: text, raw: raw,
+                segs: [{ row: i, off: 0, col0: raw.length - m[2].length + (m[2].length - m[2].replace(/^\s+/, '').length), len: text.length }] };
         out.push(cur);
       } else if (/^\s*:/.test(raw) && cur) {
         cur.rows.push(i);
-        cur.text = (cur.text.replace(/\s*;\s*$/, '') + ' ' + raw.replace(/^\s*:\s?/, '').trim()).trim();
+        var base = cur.text.replace(/\s*;\s*$/, '');
+        var contRaw = raw.replace(/^\s*:\s?/, ''), cont = contRaw.trim();
+        cur.segs.push({ row: i, off: base.length + 1, col0: raw.length - contRaw.length + (contRaw.length - contRaw.replace(/^\s+/, '').length), len: cont.length });
+        cur.text = (base + ' ' + cont).trim();
         cur.raw += '\n' + raw;
       } else {
         out.push({ row: i, rows: [i], num: null, text: raw.trim(), raw: raw, badRow: true });
@@ -442,25 +566,39 @@
     return out;
   }
 
-  /* Every issue in a listing: [{ row, rows, num, level, message, ... }].
+  /* A verdict's `at` (offsets into the joined instruction text) as row
+   * spans: [{ row, start, end }] in the listing's own columns. A wrapped
+   * instruction may yield one span per row it touches. */
+  function spansFor(ins, at) {
+    if (!at || !ins.segs) return [];
+    var s0 = at[0], e0 = at[1] > at[0] ? at[1] : at[0] + 1;
+    var out = [];
+    ins.segs.forEach(function (seg) {
+      var s = Math.max(s0, seg.off), e = Math.min(e0, seg.off + seg.len);
+      if (s < e) out.push({ row: seg.row, start: seg.col0 + (s - seg.off), end: seg.col0 + (e - seg.off) });
+    });
+    return out;
+  }
+
+  /* Every issue in a listing: [{ row, rows, spans, num, level, message, ... }].
    * Row-level format problems (no line number, no ";") come first, because
    * the controller refuses a file over those before it reads a single
-   * instruction. */
+   * instruction. `spans` is empty when the whole row is the finding. */
   function checkSource(src, dict) {
     var issues = [];
     instructions(src).forEach(function (ins) {
       if (ins.badRow) {
-        issues.push({ row: ins.row, rows: ins.rows, num: null, level: 'error', message: 'every instruction row starts with its line number and a colon — "  12:  R[1]=0 ;" — or ":" to continue the row above' });
+        issues.push({ row: ins.row, rows: ins.rows, spans: [], num: null, level: 'error', message: 'every instruction row starts with its line number and a colon — "  12:  R[1]=0 ;" — or ":" to continue the row above' });
         return;
       }
       var body = ins.text;
       if (!/;\s*$/.test(body)) {
-        if (body.trim()) issues.push({ row: ins.row, rows: ins.rows, num: ins.num, level: 'error', message: 'the instruction has to end with " ;"' });
+        if (body.trim()) issues.push({ row: ins.row, rows: ins.rows, spans: [], num: ins.num, level: 'error', message: 'the instruction has to end with " ;"' });
         return;
       }
       var r = check(body, dict);
       if (r.level === 'ok') return;
-      issues.push({ row: ins.row, rows: ins.rows, num: ins.num, level: r.level, message: r.message, shape: r.shape, nearest: r.nearest || [] });
+      issues.push({ row: ins.row, rows: ins.rows, spans: spansFor(ins, r.at), num: ins.num, level: r.level, message: r.message, shape: r.shape, nearest: r.nearest || [] });
     });
     return issues;
   }
@@ -586,7 +724,7 @@
   var api = {
     normalize: normalize, check: check, checkSource: checkSource, checkProgram: checkProgram,
     instructions: instructions, formatRow: formatRow, renumber: renumber, snippets: snippets,
-    family: family
+    family: family, builtinShapes: BUILTIN_SHAPES
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucSyntax = api;
