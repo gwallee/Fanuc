@@ -25,7 +25,9 @@ const net = require('net');
 const os = require('os');
 const { Ftp } = require('./lib/ftp.js');
 const { unwrapMd } = require('./js/parser.js');
+const VA = require('./js/vaparse.js');
 const CS = require('./lib/comset.js');
+const { Kcl, cmdOk } = require('./lib/kcl.js');
 
 const ROOT = __dirname;
 const SNAPSHOT_DIR = path.join(ROOT, 'backups', 'pre-upload');
@@ -34,6 +36,19 @@ const ROBOT_TIMEOUT_MS = 6000;
 /* The controller's web server port. 80 on every real robot; the tests point
  * it at a mock controller on a high port. */
 const ROBOT_HTTP_PORT = parseInt(process.env.FANUC_STUDIO_ROBOT_HTTP_PORT, 10) || 80;
+/* The controller's KCL-over-Telnet port. 23 on every real robot; the tests
+ * point it at a mock. KCL is the only way to force an I/O port — the web
+ * server and FTP are read-only for live state. */
+const ROBOT_KCL_PORT = parseInt(process.env.FANUC_STUDIO_ROBOT_KCL_PORT, 10) || 23;
+/* App I/O type -> the KCL port-array name SET PORT uses, and the IOSTATE.DG
+ * type the write is verified against. Only the ports a controller lets you
+ * drive are here: outputs, flags, and inputs (which the controller will take
+ * only when that input is simulated). */
+const KCL_PORT = {
+  DO: 'DOUT', RO: 'RDO', GO: 'GOUT', AO: 'AOUT', F: 'FLAG',
+  DI: 'DIN', RI: 'RDI'
+};
+const KCL_DIGITAL = { DO: 1, RO: 1, F: 1, DI: 1, RI: 1 };   // ON/OFF vs a number
 /* Liveness check for a saved robot: short, because the answer people want is
  * "is it there right now", and a dead address on the LAN fails far quicker
  * than this anyway. Only a silently-dropping firewall runs it to the end. */
@@ -547,6 +562,81 @@ async function handleApi(req, res, u) {
     } catch (e) {
       result.error = result.error || e.message;
     }
+    return json(res, 200, result);
+  }
+
+  /* Force I/O over KCL. The web server and FTP cannot write a live port, so
+   * this opens a KCL session (SETUP > Host Comm > TELNET; user is the KCL
+   * account, password per call), issues SET PORT for each requested point,
+   * then RE-READS IOSTATE.DG over HTTP and reports the state the controller
+   * actually holds — the same prove-it-by-reading-back shape as the upload
+   * and rename. KCL has no port read, so IOSTATE.DG is the proof. A digital
+   * value is sent as ON/OFF and retried as TRUE/FALSE if the controller wants
+   * that spelling. The controller refuses to force a physical input, which
+   * surfaces here as that point's error. */
+  if (u.pathname === '/api/robot/setport' && req.method === 'POST') {
+    const body = await readBody(req);
+    let payload;
+    try { payload = JSON.parse(body); } catch (e) { return fail(res, 400, 'invalid JSON body'); }
+    const { ip, writes, user, pass } = payload;
+    if (!ip || !ROBOT_HOST.test(String(ip).split(':')[0])) return fail(res, 400, 'missing or invalid ip');
+    if (!Array.isArray(writes) || !writes.length) return fail(res, 400, 'writes must be a non-empty array');
+    if (writes.length > 128) return fail(res, 400, 'too many writes in one request');
+    // validate every write before opening a session or touching the robot
+    const plan = [];
+    for (const w of writes) {
+      const kind = String(w && w.type || '').toUpperCase();
+      const name = KCL_PORT[kind];
+      if (!name) return fail(res, 400, 'cannot write ' + (kind || 'that type') + ' — writable types are ' + Object.keys(KCL_PORT).join(', '));
+      const idx = Number(w.index);
+      if (!Number.isInteger(idx) || idx < 1 || idx > 9999) return fail(res, 400, 'bad index for ' + kind);
+      let tokens;
+      if (KCL_DIGITAL[kind]) {
+        const on = w.value === true || w.value === 1 || /^(on|true|1)$/i.test(String(w.value));
+        const off = w.value === false || w.value === 0 || /^(off|false|0)$/i.test(String(w.value));
+        if (!on && !off) return fail(res, 400, 'a digital value is ON or OFF (' + kind + '[' + idx + '])');
+        tokens = on ? ['ON', 'TRUE'] : ['OFF', 'FALSE'];
+      } else {
+        if (!/^-?\d+(?:\.\d+)?$/.test(String(w.value))) return fail(res, 400, 'a ' + kind + ' value is a number');
+        tokens = [String(w.value)];
+      }
+      plan.push({ type: kind, name, index: idx, tokens, want: KCL_DIGITAL[kind] ? tokens[0] : String(w.value), key: kind + '[' + idx + ']' });
+    }
+
+    const t = parseTarget(ip);
+    const result = { ok: false, writes: [] };
+    let kcl = null;
+    try {
+      kcl = await Kcl.connect(t.host, ROBOT_KCL_PORT, user || 'KCL', pass, ROBOT_TIMEOUT_MS);
+      for (const p of plan) {
+        let sent = null, err = null;
+        for (const tok of p.tokens) {
+          const reply = await kcl.cmd('SET PORT ' + p.name + '[' + p.index + '] = ' + tok);
+          if (cmdOk(reply)) { sent = tok; err = null; break; }
+          err = reply.replace(/.*\^?\s*ERROR/i, 'ERROR').slice(0, 120);
+        }
+        result.writes.push({ key: p.key, type: p.type, index: p.index, want: p.want, sent, error: sent ? null : (err || 'the controller refused the write') });
+      }
+    } catch (e) {
+      try { if (kcl) await kcl.quit(); } catch (x) { /* closing */ }
+      return json(res, 200, { ok: false, error: e.message, writes: result.writes });
+    }
+    try { await kcl.quit(); } catch (e) { /* closing */ }
+
+    // verify against the controller's own IOSTATE.DG
+    try {
+      const got = await readRobotFile(t, user, pass, 'IOSTATE.DG');
+      const live = {};
+      VA.parseIOState(got.content).forEach((pt) => { live[pt.type + '[' + pt.index + ']'] = String(pt.state); });
+      result.writes.forEach((wr) => {
+        if (!(wr.key in live)) { wr.verified = null; return; }   // not listed in IOSTATE
+        wr.stored = live[wr.key];
+        wr.verified = String(wr.stored).toUpperCase() === String(wr.want).toUpperCase();
+      });
+    } catch (e) {
+      result.verifyError = e.message;   // writes may have gone through; only the read-back failed
+    }
+    result.ok = result.writes.every((wr) => wr.sent && wr.verified !== false);
     return json(res, 200, result);
   }
 

@@ -28,7 +28,8 @@
     findings: [],
     server: false,         // bridge server reachable?
     robotImport: null,     // {total, done, added, skipped, failed, inFlight, cancel} while a bulk import runs
-    robot: { ip: '', ftpUser: '', ftpPass: '', files: [], registers: null, strregs: null, rawIO: null, ioComments: null, error: null, loadedAt: null, backup: null, notPrograms: {}, prgState: undefined },
+    robot: { ip: '', ftpUser: '', ftpPass: '', kclPass: '', files: [], registers: null, strregs: null, rawIO: null, ioComments: null, error: null, loadedAt: null, backup: null, notPrograms: {}, prgState: undefined },
+    ioPending: {},         // key 'TYPE[idx]' -> desired value ('ON'/'OFF'/number), staged until Apply
     knownRobots: [],       // saved robots, served by the bridge (never a password)
     robotProbe: {},        // ip -> 'checking' | 'up' | 'down'
     scan: null,            // subnet sweep in progress / its last result
@@ -1226,7 +1227,8 @@
     if (!ip) return;
     // each robot works against its own stored library
     if (!setLibrary(ip)) return;
-    state.robot = { ip: ip, ftpUser: state.robot.ftpUser, ftpPass: state.robot.ftpPass, files: [], registers: null, posregs: null, strregs: null, rawIO: null, ioState: null, ioComments: null, errors: undefined, error: null, loadedAt: null, backup: null, notPrograms: {}, prgState: undefined };
+    state.robot = { ip: ip, ftpUser: state.robot.ftpUser, ftpPass: state.robot.ftpPass, kclPass: state.robot.kclPass, files: [], registers: null, posregs: null, strregs: null, rawIO: null, ioState: null, ioComments: null, errors: undefined, error: null, loadedAt: null, backup: null, notPrograms: {}, prgState: undefined };
+    state.ioPending = {};
     state.robotCheck = null;   // verdicts belong to the robot they were read from
     state.tab = 'robot';
     render();
@@ -6986,6 +6988,107 @@
     render();
   }
 
+  /* ---- forcing I/O over KCL (two-step: stage, then Apply) ----
+   * Outputs and flags can be driven; the controller takes an input only when
+   * it is simulated. A desired value is STAGED in state.ioPending and nothing
+   * is sent until Apply, which posts every staged write at once, then refreshes
+   * from the robot. */
+  var IO_FORCEABLE = { DO: 1, RO: 1, GO: 1, AO: 1, F: 1 };
+  var IO_DIGITAL = { DO: 1, RO: 1, F: 1 };
+  function ioForceable(type) { return !!IO_FORCEABLE[type]; }
+  function pendingCount() { return Object.keys(state.ioPending).length; }
+
+  /* The staged-value control for one row, returned as a <td>. */
+  function forceCell(p) {
+    var td = h('td', { class: 'force-cell' });
+    var key = p.type + '[' + p.index + ']';
+    if (!ioForceable(p.type)) return td;
+    var pend = state.ioPending[key];
+    if (IO_DIGITAL[p.type]) {
+      [['ON', 'tok-on'], ['OFF', 'tok-off']].forEach(function (opt) {
+        var want = opt[0];
+        var active = pend === want;
+        var b = h('button', {
+          class: 'btn opt force-btn' + (active ? ' active ' + opt[1] : ''),
+          text: want,
+          title: active ? 'Staged ' + key + ' = ' + want + ' — click to unstage' : 'Stage ' + key + ' = ' + want + ' (sent on Apply)',
+          onclick: function () {
+            if (state.ioPending[key] === want) delete state.ioPending[key];
+            else state.ioPending[key] = want;
+            render();
+          }
+        });
+        td.appendChild(b);
+      });
+    } else {
+      var inp = h('input', { type: 'text', class: 'force-num', inputmode: 'numeric',
+        placeholder: 'set…', value: pend !== undefined ? String(pend) : '',
+        title: 'Type a value for ' + key + ' and it is staged for Apply' });
+      inp.addEventListener('change', function () {
+        var v = inp.value.trim();
+        if (v === '') delete state.ioPending[key];
+        else if (/^-?\d+(?:\.\d+)?$/.test(v)) state.ioPending[key] = v;
+        else { toast(key + ' takes a number.'); inp.value = pend !== undefined ? String(pend) : ''; return; }
+        render();
+      });
+      td.appendChild(inp);
+    }
+    return td;
+  }
+
+  function applyForces() {
+    var keys = Object.keys(state.ioPending);
+    if (!keys.length) return;
+    if (!state.robot.kclPass) {
+      var pw = prompt('KCL password for ' + state.robot.ip + ' (SETUP > Host Comm > TELNET). Needed to force I/O; it is not stored.');
+      if (pw === null) return;
+      state.robot.kclPass = pw;
+    }
+    var writes = keys.map(function (k) {
+      var m = k.match(/^([A-Z]+)\[(\d+)\]$/);
+      return { type: m[1], index: parseInt(m[2], 10), value: state.ioPending[k] };
+    });
+    var btn = document.getElementById('io-apply-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Applying…'; }
+    postJSON('/api/robot/setport', { ip: state.robot.ip, user: state.robot.kclUser || 'KCL', pass: state.robot.kclPass, writes: writes })
+      .then(function (b) {
+        var okN = (b.writes || []).filter(function (w) { return w.sent && w.verified !== false; }).length;
+        var bad = (b.writes || []).filter(function (w) { return !w.sent || w.verified === false; });
+        if (bad.length) {
+          toast(okN + ' of ' + writes.length + ' applied. Failed: ' +
+            bad.map(function (w) { return w.key + (w.error ? ' (' + w.error + ')' : (w.verified === false ? ' (read back ' + w.stored + ')' : '')); }).join(', '), 11000);
+        } else {
+          toast('Applied ' + okN + ' I/O change' + (okN === 1 ? '' : 's') + ' to ' + state.robot.ip + ', verified on the robot.', 7000);
+        }
+        // keep any that failed staged so they can be retried; clear the rest
+        state.ioPending = {};
+        bad.forEach(function (w) { state.ioPending[w.key] = w.want; });
+        loadRobotIO();   // re-read live state, then render
+      })
+      .catch(function (e) {
+        if (/login/i.test(e.message)) state.robot.kclPass = '';   // let them re-enter a wrong password
+        toast('I/O force failed: ' + e.message, 9000);
+        if (btn) { btn.disabled = false; btn.textContent = 'Apply ' + pendingCount() + ' change' + (pendingCount() === 1 ? '' : 's'); }
+      });
+  }
+
+  /* The Apply/Discard bar, shown whenever something is staged. Mounted next
+   * to the Refresh button so it rides along with the Live I/O section. */
+  function renderForceBar(host) {
+    var n = pendingCount();
+    if (!n) return;
+    host.appendChild(h('span', { class: 'force-bar' }, [
+      h('button', {
+        class: 'btn primary', id: 'io-apply-btn',
+        text: 'Apply ' + n + ' change' + (n === 1 ? '' : 's'),
+        title: 'Send every staged I/O change to ' + state.robot.ip + ' over KCL, then read the state back to verify',
+        onclick: applyForces
+      }),
+      h('button', { class: 'btn subtle', text: 'Discard', title: 'Clear the staged changes — nothing is sent', onclick: function () { state.ioPending = {}; render(); } }),
+      h('span', { class: 'muted', text: 'staged, not sent: ' + Object.keys(state.ioPending).map(function (k) { return k + '=' + state.ioPending[k]; }).slice(0, 8).join(', ') + (n > 8 ? ' …' : '') })
+    ]));
+  }
+
   function renderRobot(pane) {
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Robot connection' }),
@@ -7025,12 +7128,17 @@
     var userIn = h('input', { type: 'text', placeholder: 'FTP user (blank = anonymous)', style: 'max-width:200px' });
     userIn.value = state.robot.ftpUser || '';
     userIn.addEventListener('change', function () { state.robot.ftpUser = userIn.value.trim(); });
-    var passIn = h('input', { type: 'password', placeholder: 'FTP password', style: 'max-width:160px' });
+    var passIn = h('input', { type: 'password', placeholder: 'FTP password', style: 'max-width:150px' });
     passIn.value = state.robot.ftpPass || '';
     passIn.addEventListener('change', function () { state.robot.ftpPass = passIn.value; });
+    var kclIn = h('input', { type: 'password', placeholder: 'KCL password (I/O force)', style: 'max-width:170px',
+      title: 'The password of the KCL account on the controller (SETUP > Host Comm > TELNET). Needed only to force I/O; never stored.' });
+    kclIn.value = state.robot.kclPass || '';
+    kclIn.addEventListener('change', function () { state.robot.kclPass = kclIn.value; });
     form.appendChild(ipIn);
     form.appendChild(userIn);
     form.appendChild(passIn);
+    form.appendChild(kclIn);
     form.appendChild(h('button', { class: 'btn primary', text: state.robot.ip ? 'Reconnect' : 'Connect', onclick: function () { state.robot.ftpUser = userIn.value.trim(); state.robot.ftpPass = passIn.value; if (ipIn.value.trim()) connectRobot(ipIn.value.trim()); } }));
     if (/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) {
       form.appendChild(h('span', { style: 'flex:1' }));
@@ -7503,9 +7611,11 @@
     var secIO = secHead('Live I/O (IOSTATE.DG)' + (state.robot.ioState ? ' — ' + state.robot.ioState.length + ' points' : ''), 'robot-io', false);
     pane.appendChild(secIO.el);
     if (!secIO.open) return;
-    pane.appendChild(h('p', {}, [
+    var ioBarTop = h('p', {}, [
       h('button', { class: 'btn subtle', text: (state.robot.ioState || state.robot.rawIO) ? 'Refresh from robot' : 'Read from robot', onclick: loadRobotIO })
-    ]));
+    ]);
+    pane.appendChild(ioBarTop);
+    renderForceBar(ioBarTop);
     if (state.robot.ioState) {
       var ioBar2 = h('div', { class: 'search-bar' });
       var ioIn2 = h('input', { type: 'search', placeholder: 'Filter I/O… e.g. DI[1], DO, gripper, ON — or expand a type below' });
@@ -7519,9 +7629,15 @@
         var used = h('td');
         var x = state.xref.io[key];
         if (x) x.refs.slice(0, 6).forEach(function (ref) { used.appendChild(chip(ref, ref.write ? 'write' : 'read')); });
-        tbl.appendChild(h('tr', {}, [
+        var pend = state.ioPending[key];
+        var liveCell = h('td', {}, [h('span', { class: p.state === 'ON' ? 'tok-on mono' : (p.state === 'OFF' ? 'tok-off mono' : 'mono'), text: p.state })]);
+        if (pend !== undefined && String(pend).toUpperCase() !== String(p.state).toUpperCase()) {
+          liveCell.appendChild(h('span', { class: 'force-arrow', text: ' → ' + pend }));
+        }
+        tbl.appendChild(h('tr', { class: pend !== undefined ? 'io-staged' : '' }, [
           h('td', { class: 'n', text: key }),
-          h('td', {}, [h('span', { class: p.state === 'ON' ? 'tok-on mono' : (p.state === 'OFF' ? 'tok-off mono' : 'mono'), text: p.state })]),
+          liveCell,
+          forceCell(p),
           commentCell(p.type, p.index, p.comment, function (text) {
             p.comment = text;
             // ioComments is the labeled-only view the checks read, so a point
@@ -7534,7 +7650,7 @@
 
       function ioTable() {
         var tbl = h('table', { class: 'xref-table' });
-        tbl.appendChild(h('tr', {}, [h('th', { text: 'Point' }), h('th', { text: 'Live state' }), h('th', { text: 'Comment' }), h('th', { text: 'Used at' })]));
+        tbl.appendChild(h('tr', {}, [h('th', { text: 'Point' }), h('th', { text: 'Live state' }), h('th', { text: 'Force' }), h('th', { text: 'Comment' }), h('th', { text: 'Used at' })]));
         return tbl;
       }
 

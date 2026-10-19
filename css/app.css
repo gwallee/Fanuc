@@ -522,6 +522,17 @@ body.dragging .drop-hint, body.dragging .pane { outline: 2px dashed var(--accent
 .hist-body { flex: 1 1 auto; min-width: 0; }
 .hist-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; font-size: 12.5px; }
 .btn.subtle.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+
+/* ---------- forcing I/O (two-step: stage, then Apply) ---------- */
+.force-cell { white-space: nowrap; }
+.force-cell .force-btn { font-family: "IBM Plex Mono", monospace; font-size: 11px; padding: 2px 7px; margin-right: 3px; }
+.force-cell .force-btn.active.tok-on { background: var(--ok-bg, #e4f3e4); border-color: var(--ok, #2e7d32); color: var(--ok, #2e7d32); }
+.force-cell .force-btn.active.tok-off { background: var(--write-bg); border-color: var(--write); color: var(--write); }
+.force-num { width: 72px; font-family: "IBM Plex Mono", monospace; font-size: 12px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel-2); color: var(--ink); }
+tr.io-staged { background: var(--accent-bg); }
+.force-arrow { font-family: "IBM Plex Mono", monospace; font-weight: 600; color: var(--accent); }
+.force-bar { display: inline-flex; align-items: center; gap: 8px; margin-left: 12px; flex-wrap: wrap; }
+.force-bar .muted { font-size: 12px; }
 @media (max-width: 760px) {
   .hist { flex-direction: column; }
   .hist-list { flex-basis: auto; width: 100%; max-height: 32vh; }
