@@ -1743,3 +1743,11 @@ h3.sec-toggle:hover { color: var(--accent); }
 }
 /* Ctrl held over a CALL/RUN target in the editor */
 textarea.editor.call-link { cursor: pointer; }
+/* Single view: the code box is the scroller, so the tabs and toolbar stay
+ * in view the way they do in a split half and in the editor. Phones keep
+ * one page scroll — the toolbar there is worth less than the height. */
+@media (min-width: 761px) {
+  .pane.viewing { display: flex; flex-direction: column; overflow: hidden; }
+  .pane.viewing > * { flex: 0 0 auto; }
+  .pane.viewing > .codebox { flex: 1 1 auto; min-height: 0; overflow: auto; }
+}

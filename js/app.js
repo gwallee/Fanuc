@@ -3352,6 +3352,7 @@
       })
     ])));
     pane.appendChild(bar);
+    pane.classList.add('viewing');   // toolbar stays put, the code scrolls (as in a split half)
     var banner = uploadBanner(p.parsed.name);
     if (banner) pane.appendChild(banner);
     pane.appendChild(buildCodeBox(p));
