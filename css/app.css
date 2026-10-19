@@ -460,7 +460,8 @@ body.dragging .drop-hint, body.dragging .pane { outline: 2px dashed var(--accent
 .tok-num { color: var(--num); }
 .tok-cmt { color: var(--cmt); font-style: italic; }
 .tok-str { color: var(--str); }
-.tok-call { color: var(--motion); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.tok-call { color: var(--motion); text-decoration: underline; text-underline-offset: 2px; }
+body.ctrl-held .codebox .tok-call { cursor: pointer; }   /* opens on Ctrl+click */
 
 /* ---------- summary / cards ---------- */
 /* The band above the counts. Frames and parser trouble decide how you read

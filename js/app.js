@@ -1837,7 +1837,7 @@
     // together, tying every jump to its LBL[n] definition by color
     s = s.replace(/\b(?:JMP\s+)?LBL\[[^\]]*\]/g, function (m0) { return '<span class="tok-lbl">' + m0 + '</span>'; });
     s = s.replace(/\b(CALL|RUN)\s+([A-Z_][A-Z0-9_]*)/g, function (_, kw, name) {
-      return '<span class="tok-kw">' + kw + '</span> <span class="tok-call" data-call="' + name + '">' + name + '</span>';
+      return '<span class="tok-kw">' + kw + '</span> <span class="tok-call" data-call="' + name + '" title="Ctrl+click to open ' + name + '">' + name + '</span>';
     });
     s = s.replace(/\b(PR|AR|SR|GP\d+)\[[^\]]*\]/g, function (m0, kind) {
       if (ln && kind === 'PR') {
@@ -2580,7 +2580,9 @@
         var src = cl.querySelector('.src');
         markDataLine(src ? src.textContent : '');
       }
-      if (t.classList.contains('tok-call')) {
+      // Ctrl+click, as in the editor: a plain click on a call is only a
+      // click in the listing (placing a line, starting a selection)
+      if (t.classList.contains('tok-call') && (ev.ctrlKey || ev.metaKey)) {
         var name = t.getAttribute('data-call').toUpperCase();
         if (state.programs[name]) { state.selected = name; render(); }
       }
@@ -3545,9 +3547,8 @@
         c1: Math.max(0, colRect.c1 + d[1])
       });
     }
-    /* Ctrl+click a CALL/RUN target to open that program — the viewer's
-     * single click, which a textarea cannot have (a click there places the
-     * caret). This editor's text is already its draft, so it stays open in
+    /* Ctrl+click a CALL/RUN target to open that program — the same gesture
+     * as the viewer (a plain click in a textarea places the caret). This editor's text is already its draft, so it stays open in
      * edit mode, changes and all. Holding Ctrl over a target shows the
      * pointer and names it. */
     function callAt(rc) {
@@ -7617,6 +7618,12 @@
     });
 
     window.addEventListener('popstate', onPopState);
+
+    // Ctrl held: CALL targets in the viewer show they open on click
+    function ctrlHeld(on) { document.body.classList.toggle('ctrl-held', on); }
+    window.addEventListener('keydown', function (e) { if (e.key === 'Control' || e.key === 'Meta') ctrlHeld(true); });
+    window.addEventListener('keyup', function (e) { if (e.key === 'Control' || e.key === 'Meta') ctrlHeld(false); });
+    window.addEventListener('blur', function () { ctrlHeld(false); });
 
     // Ctrl+E: cross-reference the selection (Studio 5000 habit)
     window.addEventListener('keydown', function (e) {
