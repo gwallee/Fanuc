@@ -64,10 +64,8 @@
     ignoreIoState: true,   // Compare: skip the controller's inline I/O state (persisted)
     ignoreLineNums: true,  // Compare: skip the leading /MN line number (persisted)
     robotCheck: null,      // last "check robot for changes" run — manual, never polled
-    /* Studio-5000-style document tabs in the Code view. A doc is a program
-     * ('P:NAME') or a data view ('D:regs' | 'D:prs' | 'D:io'), so live
-     * registers can sit in a tab — or docked beside the code — instead of
-     * needing a second browser window. */
+    /* Studio-5000-style document tabs in the Code view: each doc is a
+     * program ('P:NAME'). Live registers and I/O are the data sidebar. */
     docs: { left: [], right: [] },   // the two tab strips of the Code view
     active: { left: null, right: null },  // each strip's shown doc; right null = no split
     editSides: { left: false, right: false },   // which split halves are editors
@@ -77,7 +75,9 @@
     historySel: 0,         // which version in that list is picked
     splitPct: 50,          // side-by-side: left half's share of the width (persisted)
     showAllProgs: false,   // sidebar: also list programs not prefixed A_/_ (persisted)
-    dataFilter: {},        // data-view filter text, per doc id — survives re-renders
+    dataFilter: {},        // data-sidebar filter text — survives re-renders
+    showData: true,        // Code tab: the registers/I/O sidebar on the right (persisted)
+    dataSeg: 'used',       // its view: 'used' | 'r' | 'pr' | 'io' (persisted)
     theme: 'auto'          // 'auto' (follow the system) | 'light' | 'dark' (persisted)
   };
 
@@ -164,6 +164,8 @@
       if (p.theme === 'light' || p.theme === 'dark' || p.theme === 'auto') state.theme = p.theme;
       if (typeof p.splitPct === 'number' && p.splitPct >= 20 && p.splitPct <= 80) state.splitPct = p.splitPct;
       if (typeof p.showAllProgs === 'boolean') state.showAllProgs = p.showAllProgs;
+      if (typeof p.showData === 'boolean') state.showData = p.showData;
+      if (['used', 'r', 'pr', 'io'].indexOf(p.dataSeg) !== -1) state.dataSeg = p.dataSeg;
       if (typeof p.ignoreLineNums === 'boolean') state.ignoreLineNums = p.ignoreLineNums;
       if (typeof p.syncSplit === 'boolean') state.syncSplit = p.syncSplit;
       if (p.flowLayout === 'column' || p.flowLayout === 'chart') state.flowLayout = p.flowLayout;
@@ -191,7 +193,7 @@
         flowMini: state.flowMini, flowHideNav: state.flowHideNav, hideNav: state.hideNav,
         xrefFolded: state.xrefFolded, xrefHideUnused: state.xrefHideUnused,
         lastRobot: state.lastRobot || null, theme: state.theme, splitPct: state.splitPct,
-        showAllProgs: state.showAllProgs
+        showAllProgs: state.showAllProgs, showData: state.showData, dataSeg: state.dataSeg
       }));
     } catch (e) { /* session-only */ }
   }
@@ -1262,16 +1264,23 @@
     });
   }
 
+  /* A robot read finished. The Robot tab rebuilds; anywhere else only the
+   * data sidebar repaints — a full render() would rebuild an open editor. */
+  function robotDataLoaded() {
+    if (state.tab === 'robot') render();
+    else renderDataSide();
+  }
+
   function loadRobotRegisters() {
     var ip = state.robot.ip;
     api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=NUMREG.VA' + ftpQS()).then(function (b) {
       state.robot.registers = VA.parseNumreg(b.content);
       state.robot.loadedAt = new Date();
       rebuildDerived();
-      if (state.tab === 'robot') render();
+      robotDataLoaded();
     }).catch(function (e) {
       state.robot.registers = { error: e.message };
-      if (state.tab === 'robot') render();
+      robotDataLoaded();
     });
   }
 
@@ -1280,10 +1289,10 @@
     api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=POSREG.VA' + ftpQS()).then(function (b) {
       state.robot.posregs = VA.parsePosreg(b.content);
       rebuildDerived();
-      if (state.tab === 'robot') render();
+      robotDataLoaded();
     }).catch(function (e) {
       state.robot.posregs = { error: e.message };
-      if (state.tab === 'robot') render();
+      robotDataLoaded();
     });
   }
 
@@ -1291,10 +1300,10 @@
     var ip = state.robot.ip;
     api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=STRREG.VA' + ftpQS()).then(function (b) {
       state.robot.strregs = VA.parseStrreg(b.content);
-      if (state.tab === 'robot') render();
+      robotDataLoaded();
     }).catch(function (e) {
       state.robot.strregs = { error: e.message };
-      if (state.tab === 'robot') render();
+      robotDataLoaded();
     });
   }
 
@@ -1388,6 +1397,90 @@
     return td;
   }
 
+  /* ---- setting an R[n] value on the controller ----
+   * The second thing the bridge writes over HTTP, and the first that can
+   * change what the robot DOES: a running program reads the new value on its
+   * next line. So it is R[n] only, against a live robot only (never backup
+   * data — that would be setting a value nobody has looked at), always
+   * confirmed by name and old → new value, sent once, and proven by reading
+   * NUMREG.VA back. */
+  function canWriteRegs() {
+    return !!(state.server && state.robot.ip && state.robot.registers && !state.robot.registers.error);
+  }
+
+  function robotRegister(index) {
+    var regs = canWriteRegs() ? state.robot.registers : [];
+    for (var i = 0; i < regs.length; i++) if (regs[i].index === index) return regs[i];
+    return null;
+  }
+
+  /* Ask, write, read back. done(ok) runs once either way; on success the
+   * loaded register row already holds what the controller stored. */
+  function writeRegValue(index, text, done) {
+    var r = robotRegister(index);
+    var v = String(text).trim();
+    var key = 'R[' + index + (r && r.comment ? ':' + r.comment : '') + ']';
+    if (!/^-?\d+(\.\d+)?$/.test(v) || v.length > 16) {
+      toast(key + ': a register value is a number like 12, -3 or 1.5');
+      done(false);
+      return;
+    }
+    var robotName = (state.knownRobots || []).filter(function (x) { return x.ip === state.robot.ip; }).map(function (x) { return x.name; })[0];
+    if (!confirm('Set ' + key + ' on ' + (robotName ? robotName + ' (' + state.robot.ip + ')' : state.robot.ip) +
+        '\n\n    ' + (r ? r.value : '?') + '  →  ' + v +
+        '\n\nA running program reads the new value on its next line.')) {
+      done(false);
+      return;
+    }
+    postJSON('/api/robot/regvalue', {
+      ip: state.robot.ip, index: index, value: v,
+      user: state.robot.ftpUser || undefined, pass: state.robot.ftpPass || undefined
+    }).then(function (b) {
+      // show what the controller holds; only an unconfirmed write shows what was sent
+      if (r && typeof b.stored === 'number') r.value = b.stored;
+      else if (r && b.ok) r.value = parseFloat(v);
+      if (!b.ok) throw new Error(b.error || 'the controller did not take the value');
+      if (!b.verified && b.verifyError) toast('Sent ' + key + ' = ' + v + ' — but could not read it back to confirm: ' + b.verifyError);
+      else toast(key + ' = ' + b.stored, 2500);
+      done(true);
+    }).catch(function (e) {
+      toast('Could not set ' + key + ': ' + e.message, 7000);
+      done(false);
+    });
+  }
+
+  /* The value as an input (Robot tab table). Commits on Enter or leaving a
+   * changed field, like the comment cell beside it; Escape puts it back. */
+  function regValueCell(r) {
+    var td = h('td', { class: 'n' });
+    if (!canWriteRegs()) { td.textContent = String(r.value); return td; }
+    var inp = h('input', {
+      type: 'text', class: 'cmt-edit val-edit', value: String(r.value), maxlength: '16',
+      title: 'Set R[' + r.index + '] on the controller — asks first'
+    });
+    var busy = false;
+    inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+      else if (e.key === 'Escape') { inp.value = String(r.value); inp.blur(); }
+    });
+    inp.addEventListener('change', function () {
+      if (busy || inp.value.trim() === String(r.value)) return;
+      busy = true;
+      inp.disabled = true;
+      inp.classList.add('busy');
+      writeRegValue(r.index, inp.value, function (ok) {
+        busy = false;
+        inp.disabled = false;
+        inp.classList.remove('busy');
+        inp.value = String(r.value);   // what the controller holds, either way
+        if (ok) { inp.classList.add('ok'); setTimeout(function () { inp.classList.remove('ok'); }, 2500); }
+        if (state.showData) renderDataSide();
+      });
+    });
+    td.appendChild(inp);
+    return td;
+  }
+
   function loadRobotErrors() {
     var ip = state.robot.ip;
     state.robot.errors = null;
@@ -1419,6 +1512,7 @@
 
   function loadRobotIO() {
     var ip = state.robot.ip;
+    state.robot.ioLoading = true;   // the data sidebar asks once, not on every repaint
     // IOSTATE.DG carries live state + comments in ASCII (DIOCFGSV.IO is binary
     // on many controllers)
     api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=IOSTATE.DG' + ftpQS()).then(function (b) {
@@ -1428,17 +1522,20 @@
       state.robot.rawIO = null;
       state.robot.ioComments = points.filter(function (p) { return p.comment; });
       rebuildDerived();
-      if (state.tab === 'robot') render();
+      state.robot.ioLoading = false;
+      robotDataLoaded();
     }).catch(function () {
       api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=DIOCFGSV.IO' + ftpQS()).then(function (b) {
         state.robot.ioState = null;
         state.robot.rawIO = VA.rawLines(b.content);
         state.robot.ioComments = VA.parseIOComments(b.content);
         rebuildDerived();
-        if (state.tab === 'robot') render();
+        state.robot.ioLoading = false;
+        robotDataLoaded();
       }).catch(function (e) {
         state.robot.rawIO = { error: e.message };
-        if (state.tab === 'robot') render();
+        state.robot.ioLoading = false;
+        robotDataLoaded();
       });
     });
   }
@@ -1852,7 +1949,7 @@
     state.tab = 'code';
     var needRender = !(state.editing && document.querySelector('textarea.editor'));
     if (needRender) {
-      state.editing = true;
+      beginEdit(progName);
       render();
     }
     requestAnimationFrame(function () {
@@ -1908,9 +2005,13 @@
     }
 
     s = s.replace(/(MESSAGE\[)([^\]]*)(\])/g, '<span class="tok-kw">$1</span><span class="tok-str">$2</span><span class="tok-kw">$3</span>');
-    s = s.replace(/\bLBL\[[^\]]*\]/g, function (m0) { return '<span class="tok-lbl">' + m0 + '</span>'; });
+    // JMP LBL[n] is ONE command — jump and target wear the label gold
+    // together, tying every jump to its LBL[n] definition by color
+    s = s.replace(/\b(?:JMP\s+)?LBL\[[^\]]*\]/g, function (m0) { return '<span class="tok-lbl">' + m0 + '</span>'; });
+    // the whitespace is kept (ws) so the editor overlay lines up with the
+    // textarea character for character; the title drives Ctrl+click-to-open
     s = s.replace(/\b(CALL|RUN)(\s+)([A-Z_][A-Z0-9_]*)/g, function (_, kw, ws, name) {
-      return '<span class="tok-kw">' + kw + '</span>' + ws + '<span class="tok-call" data-call="' + name + '">' + name + '</span>';
+      return '<span class="tok-kw">' + kw + '</span>' + ws + '<span class="tok-call" data-call="' + name + '" title="Ctrl+click to open ' + name + '">' + name + '</span>';
     });
     s = s.replace(/\b(PR|AR|SR|GP\d+)\[[^\]]*\]/g, function (m0, kind) {
       if (ln && kind === 'PR') {
@@ -1941,12 +2042,14 @@
     });
     s = s.replace(/\bP\[[^\]]*\]/g, function (m0) { return '<span class="tok-num">' + m0 + '</span>'; });
     /* The word passes run on the TEXT between tags only: a program named
-     * RESET or START sits in data-call="…" by now, and a keyword span
-     * inside that attribute broke the click-to-open link. */
+     * RESET or START sits in data-call="…" by now, and a keyword span inside
+     * that attribute broke the click-to-open link. JMP is deliberately absent
+     * from the keyword list — it is painted gold with its LBL[n] above, and a
+     * JMP span here would nest inside that label token. */
     s = outsideTags(s, function (t) {
       t = t.replace(/\bON\b/g, '<span class="tok-on">ON</span>');
       t = t.replace(/\bOFF\b/g, '<span class="tok-off">OFF</span>');
-      t = t.replace(/\b(IF|THEN|ELSE|ENDIF|SELECT|FOR|ENDFOR|TO|JMP|WAIT|TIMEOUT|SKIP|CONDITION|PULSE|END|ABORT|PAUSE|UALM|OVERRIDE|PAYLOAD|UFRAME_NUM|UTOOL_NUM|MOD|DIV|AND|OR|NOT|START|STOP|RESET|Offset|Tool_Offset)\b/g,
+      t = t.replace(/\b(IF|THEN|ELSE|ENDIF|SELECT|FOR|ENDFOR|TO|WAIT|TIMEOUT|SKIP|CONDITION|PULSE|END|ABORT|PAUSE|UALM|OVERRIDE|PAYLOAD|UFRAME_NUM|UTOOL_NUM|MOD|DIV|AND|OR|NOT|START|STOP|RESET|Offset|Tool_Offset)\b/g,
         '<span class="tok-kw">$1</span>');
       return t.replace(/\b(FINE|CNT\d+|ACC\d+|max_speed|BREAK|RTCP|Wjnt|PTH)\b/g, '<span class="tok-num">$1</span>');
     });
@@ -2116,6 +2219,7 @@
     renderConnect();
     renderTabs();
     renderPane();
+    renderDataSide();
     saveViewState();   // a refresh reopens exactly this view
   }
 
@@ -2667,7 +2771,18 @@
     });
     box.addEventListener('click', function (ev) {
       var t = ev.target;
-      if (t.classList.contains('tok-call')) {
+      // a clicked line is the viewer's "caret line" for the data sidebar
+      var cl = t.closest && t.closest('.cline');
+      if (cl && !t.classList.contains('mk')) {
+        var prev = document.querySelector('.cline.cur');
+        if (prev) prev.classList.remove('cur');
+        cl.classList.add('cur');
+        var src = cl.querySelector('.src');
+        markDataLine(src ? src.textContent : '');
+      }
+      // Ctrl+click, as in the editor: a plain click on a call is only a
+      // click in the listing (placing a line, starting a selection)
+      if (t.classList.contains('tok-call') && (ev.ctrlKey || ev.metaKey)) {
         var name = t.getAttribute('data-call').toUpperCase();
         if (state.programs[name]) { state.selected = name; render(); }
       }
@@ -2685,24 +2800,15 @@
   }
 
   /* ================= document tabs (Code view) =================
-   * Studio-5000 habit: everything you have open — programs AND data views —
-   * is a tab, and any tab drags onto the right half of the code to dock
-   * side-by-side. Data views put live registers next to the program that
-   * uses them, which used to take a second browser window. */
-
-  var DATA_DOCS = {
-    'D:regs': 'Registers',
-    'D:prs': 'PRs',
-    'D:io': 'I/O'
-  };
+   * Studio-5000 habit: every open program is a tab, and a tab dragged off
+   * its strip moves to the other side (see the window drop handler). Registers and I/O live
+   * in the data sidebar instead (see renderDataSide); the old 'D:*' data
+   * tabs a saved view may still name are dropped by docValid. */
 
   function docIsProg(id) { return !!id && id.slice(0, 2) === 'P:'; }
   function docProg(id) { return docIsProg(id) ? id.slice(2) : null; }
-  function docLabel(id) { return DATA_DOCS[id] || String(id).slice(2); }
-  function docValid(id) {
-    if (!id) return false;
-    return DATA_DOCS[id] ? true : !!state.programs[id.slice(2)];
-  }
+  function docLabel(id) { return String(id).slice(2); }
+  function docValid(id) { return docIsProg(id) && !!state.programs[id.slice(2)]; }
 
   function paneOf(id) {
     if (state.docs.left.indexOf(id) !== -1) return 'left';
@@ -2816,6 +2922,18 @@
    * program's tab and makes it active. */
   var docSelSync = null;
 
+  function isEditing(id) {
+    return docIsProg(id) && state.editDrafts[docProg(id)] !== undefined;
+  }
+
+  /* Enter edit mode on a program. The draft starts as the saved source, so
+   * nothing is dirty until a key is pressed. */
+  function beginEdit(name) {
+    if (state.programs[name] && state.editDrafts[name] === undefined) {
+      state.editDrafts[name] = state.programs[name].source;
+    }
+  }
+
   function syncDocs() {
     state.docs.left = state.docs.left.filter(docValid);
     state.docs.right = state.docs.right.filter(function (id) {
@@ -2833,21 +2951,30 @@
         ? 'P:' + state.selected : (state.docs.left[0] || null);
     }
     if (!state.active.right) state.active.right = state.docs.right[0] || null;
+    /* Edit mode belongs to the PROGRAM, not the strip: a program is being
+     * edited exactly while it has a draft (beginEdit seeds one, every exit
+     * deletes it). Switching tabs or halves used to drop the flag and leave
+     * the draft stranded behind a view-mode tab. */
+    var leftOn = isEditing(state.active.left), rightOn = isEditing(state.active.right);
+    state.editing = leftOn;
+    state.editSides.left = leftOn;
+    state.editSides.right = rightOn;
     // editing flags only mean something on a strip showing a program
     if (!state.docs.right.length) { state.editSides.left = false; state.editSides.right = false; }
     if (!docIsProg(state.active.left)) state.editSides.left = false;
     if (!docIsProg(state.active.right)) state.editSides.right = false;
   }
 
-  function renderDocTabs(pane) {
-    var strip = h('div', { class: 'doc-tabs', title: 'Drag a tab onto the other half of the code to move it there' });
+  /* `extra` is a control for the strip's right end, before the sidebar
+   * toggle (the split's Sync scroll). */
+  function renderDocTabs(pane, extra) {
+    var strip = h('div', { class: 'doc-tabs', title: 'Drag a tab off this strip to move it to the other side' });
     state.docs[pane].forEach(function (id) {
       var tab = h('span', {
         class: 'doc-tab' + (id === state.active[pane] ? ' active' : '') +
-               (DATA_DOCS[id] ? ' data' : '') +
                (docIsProg(id) && progDirty(docProg(id)) ? ' dirty' : ''),
         'data-doc': id,
-        title: 'Click to show · drag onto the other half to move it there · middle-click to close',
+        title: 'Click to show · drag off the strip to move it to the other side · middle-click to close',
         draggable: 'true'
       }, [
         h('span', { class: 'doc-label', text: docLabel(id) }),
@@ -2872,113 +2999,295 @@
       });
       strip.appendChild(tab);
     });
-    // data-view openers live on the left strip only, for whatever is not open
-    var haveData = !!(state.extern || (state.server && state.robot.ip));
-    if (pane === 'left') Object.keys(DATA_DOCS).forEach(function (id) {
-      if (paneOf(id)) return;
-      var add = h('button', {
-        class: 'doc-add', draggable: 'true', text: '+ ' + DATA_DOCS[id],
-        title: haveData
-          ? 'Open ' + DATA_DOCS[id] + ' as a tab — or drag it onto the right half of the code to dock it side-by-side'
-          : 'Opens as a tab. No controller data yet — connect to a robot or open a backup folder to fill it.',
-        onclick: function () { activateDoc(id); }
-      });
-      // draggable before it is even open: "+ I/O" dragged onto the right
-      // half docks it in one gesture
-      add.addEventListener('dragstart', function (e) {
-        e.dataTransfer.setData('text/x-doc', id);
-        e.dataTransfer.effectAllowed = 'link';
-      });
-      strip.appendChild(add);
-    });
+    // the data-sidebar toggle sits at the right end of the rightmost strip,
+    // next to the sidebar it opens
+    if (pane === 'right' || !state.docs.right.length) {
+      strip.appendChild(h('span', { style: 'flex:1' }));
+      if (extra) strip.appendChild(extra);
+      strip.appendChild(dataSideToggle());
+    }
     return strip;
   }
 
-  /* One data view: live registers / position registers / I/O as a document.
-   * The filter works on the rows already rendered — no re-render, so the
-   * input never loses its caret. */
-  function buildDataView(id) {
-    var box = h('div', { class: 'dataview' });
-    var rows = [];
-    var source = null;
+  /* ================= data sidebar (Code view) =================
+   * Registers, PRs and I/O down the right edge, like the library down the
+   * left. "Used" — the default — lists only what the open program(s) touch,
+   * with live values; R / PR / I/O list everything the controller has. The
+   * rows the caret line (editor) or the clicked line (viewer) mentions are
+   * highlighted, so a line's data is read off without leaving the code. */
 
-    if (id === 'D:regs') {
-      var regs = (state.robot.registers && !state.robot.registers.error && state.robot.registers) ||
-                 (state.extern && state.extern.registers) || [];
-      source = state.robot.registers && !state.robot.registers.error ? 'robot ' + state.robot.ip
-             : (state.extern && state.extern.source);
-      regs.forEach(function (r) {
-        rows.push({
-          text: 'R[' + r.index + (r.comment ? ':' + r.comment : '') + '] = ' + r.value,
-          html: '<span class="tok-reg">R[' + esc(String(r.index)) + (r.comment ? ':' + esc(r.comment) : '') + ']</span> = <span class="tok-num">' + esc(String(r.value)) + '</span>'
-        });
+  function dataSideToggle() {
+    var on = !!state.showData;
+    return h('button', {
+      class: 'btn subtle ds-toggle' + (on ? ' on' : ''),
+      'aria-label': 'Registers and I/O', 'aria-pressed': on ? 'true' : 'false',
+      title: (on ? 'Hide' : 'Show') + ' registers and I/O (Ctrl+.)',
+      html: '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor"/><line x1="10" y1="3" x2="10" y2="13" stroke="currentColor"/>' +
+            (on ? '<rect x="10" y="3" width="4" height="10" fill="currentColor" opacity=".35"/>' : '') + '</svg>',
+      onclick: toggleDataSide
+    });
+  }
+
+  /* No render(): that would rebuild an open editor and lose its caret. The
+   * sidebar redraws itself and the toggles swap in place; the editor's
+   * ResizeObserver keeps the overlay matched to the new width. */
+  function toggleDataSide() {
+    state.showData = !state.showData;
+    savePrefs();
+    renderDataSide();
+    document.querySelectorAll('.ds-toggle').forEach(function (b) { b.replaceWith(dataSideToggle()); });
+  }
+
+  /* What the sidebar can show: robot values first, a backup folder's
+   * otherwise. Every list is keyed the way the analyzer keys its refs —
+   * R[n], PR[n], DI[n] — so "Used" and the caret highlight can look rows up. */
+  function dataSources() {
+    var ex = state.extern || {};
+    var robotRegs = state.robot.registers && !state.robot.registers.error;
+    var robotPrs = state.robot.posregs && !state.robot.posregs.error;
+    return {
+      regs: (robotRegs ? state.robot.registers : ex.registers) || [],
+      prs: (robotPrs ? state.robot.posregs : ex.posregs) || [],
+      io: state.robot.ioState || ex.io || [],
+      source: (robotRegs || robotPrs || state.robot.ioState) ? 'robot ' + state.robot.ip : (ex.source || null)
+    };
+  }
+
+  function dsRegRow(r) {
+    return { key: 'R[' + r.index + ']', name: 'R[' + r.index + (r.comment ? ':' + r.comment : '') + ']',
+             cls: 'tok-reg', value: String(r.value), vcls: 'tok-num', reg: r.index };
+  }
+  function dsPrRow(r) {
+    var val = r.uninit ? 'Uninit' : (VA.posregValueStr ? VA.posregValueStr(r) : '');
+    return { key: 'PR[' + r.index + ']', name: 'PR[' + (r.group && r.group !== 1 ? r.group + ',' : '') + r.index + (r.comment ? ':' + r.comment : '') + ']',
+             cls: 'tok-reg', value: val, vcls: r.uninit ? 'muted' : 'tok-num', wrap: !r.uninit };
+  }
+  function dsIoRow(p) {
+    return { key: p.type + '[' + p.index + ']', name: p.type + '[' + p.index + (p.comment ? ':' + p.comment : '') + ']',
+             cls: 'tok-io', value: p.state || '', vcls: p.state === 'ON' ? 'tok-on' : p.state === 'OFF' ? 'tok-off' : 'muted' };
+  }
+
+  /* The open programs' refs, in number order, each with the controller's
+   * row when there is one (the label the program carries otherwise). */
+  function dsUsedGroups(src) {
+    var progs = [state.active.left, state.active.right].filter(docIsProg)
+      .map(function (id) { return state.programs[docProg(id)]; }).filter(Boolean);
+    function index(list, rowFn) {
+      var m = {};
+      list.forEach(function (x) { var r = rowFn(x); if (!m[r.key] || (x.group || 1) === 1) m[r.key] = r; });
+      return m;
+    }
+    var have = { r: index(src.regs, dsRegRow), pr: index(src.prs, dsPrRow), io: index(src.io, dsIoRow) };
+    var used = { r: {}, pr: {}, io: {} };
+    progs.forEach(function (p) {
+      var a = p.analysis;
+      Object.keys(a.registers).forEach(function (n) {
+        used.r['R[' + n + ']'] = have.r['R[' + n + ']'] ||
+          { key: 'R[' + n + ']', name: 'R[' + n + (a.registers[n].label ? ':' + a.registers[n].label : '') + ']', cls: 'tok-reg', value: '', vcls: 'muted' };
       });
-    } else if (id === 'D:prs') {
-      var prs = (state.robot.posregs && !state.robot.posregs.error && state.robot.posregs) ||
-                (state.extern && state.extern.posregs) || [];
-      source = state.robot.posregs && !state.robot.posregs.error ? 'robot ' + state.robot.ip
-             : (state.extern && state.extern.source);
-      prs.forEach(function (r) {
-        var val = r.uninit ? 'Uninitialized' : (VA.posregValueStr ? VA.posregValueStr(r) : '');
-        rows.push({
-          text: 'PR[' + r.group + ',' + r.index + (r.comment ? ':' + r.comment : '') + '] ' + val,
-          html: '<span class="tok-reg">PR[' + r.group + ',' + r.index + (r.comment ? ':' + esc(r.comment) : '') + ']</span> <span class="' + (r.uninit ? 'muted' : 'tok-num') + '">' + esc(val) + '</span>'
-        });
+      Object.keys(a.posRegs).forEach(function (n) {
+        used.pr['PR[' + n + ']'] = have.pr['PR[' + n + ']'] ||
+          { key: 'PR[' + n + ']', name: 'PR[' + n + (a.posRegs[n].label ? ':' + a.posRegs[n].label : '') + ']', cls: 'tok-reg', value: '', vcls: 'muted' };
       });
-    } else if (id === 'D:io') {
-      var pts = state.robot.ioState || (state.extern && state.extern.io) || [];
-      source = state.robot.ioState ? 'robot ' + state.robot.ip : (state.extern && state.extern.source);
-      pts.forEach(function (p2) {
-        var st = p2.state ? (p2.state === 'ON' ? '<span class="tok-on">ON</span>' : '<span class="tok-off">OFF</span>') : '';
-        rows.push({
-          text: p2.type + '[' + p2.index + (p2.comment ? ':' + p2.comment : '') + '] ' + (p2.state || ''),
-          html: '<span class="tok-io">' + esc(p2.type) + '[' + p2.index + (p2.comment ? ':' + esc(p2.comment) : '') + ']</span> ' + st
-        });
+      Object.keys(a.io).forEach(function (k) {
+        var x = a.io[k];
+        used.io[k] = have.io[k] ||
+          { key: k, name: x.type + '[' + x.index + (x.label ? ':' + x.label : '') + ']', cls: 'tok-io', value: '', vcls: 'muted' };
+      });
+    });
+    function sorted(m) {
+      return Object.keys(m).map(function (k) { return m[k]; }).sort(function (a, b) {
+        var ta = a.key.replace(/\[.*/, ''), tb = b.key.replace(/\[.*/, '');
+        if (ta !== tb) return ta < tb ? -1 : 1;
+        return parseInt(a.key.replace(/^\D+/, ''), 10) - parseInt(b.key.replace(/^\D+/, ''), 10);
       });
     }
+    return [['Registers', sorted(used.r)], ['Position registers', sorted(used.pr)], ['I/O', sorted(used.io)]];
+  }
 
-    var head = h('div', { class: 'dataview-head' });
-    var filter = h('input', { type: 'text', placeholder: 'Filter ' + DATA_DOCS[id].toLowerCase() + '…', class: 'dataview-filter' });
-    // the view is rebuilt on every render (tab switches, robot refreshes…),
-    // so the typed filter lives in state, not in the input
-    filter.value = state.dataFilter[id] || '';
-    head.appendChild(filter);
-    if (source) head.appendChild(h('span', { class: 'muted', text: 'from ' + source }));
+  var DS_SEGS = [['used', 'Used'], ['r', 'R'], ['pr', 'PR'], ['io', 'I/O']];
+  var dsRows = [];          // [{ el, key }] of the sidebar as last drawn
+  var dsLastKeys = [];      // the keys last highlighted — re-applied after a redraw
+  var dsDocKey = null;      // the open docs those keys were taken from
+
+  /* A live R[n] value in the sidebar edits in place: click it, type, Enter
+   * (or click away) to set it on the controller — writeRegValue asks first.
+   * Escape, or leaving it unchanged, sends nothing. */
+  function dsValueEditor(valEl, r) {
+    valEl.classList.add('editable');
+    valEl.title = 'Click to set ' + r.key + ' on the controller';
+    valEl.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      if (valEl.querySelector('input')) return;
+      var was = valEl.textContent;
+      var inp = h('input', { type: 'text', class: 'ds-valin', value: was, maxlength: '16' });
+      var settled = false;
+      function finish(commit) {
+        if (settled) return;
+        settled = true;
+        var v = inp.value.trim();
+        if (!commit || v === was || v === '') { valEl.textContent = was; return; }
+        inp.disabled = true;
+        writeRegValue(r.reg, v, function () { renderDataSide(); });
+      }
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+        else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+      });
+      inp.addEventListener('blur', function () { finish(true); });
+      inp.addEventListener('dblclick', function (e) { e.stopPropagation(); });
+      valEl.textContent = '';
+      valEl.appendChild(inp);
+      inp.focus();
+      inp.select();
+    });
+  }
+
+  /* Why a view is empty, in the terms of the file it comes from. */
+  function dsEmptyText(seg) {
+    if (seg === 'used') return 'This program uses no registers or I/O.';
+    var r = state.robot;
+    var f = seg === 'r' ? ['NUMREG.VA', r.registers] : seg === 'pr' ? ['POSREG.VA', r.posregs]
+          : ['IOSTATE.DG', r.ioState || r.rawIO];
+    if (state.server && r.ip) {
+      if (seg === 'io' && r.ioLoading) return 'Reading IOSTATE.DG from ' + r.ip + '…';
+      if (f[1] && f[1].error) return 'Could not read ' + f[0] + ': ' + f[1].error;
+      if (!f[1]) return 'Reading ' + f[0] + ' from ' + r.ip + '…';
+      return f[0] + ' on ' + r.ip + ' has nothing to list.';
+    }
+    return 'No controller data. Connect to a robot, or open a backup folder holding ' + f[0] + '.';
+  }
+
+  function renderDataSide() {
+    var side = document.getElementById('dataside');
+    if (!side) return;
+    var show = state.tab === 'code' && !!state.showData && Object.keys(state.programs).length > 0;
+    side.hidden = !show;
+    dsRows = [];
+    if (!show) { side.innerHTML = ''; return; }
+    side.innerHTML = '';
+    var seg = state.dataSeg || 'used';
+    /* Connecting reads the registers but not I/O — the Robot tab reads that
+     * on demand. The sidebar is a demand too: the first time it needs I/O
+     * from a connected robot, read it (once; the result repaints this). */
+    var r0 = state.robot;
+    if ((seg === 'io' || seg === 'used') && state.server && r0.ip &&
+        !r0.ioState && !r0.rawIO && !r0.ioLoading) loadRobotIO();
+    var src = dataSources();
+
+    var segBar = h('div', { class: 'ds-seg', role: 'tablist' });
+    DS_SEGS.forEach(function (s) {
+      segBar.appendChild(h('button', {
+        class: 'ds-segbtn' + (seg === s[0] ? ' on' : ''), role: 'tab', text: s[1],
+        'aria-selected': seg === s[0] ? 'true' : 'false',
+        title: s[0] === 'used' ? 'Only what the open program uses' : 'Everything the controller has',
+        onclick: function () { state.dataSeg = s[0]; savePrefs(); renderDataSide(); }
+      }));
+    });
+    side.appendChild(segBar);
+
+    var filter = h('input', { type: 'search', class: 'ds-filter', placeholder: 'Filter' });
+    filter.value = state.dataFilter.side || '';
+    side.appendChild(filter);
+
+    var groups = seg === 'used' ? dsUsedGroups(src)
+      : seg === 'r' ? [[null, src.regs.map(dsRegRow)]]
+      : seg === 'pr' ? [[null, src.prs.map(dsPrRow)]]
+      : [[null, src.io.map(dsIoRow)]];
+
+    // I/O is the one table connecting does not read: its own button, the
+    // Robot tab's wording, re-reading IOSTATE.DG alone
+    if (seg === 'io' && state.server && r0.ip) {
+      var haveIO = !!(r0.ioState || r0.rawIO);
+      var readBtn = h('button', {
+        class: 'btn subtle',
+        text: r0.ioLoading ? 'Reading…' : haveIO ? 'Refresh from robot' : 'Read from robot',
+        title: 'Read IOSTATE.DG from ' + r0.ip,
+        onclick: function () { loadRobotIO(); renderDataSide(); }
+      });
+      readBtn.disabled = !!r0.ioLoading;
+      side.appendChild(h('div', { class: 'ds-read' }, [readBtn]));
+    }
+
+    var list = h('div', { class: 'ds-list mono' });
+    var any = false;
+    groups.forEach(function (g) {
+      if (!g[1].length) return;
+      any = true;
+      var head = g[0] ? h('div', { class: 'ds-grp', text: g[0] }) : null;
+      if (head) list.appendChild(head);
+      g[1].forEach(function (r) {
+        var el = h('div', { class: 'ds-row' + (r.wrap ? ' wrap' : ''), title: r.name + (r.value ? ' = ' + r.value : '') + '\nDouble-click to cross-reference' }, [
+          h('span', { class: 'ds-name ' + r.cls, text: r.name }),
+          h('span', { class: 'ds-val ' + r.vcls, text: r.value })
+        ]);
+        el.addEventListener('dblclick', function () { crossRefToken(r.key); });
+        if (r.reg !== undefined && canWriteRegs()) dsValueEditor(el.lastChild, r);
+        el._text = (r.name + ' ' + r.value).toLowerCase();
+        el._head = head;
+        list.appendChild(el);
+        dsRows.push({ el: el, key: r.key });
+      });
+    });
+    if (!any) list.appendChild(h('p', { class: 'muted ds-empty', text: dsEmptyText(seg) }));
+    side.appendChild(list);
+
+    function applyFilter() {
+      var q = filter.value.trim().toLowerCase();
+      var heads = [];
+      dsRows.forEach(function (r) {
+        var vis = !q || r.el._text.indexOf(q) !== -1;
+        r.el.style.display = vis ? '' : 'none';
+        if (vis && r.el._head && heads.indexOf(r.el._head) === -1) heads.push(r.el._head);
+      });
+      list.querySelectorAll('.ds-grp').forEach(function (hd) { hd.style.display = heads.indexOf(hd) !== -1 ? '' : 'none'; });
+    }
+    filter.addEventListener('input', function () { state.dataFilter.side = filter.value; applyFilter(); });
+    applyFilter();
+
+    var foot = h('div', { class: 'ds-foot' }, [
+      h('span', { class: 'muted', text: src.source ? 'from ' + src.source : 'no controller data' })
+    ]);
     if (state.server && state.robot.ip) {
-      head.appendChild(h('button', {
-        class: 'btn subtle', text: 'Refresh',
-        title: 'Re-read from ' + state.robot.ip,
+      foot.appendChild(h('button', {
+        class: 'btn subtle', text: 'Refresh', title: 'Re-read registers, PRs and I/O from ' + state.robot.ip,
         onclick: function () {
-          if (id === 'D:regs') loadRobotRegisters();
-          else if (id === 'D:prs') loadRobotPosregs();
-          else loadRobotIO();
+          loadRobotRegisters(); loadRobotPosregs(); loadRobotIO();
           toast('Re-reading from ' + state.robot.ip + '…', 2500);
         }
       }));
     }
-    box.appendChild(head);
+    side.appendChild(foot);
+    // a highlight belongs to a line of the program it came from
+    var docKey = state.active.left + '|' + state.active.right;
+    if (docKey !== dsDocKey) { dsDocKey = docKey; dsLastKeys = []; }
+    markDataSide(dsLastKeys, true);
+  }
 
-    var listEl = h('div', { class: 'dataview-rows' });
-    if (!rows.length) {
-      listEl.appendChild(h('p', { class: 'muted', text: 'No data yet. Connect to a robot (Robot tab) or open a backup folder that holds NUMREG.VA / POSREG.VA / IOSTATE.DG.' }));
-    }
-    var els = rows.map(function (r) {
-      var el = h('div', { class: 'dataview-row mono', html: r.html });
-      el._filterText = r.text.toLowerCase();
-      listEl.appendChild(el);
-      return el;
+  /* Highlight the rows a line mentions. Takes a line of TP text (any
+   * listing form — the analyzer's regexes ignore line numbers and ';') or,
+   * internally, the keys themselves. */
+  function lineDataKeys(text) {
+    var a = A.analyzeProgram({ lines: [{ text: text || '', comment: null, num: 0 }] });
+    return Object.keys(a.registers).map(function (n) { return 'R[' + n + ']'; })
+      .concat(Object.keys(a.posRegs).map(function (n) { return 'PR[' + n + ']'; }))
+      .concat(Object.keys(a.io));
+  }
+
+  function markDataSide(keys, quiet) {
+    dsLastKeys = keys || [];
+    var first = null;
+    dsRows.forEach(function (r) {
+      var hit = dsLastKeys.indexOf(r.key) !== -1;
+      r.el.classList.toggle('hit', hit);
+      if (hit && !first) first = r.el;
     });
-    function applyFilter() {
-      var q = filter.value.trim().toLowerCase();
-      els.forEach(function (el) { el.style.display = (!q || el._filterText.indexOf(q) !== -1) ? '' : 'none'; });
-    }
-    filter.addEventListener('input', function () {
-      state.dataFilter[id] = filter.value;
-      applyFilter();
-    });
-    applyFilter();
-    box.appendChild(listEl);
-    return box;
+    if (first && !quiet) first.scrollIntoView({ block: 'nearest' });
+  }
+
+  function markDataLine(text) {
+    if (!state.showData) return;
+    markDataSide(lineDataKeys(text));
   }
 
   function progSelect(value, onchange) {
@@ -3054,22 +3363,11 @@
     syncLabel.appendChild(document.createTextNode(' Sync scroll'));
 
     var bothProgs = docIsProg(state.active.left) && docIsProg(state.active.right);
-
-    pane.appendChild(h('div', { class: 'code-toolbar' }, [
-      h('span', { class: 'title', text: 'Side by side' }),
-      h('span', { class: 'muted', text: 'drag a tab or a library program onto either half to view it there' }),
-      h('span', { style: 'flex:1' }),
-      bothProgs && !anyEditSide() ? syncLabel : null,
-      h('button', {
-        class: 'btn subtle', text: 'Close split',
-        title: 'Move the right strip\u2019s tabs back to the left \u2014 nothing closes, drafts stay',
-        onclick: function () {
-          state.docs.left = state.docs.left.concat(state.docs.right);
-          state.docs.right = [];
-          render();
-        }
-      })
-    ]));
+    /* No header row: it only held a how-to line, Sync scroll and Close
+     * split, and the split closes itself once the last tab is dragged back
+     * left. Sync scroll sits in the right strip, beside the sidebar toggle,
+     * so the code gets the height. */
+    var stripExtra = bothProgs && !anyEditSide() ? syncLabel : null;
 
     /* A failed send renders its banner here too — without this, a rejected
      * translation after "Save + send" from a split half reported nothing. */
@@ -3081,7 +3379,7 @@
     [['left', state.active.left], ['right', state.active.right]].forEach(function (side) {
       var id = side[1];
       var col = h('div', { class: 'code-pane ' + side[0], 'data-side': side[0] });
-      col.appendChild(renderDocTabs(side[0]));
+      col.appendChild(renderDocTabs(side[0], side[0] === 'right' ? stripExtra : null));
       if (!id) {
         col.appendChild(h('p', { class: 'muted', text: 'Nothing on this side \u2014 drag a tab over from the other half.' }));
         wrap.appendChild(col);
@@ -3134,25 +3432,13 @@
           return;
         }
 
-        col.appendChild(h('div', { class: 'pane-head' }, [
-          h('button', {
-            class: 'btn subtle', text: 'Edit', title: 'Edit this half in place \u2014 the other half stays open beside it',
-            onclick: function () { state.editSides[side[0]] = true; render(); }
-          }),
-          bothProgs ? h('button', {
-            class: 'btn subtle', text: 'Compare A\u2194B', title: 'Diff these two programs in the Compare tab',
-            onclick: function () { state.pair = { a: docProg(state.active.left), b: docProg(state.active.right) }; state.tab = 'compare'; render(); }
-          }) : null,
-          h('span', { style: 'flex:1' }),
-          h('button', { class: 'btn subtle', text: 'Export .LS', onclick: function () { exportProgram(p); } }),
-          h('button', {
-            class: 'btn subtle', text: 'Remove',
-            title: 'Remove ' + name + ' from the library (files on disk are untouched)',
-            onclick: function () {
-              if (confirm('Remove ' + name + ' from the library? (Your original file is untouched.)')) removeProgram(name);
-            }
-          })
-        ]));
+        col.appendChild(h('div', { class: 'pane-head' }, [issuesBadge(p), h('span', { style: 'flex:1' })]
+          .concat(progActions(p, [
+            bothProgs ? h('button', {
+              class: 'btn', text: 'Compare A\u2194B', title: 'Diff these two programs in the Compare tab',
+              onclick: function () { state.pair = { a: docProg(state.active.left), b: docProg(state.active.right) }; state.tab = 'compare'; render(); }
+            }) : null
+          ]))));
         if (p) {
           var box = buildCodeBox(p);
           box.addEventListener('scroll', onScroll);
@@ -3161,8 +3447,6 @@
         } else {
           col.appendChild(h('p', { class: 'muted', text: 'no program' }));
         }
-      } else {
-        col.appendChild(buildDataView(id));
       }
       wrap.appendChild(col);
     });
@@ -3199,6 +3483,64 @@
     pane.appendChild(wrap);
   }
 
+  /* The program toolbar's buttons, shared by the single view and each split
+   * half so they read the same in both: Edit first, then what the view
+   * adds (`extra`), then the robot, export and remove. */
+  function progActions(p, extra) {
+    var name = p.parsed.name;
+    return [
+      h('button', { class: 'btn', text: 'Edit', title: 'Edit ' + name + ' in place', onclick: function () { beginEdit(name); render(); } })
+    ].concat(extra || [], [
+      (state.server && state.robot.ip) ? h('button', {
+        class: 'btn', text: 'Send to robot',
+        title: 'Upload ' + name + '.LS to ' + state.robot.ip + ' over FTP (snapshot + verify + auto-restore on failure)',
+        onclick: function () {
+          if (!confirm('Send ' + name + '.LS to robot ' + state.robot.ip + ' over FTP?\n\nThe current version on the robot is snapshotted first. If the controller rejects the translation, that snapshot is restored automatically.')) return;
+          sendToRobot(name, p.source, function () { render(); });
+        }
+      }) : null,
+      (state.server && state.robot.ip && (state.robot.files || []).some(function (f) { return f.toUpperCase() === name.toUpperCase() + '.LS'; })) ? h('button', {
+        class: 'btn subtle', text: 'Delete from robot',
+        title: 'Remove ' + name + ' from ' + state.robot.ip + ' \u2014 the robot\u2019s copy is snapshotted to backups\\pre-upload first; the library copy stays',
+        onclick: function () {
+          if (!confirm('Delete ' + name + ' from robot ' + state.robot.ip + '?\n\nThe robot\u2019s copy is saved to backups\\pre-upload first, and the copy in this library stays. The controller refuses if the program is selected on the pendant or held by a live task.')) return;
+          deleteFromRobot(name, function () { render(); });
+        }
+      }) : null,
+      h('button', { class: 'btn subtle', text: 'Export .LS', onclick: function () { exportProgram(p); } }),
+      h('button', {
+        class: 'btn subtle' + (state.historyOpen === name ? ' active' : ''),
+        text: 'History' + (versionsOf(name).length ? ' (' + versionsOf(name).length + ')' : ''),
+        title: 'Earlier versions of this program kept in this browser \u2014 every save, import or replace keeps the text it replaced',
+        onclick: function () {
+          state.historyOpen = state.historyOpen === name ? null : name;
+          state.historySel = 0;
+          render();
+        }
+      }),
+      h('button', {
+        class: 'btn subtle', text: 'Remove',
+        title: 'Remove ' + name + ' from the library (files on disk are untouched)',
+        onclick: function () {
+          if (confirm('Remove ' + name + ' from the library? (Your original file is untouched.)')) removeProgram(name);
+        }
+      })
+    ]);
+  }
+
+  /* "N issues" — click for the Checks tab filtered to this program. */
+  function issuesBadge(p) {
+    var name = p.parsed.name;
+    var n = findingsFor(name).length;
+    if (!n) return null;
+    return h('span', {
+      class: 'badge warn', text: n + ' issue' + (n > 1 ? 's' : ''),
+      style: 'cursor:pointer',
+      title: 'Marked in the gutter, line ' + flaggedLines(name).join(', ') + '. Click for the Checks tab, filtered to this program.',
+      onclick: function () { state.checksProg = name; state.tab = 'checks'; render(); }
+    });
+  }
+
   function renderCode(pane) {
     syncDocs();
     if (state.docs.right.length) return renderSplit(pane);   // strips render per half
@@ -3206,76 +3548,33 @@
 
     if (!docValid(state.active.left)) return;
 
-    // a data view, full width
-    if (!docIsProg(state.active.left)) {
-      pane.appendChild(buildDataView(state.active.left));
-      return;
-    }
-
     var p = state.programs[docProg(state.active.left)];
     if (!p) return;
 
     if (state.editing) return renderEditor(pane, p);
 
-    var progFindings = findingsFor(p.parsed.name);
-
+    /* Same buttons, same order, same style as a split half (progActions):
+     * only the program's name and comment, which the split's tabs and
+     * width leave out, are extra here. */
     var bar = h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: p.parsed.name }),
       p.parsed.attrs.COMMENT ? h('span', { class: 'muted', text: p.parsed.attrs.COMMENT }) : null,
-      progFindings.length ? h('span', {
-        class: 'badge warn', text: progFindings.length + ' issue' + (progFindings.length > 1 ? 's' : ''),
-        style: 'cursor:pointer',
-        title: 'Marked in the gutter, line ' + flaggedLines(p.parsed.name).join(', ')
-          + '. Click for the Checks tab, filtered to this program.',
-        onclick: function () { state.checksProg = p.parsed.name; state.tab = 'checks'; render(); }
-      }) : null,
+      issuesBadge(p),
       h('span', { style: 'flex:1' }),
-      codeSizeControl(),
-      h('button', { class: 'btn', text: 'Edit', onclick: function () { state.editing = true; render(); } }),
+      codeSizeControl()
+    ].concat(progActions(p, [
       h('button', {
-        class: 'btn', text: 'Side-by-side', title: 'Open a second program next to this one (or drag one from the library onto the right half)',
+        class: 'btn', text: 'Side-by-side', title: 'Open a second program next to this one (or drag its tab off the strip)',
         onclick: function () {
           var others = state.docs.left.filter(function (d) { return d !== state.active.left; });
-          if (!others.length) { toast('Open another program or a data view first \u2014 then drag its tab onto the right half.'); return; }
+          if (!others.length) { toast('Open another program first — then drag its tab off the strip.'); return; }
           moveDoc(others[others.length - 1], 'right');
           render();
         }
-      }),
-      (state.server && state.robot.ip) ? h('button', {
-        class: 'btn', text: 'Send to robot',
-        title: 'Upload ' + p.parsed.name + '.LS to ' + state.robot.ip + ' over FTP (snapshot + verify + auto-restore on failure)',
-        onclick: function () {
-          if (!confirm('Send ' + p.parsed.name + '.LS to robot ' + state.robot.ip + ' over FTP?\n\nThe current version on the robot is snapshotted first. If the controller rejects the translation, that snapshot is restored automatically.')) return;
-          sendToRobot(p.parsed.name, p.source, function () { render(); });
-        }
-      }) : null,
-      (state.server && state.robot.ip && (state.robot.files || []).some(function (f) { return f.toUpperCase() === p.parsed.name.toUpperCase() + '.LS'; })) ? h('button', {
-        class: 'btn subtle', text: 'Delete from robot',
-        title: 'Remove ' + p.parsed.name + ' from ' + state.robot.ip + ' \u2014 the robot\u2019s copy is snapshotted to backups\\pre-upload first; the library copy stays',
-        onclick: function () {
-          if (!confirm('Delete ' + p.parsed.name + ' from robot ' + state.robot.ip + '?\n\nThe robot\u2019s copy is saved to backups\\pre-upload first, and the copy in this library stays. The controller refuses if the program is selected on the pendant or held by a live task.')) return;
-          deleteFromRobot(p.parsed.name, function () { render(); });
-        }
-      }) : null,
-      h('button', { class: 'btn subtle', text: 'Export .LS', onclick: function () { exportProgram(p); } }),
-      h('button', {
-        class: 'btn subtle' + (state.historyOpen === p.parsed.name ? ' active' : ''),
-        text: 'History' + (versionsOf(p.parsed.name).length ? ' (' + versionsOf(p.parsed.name).length + ')' : ''),
-        title: 'Earlier versions of this program kept in this browser \u2014 every save, import or replace keeps the text it replaced',
-        onclick: function () {
-          state.historyOpen = state.historyOpen === p.parsed.name ? null : p.parsed.name;
-          state.historySel = 0;
-          render();
-        }
-      }),
-      h('button', {
-        class: 'btn subtle', text: 'Remove',
-        onclick: function () {
-          if (confirm('Remove ' + p.parsed.name + ' from the library? (Your original file is untouched.)')) removeProgram(p.parsed.name);
-        }
       })
-    ]);
+    ])));
     pane.appendChild(bar);
+    pane.classList.add('viewing');   // toolbar stays put, the code scrolls (as in a split half)
     var banner = uploadBanner(p.parsed.name);
     if (banner) pane.appendChild(banner);
     if (state.historyOpen === p.parsed.name) renderHistory(pane, p);
@@ -3405,7 +3704,8 @@
      * copy sits directly behind transparent text, with identical metrics, and
      * follows the textarea's scroll. Editing stays completely native. */
     var hl = h('pre', { class: 'editor-hl', 'aria-hidden': 'true' });
-    var editorWrap = h('div', { class: 'editor-wrap' }, [hl, ta]);
+    var colLayer = h('div', { class: 'editor-colsel', 'aria-hidden': 'true' });
+    var editorWrap = h('div', { class: 'editor-wrap' }, [hl, colLayer, ta]);
     var repaintQueued = false;
 
     /* ---- syntax check ----
@@ -3492,15 +3792,243 @@
      * window where long lines force the horizontal scrollbar. */
     function sizeOverlay() {
       var w = ta.clientWidth + 'px', hgt = ta.clientHeight + 'px';
-      if (hl.style.width !== w) hl.style.width = w;
-      if (hl.style.height !== hgt) hl.style.height = hgt;
+      if (hl.style.width !== w) { hl.style.width = w; colLayer.style.width = w; }
+      if (hl.style.height !== hgt) { hl.style.height = hgt; colLayer.style.height = hgt; }
     }
     function syncScroll() {
       sizeOverlay();
       hl.scrollTop = ta.scrollTop;
       hl.scrollLeft = ta.scrollLeft;
+      scrollCol();
     }
     if (window.ResizeObserver) new ResizeObserver(syncScroll).observe(ta);
+
+    /* ---- column (rectangular) selection ----
+     * Alt+drag, or Alt+Shift+arrows from the caret, selects a column across
+     * rows — Notepad++'s column mode. Typing, Backspace, Delete, Tab and
+     * Ctrl+X/C/V then act on every row at once; a column copy pasted back
+     * into the plain editor lands as a column at the caret. The rect is drawn
+     * in its own layer between the coloured copy and the textarea, and the
+     * native selection is collapsed to the rect's head so the caret blinks
+     * there. Text changes go through execCommand('insertText') so the
+     * textarea's own undo stack keeps working (Ctrl+Z undoes a column edit). */
+    var colInner = h('div');
+    colLayer.appendChild(colInner);
+    colLayer.hidden = true;
+    var colRect = null;        // { r0, c0, r1, c1 }: anchor (r0,c0) → head (r1,c1), not ordered
+    var colClip = null;        // text of the last column copy — pasting it pastes a column
+    var applyingCol = false;   // our own execCommand is firing 'input'
+
+    function colMetrics() {
+      var cs = getComputedStyle(ta);
+      var cv = colMetrics.cv || (colMetrics.cv = document.createElement('canvas'));
+      var ctx = cv.getContext('2d');
+      ctx.font = cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+      return {
+        cw: ctx.measureText('0000000000').width / 10,
+        lh: parseFloat(cs.lineHeight) || 20,
+        padL: parseFloat(cs.paddingLeft) || 0,
+        padT: parseFloat(cs.paddingTop) || 0
+      };
+    }
+    function scrollCol() {
+      if (colRect) colInner.style.transform = 'translate(' + (-ta.scrollLeft) + 'px,' + (-ta.scrollTop) + 'px)';
+    }
+    function drawCol() {
+      colInner.innerHTML = '';
+      colLayer.hidden = !colRect;
+      if (!colRect) return;
+      var m = colMetrics(), r = ColSel.normalise(colRect);
+      var w = (r.c1 - r.c0) * m.cw;
+      for (var i = r.r0; i <= r.r1; i++) {
+        var d = document.createElement('div');
+        d.className = w ? 'cs-box' : 'cs-caret';
+        d.style.left = (m.padL + r.c0 * m.cw) + 'px';
+        d.style.top = (m.padT + i * m.lh) + 'px';
+        d.style.width = (w || 2) + 'px';
+        d.style.height = m.lh + 'px';
+        colInner.appendChild(d);
+      }
+      scrollCol();
+    }
+    function setCol(rect) {
+      colRect = rect;
+      var pos = ColSel.toPos(ta.value, rect.r1, rect.c1);
+      ta.setSelectionRange(pos, pos);
+      drawCol();
+      renderStatus();
+    }
+    function exitCol() {
+      if (!colRect) return;
+      colRect = null;
+      drawCol();
+      renderStatus();
+    }
+    /* Replace the whole text through the editing command so the change is
+     * one native undo step; fall back to a plain assignment where the
+     * command is refused (that loses the undo history, nothing else). */
+    function applyCol(res) {
+      var st = ta.scrollTop, sl = ta.scrollLeft, ok = false;
+      applyingCol = true;
+      ta.focus();
+      ta.setSelectionRange(0, ta.value.length);
+      try { ok = document.execCommand('insertText', false, res.text); } catch (e) { ok = false; }
+      if (!ok || ta.value !== res.text) ta.value = res.text;
+      applyingCol = false;
+      ta.scrollTop = st;
+      ta.scrollLeft = sl;
+      state.editDrafts[oldName] = ta.value;
+      setCol(res.rect);
+      paint();
+    }
+    function mouseRC(e) {
+      var m = colMetrics(), b = ta.getBoundingClientRect();
+      var rows = ta.value.split('\n').length;
+      var row = Math.floor((e.clientY - b.top + ta.scrollTop - m.padT) / m.lh);
+      var col = Math.round((e.clientX - b.left + ta.scrollLeft - m.padL) / m.cw);
+      return { row: Math.max(0, Math.min(rows - 1, row)), col: Math.max(0, col) };
+    }
+    function moveHead(d) {
+      var rows = ta.value.split('\n').length;
+      setCol({
+        r0: colRect.r0, c0: colRect.c0,
+        r1: Math.max(0, Math.min(rows - 1, colRect.r1 + d[0])),
+        c1: Math.max(0, colRect.c1 + d[1])
+      });
+    }
+    /* Ctrl+click a CALL/RUN target to open that program — the same gesture
+     * as the viewer (a plain click in a textarea places the caret). This editor's text is already its draft, so it stays open in
+     * edit mode, changes and all. Holding Ctrl over a target shows the
+     * pointer and names it. */
+    function callAt(rc) {
+      var txt = ta.value.split('\n')[rc.row] || '';
+      if (/^\s*(\d+:)?\s*!/.test(txt)) return null;   // a comment line
+      // blank bracket contents at the same width: DI[5:Run Task] is no RUN
+      var bare = txt.replace(/\[[^\]]*\]/g, function (m) { return '[' + new Array(m.length - 1).join(' ') + ']'; });
+      var re = /\b(CALL|RUN)\s+([A-Za-z_][A-Za-z0-9_]*)/g, m;
+      while ((m = re.exec(bare)) !== null) {
+        if (rc.col >= m.index && rc.col <= m.index + m[0].length) return m[2].toUpperCase();
+      }
+      return null;
+    }
+    function openCalled(name) {
+      if (!state.programs[name]) { toast(name + ' is not in the library.'); return; }
+      var id = 'P:' + name;
+      // from the right half, a program not open anywhere opens beside it
+      if (opts.side === 'right' && !paneOf(id)) { openDoc(id, true, 'right'); render(); }
+      else activateDoc(id);
+    }
+    function setCallHover(name) {
+      ta.classList.toggle('call-link', !!name);
+      if (name) ta.title = 'Ctrl+click to open ' + name;
+      else if (ta.title) ta.removeAttribute('title');
+    }
+    ta.addEventListener('mousemove', function (e) {
+      setCallHover((e.ctrlKey || e.metaKey) && !e.altKey ? callAt(mouseRC(e)) : null);
+    });
+    ta.addEventListener('keyup', function (e) { if (e.key === 'Control' || e.key === 'Meta') setCallHover(null); });
+    ta.addEventListener('mouseleave', function () { setCallHover(null); });
+    ta.addEventListener('mousedown', function (e) {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.button === 0) {
+        var called = callAt(mouseRC(e));
+        if (called) { e.preventDefault(); setCallHover(null); openCalled(called); return; }
+      }
+    });
+
+    ta.addEventListener('mousedown', function (e) {
+      if (!e.altKey || e.button !== 0) { exitCol(); return; }
+      e.preventDefault();          // no native drag-selection under the column
+      var rc = mouseRC(e);         // before focus(): focusing may scroll the box
+      ta.focus();
+      // Shift+Alt+click extends the column (or starts one from the caret)
+      var anchor = (e.shiftKey && colRect) ? { row: colRect.r0, col: colRect.c0 }
+                 : e.shiftKey ? ColSel.toRowCol(ta.value, ta.selectionStart) : rc;
+      setCol({ r0: anchor.row, c0: anchor.col, r1: rc.row, c1: rc.col });
+      function move(ev) { var p = mouseRC(ev); setCol({ r0: anchor.row, c0: anchor.col, r1: p.row, c1: p.col }); }
+      function up() { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); }
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    });
+    // Chrome hands focus to its menu bar when Alt is released on its own —
+    // which is exactly what happens after every Alt+drag
+    ta.addEventListener('keyup', function (e) { if (e.key === 'Alt') e.preventDefault(); });
+    ta.addEventListener('keydown', function (e) {
+      var ctrl = e.ctrlKey || e.metaKey;
+      if (e.key === 'Alt') { e.preventDefault(); return; }
+      var arrow = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key];
+      if (!colRect) {
+        if (arrow && e.altKey && e.shiftKey) {
+          e.preventDefault();
+          var rc = ColSel.toRowCol(ta.value, ta.selectionStart);
+          colRect = { r0: rc.row, c0: rc.col, r1: rc.row, c1: rc.col };
+          moveHead(arrow);
+        }
+        return;
+      }
+      if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Meta' || e.key === 'CapsLock') return;
+      if (e.key === 'Escape') { e.preventDefault(); exitCol(); return; }
+      if (arrow) {
+        if (e.shiftKey) { e.preventDefault(); moveHead(arrow); } else exitCol();   // the caret is at the head already
+        return;
+      }
+      if (e.key === 'Home' || e.key === 'End') {
+        if (!e.shiftKey) { exitCol(); return; }
+        e.preventDefault();
+        var rows = ta.value.split('\n'), r = ColSel.normalise(colRect), max = 0;
+        for (var i = r.r0; i <= r.r1; i++) max = Math.max(max, (rows[i] || '').length);
+        setCol({ r0: colRect.r0, c0: colRect.c0, r1: colRect.r1, c1: e.key === 'Home' ? 0 : max });
+        return;
+      }
+      if (ctrl && !(e.altKey && e.key.length === 1)) {      // AltGr characters are typed below
+        var k = e.key.toLowerCase();
+        if (k === 'c' || k === 'x') {
+          // the native copy/cut must run so the 'copy'/'cut' event fires
+          // (that is where the block replaces the clipboard text) — it does
+          // not fire over an empty selection, so select one character first
+          var p = ta.selectionStart;
+          if (p < ta.value.length) ta.setSelectionRange(p, p + 1);
+          else if (p > 0) ta.setSelectionRange(p - 1, p);
+          return;
+        }
+        if (k === 'v') return;                             // the paste handler takes it
+        exitCol();                                         // undo, select all, find… — plain editor again
+        return;
+      }
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault();
+        applyCol(ColSel.erase(ta.value, colRect, e.key === 'Backspace' ? -1 : 1));
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'PageUp' || e.key === 'PageDown') { exitCol(); return; }
+      if (e.key === 'Tab') { e.preventDefault(); applyCol(ColSel.replace(ta.value, colRect, '\t')); return; }
+      if (e.key.length === 1) { e.preventDefault(); applyCol(ColSel.replace(ta.value, colRect, e.key)); }
+    });
+    function onCopy(e) {
+      if (!colRect || !e.clipboardData) return;
+      var rect = colRect;
+      colClip = ColSel.extract(ta.value, rect);
+      e.clipboardData.setData('text/plain', colClip);
+      e.preventDefault();
+      setCol(rect);                                        // back to the collapsed head
+      // the deletion is an editing command of its own — not inside the clipboard event
+      if (e.type === 'cut') setTimeout(function () { if (colRect === rect) applyCol(ColSel.replace(ta.value, rect, '')); }, 0);
+    }
+    ta.addEventListener('copy', onCopy);
+    ta.addEventListener('cut', onCopy);
+    ta.addEventListener('paste', function (e) {
+      var cd = e.clipboardData || window.clipboardData;
+      var txt = cd ? cd.getData('text/plain') : '';
+      if (!txt) return;
+      var norm = txt.replace(/\r\n?/g, '\n');
+      if (colRect) { e.preventDefault(); applyCol(ColSel.paste(ta.value, colRect, norm)); return; }
+      // a column copy pasted into the plain editor: one line per row, down from the caret
+      if (colClip !== null && norm === colClip && ta.selectionStart === ta.selectionEnd) {
+        e.preventDefault();
+        var rc = ColSel.toRowCol(ta.value, ta.selectionStart);
+        applyCol(ColSel.paste(ta.value, { r0: rc.row, c0: rc.col, r1: rc.row, c1: rc.col }, norm));
+        exitCol();
+      }
+    });
     function caretRow() { return ta.value.slice(0, ta.selectionStart).split('\n').length - 1; }
     function rowStart(rows, row) {
       var pos = 0;
@@ -3540,8 +4068,30 @@
       return null;
     }
 
+    var lastDataLine = null;
     function renderStatus() {
+      // the data sidebar follows the caret line of whichever editor has focus
+      if (document.activeElement === ta) {
+        var cur = ta.value.split('\n')[caretRow()] || '';
+        if (cur !== lastDataLine) { lastDataLine = cur; markDataLine(cur); }
+      }
       statusBar.innerHTML = '';
+      if (colRect) {
+        var cr = ColSel.normalise(colRect);
+        statusBar.appendChild(h('span', {
+          class: 'msg col',
+          text: 'column: ' + (cr.r1 - cr.r0 + 1) + ' rows × ' + (cr.c1 - cr.c0) + ' cols · typing, Backspace, Delete, Ctrl+X/C/V hit every row · Shift+arrows extend · Esc'
+        }));
+      } else {
+        statusBar.appendChild(h('span', {
+          class: 'hint', text: 'Alt+drag · column select',
+          title: 'Alt+drag or Alt+Shift+arrows selects a column across rows (Notepad++ column mode). Typing, Backspace, Delete, cut, copy and paste then act on every row at once; a column copy pasted back lands as a column at the caret.'
+        }));
+        statusBar.appendChild(h('span', {
+          class: 'hint', text: 'Ctrl+click CALL · open',
+          title: 'Ctrl+click the program name after CALL or RUN to open it. This program stays in edit mode with its changes.'
+        }));
+      }
       if (!TPS) return;
       var it = caretItemName();
       if (it) {
@@ -3915,6 +4465,7 @@
     findBar.addEventListener('keydown', editorKeys);
 
     ta.addEventListener('input', function () {
+      if (!applyingCol) exitCol();     // native typing, undo, IME — the rect no longer fits the text
       state.editDrafts[oldName] = ta.value;
       paintDirtyTabs();
       if (repaintQueued) return;
@@ -7109,7 +7660,7 @@
         ol.appendChild(li);
       });
       box.appendChild(ol);
-      box.appendChild(h('p', { class: 'muted', text: 'The bridge mostly READS from robots — programs, register values, I/O. It writes only where you ask it to and it can check the result: sending a .LS back, renaming a register or I/O point, deleting a program you name. Nothing it does can move a robot.' }));
+      box.appendChild(h('p', { class: 'muted', text: 'The bridge mostly READS from robots — programs, register values, I/O. It writes only where you ask it to, and reads back every write to check it: sending a .LS back, renaming a register or I/O point, setting an R[n] value, forcing an output, and deleting a program you name. Nothing it does starts a program or commands motion — but a running program acts on a new R[n] value or a forced output at its next line, so those writes always ask first.' }));
       var sb = bridgeStartButton();
       if (sb) {
         box.appendChild(h('div', { class: 'hist-actions' }, [
@@ -7164,7 +7715,7 @@
       return;
     }
     if (!state.robot.ip) {
-      pane.appendChild(h('p', { class: 'muted', text: 'Enter the controller IP. The bridge reads the program list, register values (NUMREG.VA) and I/O configuration from the robot. Registers and I/O points can be renamed in place once connected.' }));
+      pane.appendChild(h('p', { class: 'muted', text: 'Enter the controller IP. The bridge reads the program list, register values (NUMREG.VA) and I/O configuration from the robot. Once connected, registers and I/O points can be renamed in place, and R[n] values set (asks first).' }));
       return;
     }
 
@@ -7489,7 +8040,7 @@
           if (x) x.refs.slice(0, 6).forEach(function (ref) { used.appendChild(chip(ref, ref.write ? 'write' : 'read')); });
           tbl.appendChild(h('tr', {}, [
             h('td', { class: 'n', text: 'R[' + r.index + ']' }),
-            h('td', { class: 'n', text: String(r.value) }),
+            regValueCell(r),
             commentCell('R', r.index, r.comment, function (text) { r.comment = text; }),
             used
           ]));
@@ -7795,11 +8346,23 @@
       e.returnValue = '';   // what Chrome still wants in order to show the prompt
     });
 
+    // Ctrl held: CALL targets in the viewer show they open on click
+    function ctrlHeld(on) { document.body.classList.toggle('ctrl-held', on); }
+    window.addEventListener('keydown', function (e) { if (e.key === 'Control' || e.key === 'Meta') ctrlHeld(true); });
+    window.addEventListener('keyup', function (e) { if (e.key === 'Control' || e.key === 'Meta') ctrlHeld(false); });
+    window.addEventListener('blur', function () { ctrlHeld(false); });
+
     // Ctrl+E: cross-reference the selection (Studio 5000 habit)
     window.addEventListener('keydown', function (e) {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'e' || e.key === 'E')) {
         e.preventDefault();
         crossRefToken(selectedText());
+      }
+      // Ctrl+. : show/hide the registers and I/O sidebar
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === '.' && state.tab === 'code') {
+        e.preventDefault();
+        toggleDataSide();
+        return;
       }
       if (cfgKey(e)) { e.preventDefault(); return; }
       if (e.key === 'Escape' && navOpen()) {
@@ -7885,12 +8448,26 @@
       document.body.classList.remove('dragging');
       if (!e.dataTransfer) return;
       var progName = e.dataTransfer.getData('text/x-prog');
-      var docId = e.dataTransfer.getData('text/x-doc') ||
-        (progName && state.programs[progName] ? 'P:' + progName : '');
+      var tabId = e.dataTransfer.getData('text/x-doc');
+      /* A dragged TAB has only two places to go: back onto a strip, or over
+       * to the other side. So dropping it on a strip puts it in that strip,
+       * and dropping it anywhere else in the code area sends it across —
+       * no hauling it past the middle of the screen. Off the code area
+       * (library, header, data sidebar) it stays where it was. */
+      if (tabId && docValid(tabId)) {
+        var t = e.target && e.target.closest ? e.target : null;
+        var strip = t && t.closest('.doc-tabs');
+        var from = paneOf(tabId) || 'left';
+        var to = strip ? ((strip.closest('.code-pane') || {}).dataset || {}).side || 'left'
+          : (t && t.closest('.main-body') && !t.closest('.dataside')) ? (from === 'left' ? 'right' : 'left')
+          : from;
+        if (to !== from) dockDoc(tabId, to === 'right');
+        return;
+      }
+      var docId = progName && state.programs[progName] ? 'P:' + progName : '';
       if (docId && docValid(docId)) {
-        // Notepad++/Studio-5000-style: drop a tab or a library program onto
-        // the code view — right half docks it side-by-side, left half
-        // replaces the view
+        // a library program dropped on the code view: right half docks it
+        // side-by-side, left half replaces the view
         var paneEl = document.getElementById('pane');
         var r = paneEl.getBoundingClientRect();
         dockDoc(docId, e.clientX > r.left + r.width / 2);

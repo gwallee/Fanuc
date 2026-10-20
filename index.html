@@ -79,7 +79,10 @@
 
   <main class="main">
     <nav class="tabs" id="tabs"></nav>
-    <div class="pane" id="pane"></div>
+    <div class="main-body">
+      <div class="pane" id="pane"></div>
+      <aside class="dataside" id="dataside" aria-label="Registers and I/O" hidden></aside>
+    </div>
   </main>
 </div>
 
@@ -90,6 +93,7 @@
 <script src="js/flow.js"></script>
 <script src="js/vaparse.js"></script>
 <script src="js/diff.js"></script>
+<script src="js/colsel.js"></script>
 <script src="js/qr.js"></script>
 <script src="js/tpshapes.js"></script>
 <script src="js/tpsyntax.js"></script>

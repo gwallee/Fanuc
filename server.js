@@ -455,11 +455,10 @@ async function handleApi(req, res, u) {
   }
 
   /* Rename one item on the controller: a register, a position or string
-   * register, or an I/O point. This is the only write the bridge makes over
-   * HTTP, so it is deliberately narrow — a comment and nothing else, only for
-   * a type the controller's own comment tool offers, and the text is checked
-   * before it goes anywhere. Nothing reachable here can move the robot or
-   * change a program.
+   * register, or an I/O point. One of the two writes the bridge makes over
+   * HTTP (the other is /api/robot/regvalue), so it is deliberately narrow —
+   * a comment and nothing else, only for a type the controller's own comment
+   * tool offers, and the text is checked before it goes anywhere.
    *
    * Same shape as the .LS upload: write, then read the file back and report
    * what the controller actually stored, so the UI can prove the rename landed
@@ -493,6 +492,48 @@ async function handleApi(req, res, u) {
         result.ok = false;
         result.error = 'The controller took the write but ' + key + ' still reads ' +
           (stored === null ? 'as absent from ' + spec.file : '"' + stored + '"') + '.';
+      }
+    } catch (e) {
+      result.verifyError = e.message;   // the write went through; only the proof failed
+    }
+    return json(res, 200, result);
+  }
+
+  /* Set one numeric register's value, R[n] only, through the comment tool's
+   * own value write (lib/comset.js has the provenance). Unlike a rename this
+   * CAN change what the robot does — a running program reads the new value
+   * on its next line — so the UI confirms first, and this side sends exactly
+   * once: a timed-out GET may still have landed, and repeating a write a
+   * program may already have acted on is not ours to decide. Then NUMREG.VA
+   * is read back so the answer is what the controller holds, not a 200. */
+  if (u.pathname === '/api/robot/regvalue' && req.method === 'POST') {
+    const body = await readBody(req);
+    let payload;
+    try { payload = JSON.parse(body); } catch (e) { return fail(res, 400, 'invalid JSON body'); }
+    const { ip, index, value, user, pass } = payload;
+    if (!ip || !ROBOT_HOST.test(String(ip).split(':')[0])) return fail(res, 400, 'missing or invalid ip');
+    const p = CS.planRegValue(index, value);
+    if (p.error) return fail(res, 400, p.error);
+
+    const t = parseTarget(ip);
+    const result = { ok: false, key: p.key, index: p.index, value: p.value, verified: false };
+    try {
+      await robotGet(t.host, p.url);   // never retried
+    } catch (e) {
+      return fail(res, 502, 'Writing ' + p.key + ' failed: ' + e.message +
+        ' — it may or may not have landed; refresh registers to see what the controller holds. ' +
+        'Value writes need the controller\'s comment tool (/KAREL/COMMAIN) reachable over HTTP.');
+    }
+    result.ok = true;
+    try {
+      const got = await readRobotFile(t, user, pass, 'NUMREG.VA');
+      const stored = CS.storedRegValue(got.content, p.index);
+      result.stored = stored;
+      result.verified = CS.regValueMatches(stored, p.num);
+      if (!result.verified) {
+        result.ok = false;
+        result.error = 'The controller took the write but ' + p.key + ' reads ' +
+          (stored === null ? 'as absent from NUMREG.VA' : stored) + '.';
       }
     } catch (e) {
       result.verifyError = e.message;   // the write went through; only the proof failed

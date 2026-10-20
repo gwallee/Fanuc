@@ -743,6 +743,31 @@ check(CS.storedComment('IOSTATE.DG', 'DOUT[  65] OFF  Vac-1 ON\n', 'DO', 65) ===
   'an I/O rename is verified against IOSTATE.DG');
 check(CS.storedComment('IOSTATE.DG', 'DIN[   1]  ON  Auto Mode\n', 'DO', 1) === null,
   'DI[1] and DO[1] are not confused when verifying');
+
+console.log('\n-- setting R[n] values on the controller (ComSet sFc=2) --');
+// Read off the controller's Numeric Registers page (ComGet?sFc=28): each value
+// box calls sendRegValue(v, 'iValN', 2), and klserver.js turns that into
+// sValue / sIndx / sRealFlag=v.indexOf('.') / sFc. Pinned: a wrong code
+// writes some other table on a live robot.
+check(CS.REG_VALUE_FC === 2, 'register value write code pinned: sFc=2');
+const iv = CS.planRegValue(8, '5');
+check(iv.url === '/karel/ComSet?sValue=5&sIndx=8&sRealFlag=-1&sFc=2',
+  'an integer goes with sRealFlag=-1, as the robot page sends it: ' + iv.url);
+const rv = CS.planRegValue(12, '-1.25');
+check(rv.real && rv.url === '/karel/ComSet?sValue=-1.25&sIndx=12&sRealFlag=2&sFc=2',
+  'a real carries the decimal point position as sRealFlag: ' + rv.url);
+['', ' ', '1e3', '.5', '5.', '0x10', '1,5', '12abc', '--1', '1'.repeat(17)].forEach((bad) => {
+  check(!!CS.planRegValue(1, bad).error, JSON.stringify(bad) + ' is refused as a register value');
+});
+check(!!CS.planRegValue(1, '2147483648').error && !CS.planRegValue(1, '-2147483648').error,
+  'integers stop at the 32-bit range');
+check(!!CS.planRegValue(0, '1').error && !!CS.planRegValue(10000, '1').error,
+  'index 0 and past the cap are refused');
+check(CS.storedRegValue("  [8] = 5  'Task-JMP LBL'\n  [12] = -1.250000e+00  ''\n", 12) === -1.25,
+  'the read-back finds the value in NUMREG.VA');
+check(CS.regValueMatches(0.10000000149011612, 0.1) && CS.regValueMatches(5, 5) &&
+  !CS.regValueMatches(4, 5) && !CS.regValueMatches(null, 5),
+  'a real is matched at float32 precision; anything else must be equal');
 console.log('\n-- TP syntax: shapes, grammar, snippets --');
 const S = require('../js/tpsyntax.js');
 const SH = require('../js/tpshapes.js');
@@ -847,6 +872,31 @@ check(S.snippets(SH).some((s) => s.name === 'Joint move' && s.count > 0) && S.sn
   }));
   check(scanned > 20 && bad === 0, 'no controller-written line in testdata/samples is called an error (' + bad + ' in ' + scanned + ' programs)');
 }
+
+console.log('\n-- column selection --');
+const CSL = require('../js/colsel.js');
+const colSrc = '   1:  DO[1]=ON ;\n   2:  DO[2]=ON ;\n   3:  DO[3]=ON ;\n   4:  ;';
+check(CSL.extract(colSrc, { r0: 0, c0: 7, r1: 2, c1: 12 }) === 'DO[1]\nDO[2]\nDO[3]', 'extract reads the block one row per line');
+check(CSL.extract(colSrc, { r0: 2, c0: 12, r1: 0, c1: 7 }) === 'DO[1]\nDO[2]\nDO[3]', 'a rect dragged up/left is normalised');
+let cr = CSL.replace(colSrc, { r0: 0, c0: 7, r1: 2, c1: 9 }, 'R');
+check(cr.text.split('\n').slice(0, 3).join('|') === '   1:  R[1]=ON ;|   2:  R[2]=ON ;|   3:  R[3]=ON ;' && cr.rect.c0 === 8 && cr.rect.c1 === 8, 'replace writes the typed text into every row and collapses after it');
+cr = CSL.replace(colSrc, { r0: 0, c0: 16, r1: 3, c1: 16 }, '!');
+check(cr.text.split('\n')[3] === '   4:  ;' + ' '.repeat(8) + '!', 'typing in virtual space pads the short row with spaces');
+cr = CSL.replace(colSrc, { r0: 0, c0: 16, r1: 3, c1: 17 }, '');
+check(cr.text.split('\n')[3] === '   4:  ;' && cr.text.split('\n')[0] === '   1:  DO[1]=ON ', 'deleting in virtual space leaves the short row alone');
+cr = CSL.erase(colSrc, { r0: 0, c0: 7, r1: 2, c1: 7 }, -1);
+check(cr.text.split('\n')[0] === '   1: DO[1]=ON ;' && cr.rect.c0 === 6, 'Backspace on a collapsed rect removes the character before it in every row');
+cr = CSL.erase(colSrc, { r0: 0, c0: 7, r1: 2, c1: 7 }, 1);
+check(cr.text.split('\n')[1] === '   2:  O[2]=ON ;' && cr.rect.c0 === 7, 'Delete on a collapsed rect removes the character under it in every row');
+check(CSL.erase(colSrc, { r0: 0, c0: 0, r1: 2, c1: 0 }, -1).text === colSrc, 'Backspace at column 0 does nothing');
+cr = CSL.paste(colSrc, { r0: 0, c0: 7, r1: 2, c1: 7 }, 'X');
+check(cr.text.split('\n')[2] === '   3:  XDO[3]=ON ;' && cr.rect.r1 === 2, 'a one-line clip is pasted into every row of the rect');
+cr = CSL.paste(colSrc, { r0: 1, c0: 7, r1: 1, c1: 7 }, 'A\r\nBB\r\nCCC\r\nDDDD');
+const pl = cr.text.split('\n');
+check(pl[1] === '   2:  ADO[2]=ON ;' && pl[3] === '   4:  CCC;' && pl[4] === '       DDDD' && pl.length === 5 && cr.rect.r1 === 4 && cr.rect.c0 === 11, 'a multi-line clip goes one line per row, growing the document past its end (CRLF clip ok)');
+cr = CSL.paste(colSrc, { r0: 0, c0: 7, r1: 1, c1: 9 }, 'R\nR\n');
+check(cr.text.split('\n')[0] === '   1:  R[1]=ON ;' && cr.rect.r1 === 1, 'a pasted block replaces the rect contents; a trailing newline is not a row');
+check(JSON.stringify(CSL.toRowCol('ab\ncd', 4)) === '{"row":1,"col":1}' && CSL.toPos('ab\ncd', 1, 9) === 5 && CSL.toPos('ab\ncd', 7, 0) === 5, 'row/col <-> offset conversion clamps to the text');
 
 console.log('');
 if (failures) {
