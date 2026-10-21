@@ -16,6 +16,8 @@ Import `.LS` files, drag-and-drop, or **Import folder** to pull in a whole backu
 
 Windows: double-click **`Start FANUC Studio.bat`** — it starts the bridge and opens the app (needs Node.js LTS from nodejs.org installed once). For a desktop shortcut, point it at the .bat and set its icon to **`FANUC Studio.ico`** (right-click the shortcut → Properties → Change Icon → Browse). macOS/Linux: `./start.sh`. Or by hand:
 
+**Start the bridge from the app.** Running the .bat once also registers a `fanucstudio://` link for your Windows user (no admin). After that, when the installed app opens with the bridge down — it still opens, from its cache — the sidebar and Robot tab show **Start bridge**: Chrome/Edge asks once to open the link ("always allow" makes it one click), the bridge starts with no console window via `Start FANUC Studio hidden.vbs`, and the app reloads onto it. Its output goes to `bridge.log`; stop it from Task Manager (node.exe). The link only ever starts the bridge — it passes nothing through. Moved the folder? Run the .bat once from the new place. Remove the link: `reg delete "HKCUSoftwareClassesanucstudio" /f`.
+
 ```
 node server.js           # zero dependencies; then open http://localhost:8642
 ```

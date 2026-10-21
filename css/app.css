@@ -1751,3 +1751,6 @@ textarea.editor.call-link { cursor: pointer; }
   .pane.viewing > * { flex: 0 0 auto; }
   .pane.viewing > .codebox { flex: 1 1 auto; min-height: 0; overflow: auto; }
 }
+/* "Start bridge" — shown wherever the app says it needs the bridge */
+.bridge-start { margin: 6px 0; }
+.bridge-start-msg { margin-top: 6px; font-size: 12px; color: var(--warn); }

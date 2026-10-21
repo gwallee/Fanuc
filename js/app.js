@@ -2197,6 +2197,69 @@
     sel.value = (state.robot.ip && known) ? state.robot.ip : '';
   }
 
+  /* ---- starting the bridge from the app ----
+   * A page cannot launch a program, so "Start FANUC Studio.bat" registers a
+   * fanucstudio:// link (per user) that runs the hidden launcher, and this
+   * button opens it — the browser asks once, then it is one click. Then the
+   * bridge's ping is polled; when it answers, the installed app (served from
+   * the cache while the bridge was down) reloads onto it, and a file:// page
+   * moves over to it. A page cannot tell whether the link is registered, so
+   * a timeout says how to register it. */
+  var bridgeStart = { busy: false, failed: false };
+
+  function bridgeBase() {
+    return location.protocol === 'file:' ? 'http://localhost:8642' : location.origin;
+  }
+
+  function startBridge() {
+    if (bridgeStart.busy) return;
+    bridgeStart.busy = true;
+    bridgeStart.failed = false;
+    paintBridgeStart();
+    window.location.href = 'fanucstudio://start';
+    var base = bridgeBase(), tries = 0;
+    (function poll() {
+      var fileMode = location.protocol === 'file:';
+      fetch(base + '/api/ping', { cache: 'no-store', mode: fileMode ? 'no-cors' : 'same-origin' })
+        .then(function (r) {
+          // same origin: it must be the bridge saying so; from file:// the
+          // reply is opaque, so anything answering on the port counts
+          if (fileMode) return;
+          return r.json().then(function (b) { if (!r.ok || !b || !b.ok) throw new Error('not the bridge'); });
+        })
+        .then(function () {
+          if (fileMode) location.href = base + '/';
+          else location.reload();
+        })
+        .catch(function () {
+          if (++tries < 30) { setTimeout(poll, 1000); return; }
+          bridgeStart.busy = false;
+          bridgeStart.failed = true;
+          paintBridgeStart();
+        });
+    })();
+  }
+
+  /* The button and its outcome, wherever "needs the bridge" is shown. */
+  function bridgeStartControl() {
+    var wrap = h('div', { class: 'bridge-start' });
+    wrap.appendChild(h('button', {
+      class: 'btn primary', text: bridgeStart.busy ? 'Starting…' : 'Start bridge',
+      title: 'Start the bridge on this PC (no console window; output in bridge.log)',
+      onclick: startBridge
+    }));
+    if (bridgeStart.failed) {
+      wrap.appendChild(h('div', { class: 'bridge-start-msg', html:
+        'No answer from the bridge. Run <code>Start FANUC Studio.bat</code> once — it registers this button — or check <code>bridge.log</code> in the app folder.' }));
+    }
+    wrap.querySelector('button').disabled = bridgeStart.busy;
+    return wrap;
+  }
+
+  function paintBridgeStart() {
+    document.querySelectorAll('.bridge-start').forEach(function (el) { el.replaceWith(bridgeStartControl()); });
+  }
+
   function renderConnect() {
     var hint = document.getElementById('server-hint');
     var dot = document.getElementById('bridge-dot');
@@ -2224,7 +2287,8 @@
       dirRow.style.display = 'none';
       if (dot) dot.hidden = true;
       hint.hidden = false;
-      hint.innerHTML = 'Robot &amp; folder-path access need the bridge:<br><code>node server.js</code> then open <code>http://localhost:8642</code>. The Robot tab has details.';
+      hint.innerHTML = 'Robot &amp; folder-path access need the bridge.';
+      hint.appendChild(bridgeStartControl());
     }
     var phoneBtn = document.getElementById('btn-phone');
     // Only the bridge serves this app to other devices; a file:// page has
@@ -6959,6 +7023,7 @@
     if (!state.server) {
       var box = h('div', { class: 'summary' });
       box.appendChild(h('h3', { text: 'Live robot access needs the bridge server' }));
+      box.appendChild(bridgeStartControl());
       box.appendChild(h('p', { text: 'Browsers cannot talk to a FANUC controller directly (the controller speaks plain HTTP/FTP with no browser-permitted cross-origin headers). The bridge is a small zero-dependency server included in this repo that proxies to the robot and serves this same app.' }));
       var ol = h('ol');
       [['On any PC on the robot network:  node server.js', 'then open http://localhost:8642 on that PC.'],

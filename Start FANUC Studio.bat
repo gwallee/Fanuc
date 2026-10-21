@@ -20,6 +20,16 @@ if not exist "%NODE%" (
   )
 )
 
+rem Register the fanucstudio:// link behind the app's "Start bridge" button.
+rem Per user (HKCU), no admin. It points at this folder's hidden launcher,
+rem so running this .bat from a moved or new copy re-points it. The link
+rem carries no arguments to the launcher. To remove it:
+rem   reg delete "HKCU\Software\Classes\fanucstudio" /f
+set "VBS=%~dp0Start FANUC Studio hidden.vbs"
+reg add "HKCU\Software\Classes\fanucstudio" /ve /d "URL:FANUC Studio bridge" /f >nul
+reg add "HKCU\Software\Classes\fanucstudio" /v "URL Protocol" /d "" /f >nul
+reg add "HKCU\Software\Classes\fanucstudio\shell\open\command" /ve /d "wscript.exe \"%VBS%\"" /f >nul
+
 echo Starting the FANUC TP Program Studio bridge...
 echo Keep this window open while you use the app. Close it to stop the bridge.
 echo.

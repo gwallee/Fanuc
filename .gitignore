@@ -4,3 +4,4 @@ dist/
 robots.json
 .claude/
 settings.json
+bridge.log
