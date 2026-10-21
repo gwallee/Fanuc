@@ -315,15 +315,25 @@
   }
 
   /* ---------- family matching (fuzzier than exact shapes) ----------
-   * Two collapses on top of normalize(), used only for the "have my robots
+   * Collapses on top of normalize(), used only for the "have my robots
    * seen this form" question — never for grammar errors:
    *   1. Scalar variables are interchangeable: reading DI[3] is the same
    *      gesture as reading GI[7] or R[12], so they all become V[n].
    *   2. Repetition is not novelty: a chain of six identical OR/AND terms
    *      is the same form as a chain of two, so runs collapse to two.
+   *   3. Arithmetic is the grammar's business: which operator combines two
+   *      values (+ - * / MOD DIV) never makes the form novel, so a binary
+   *      operator — one with an operand right before it — reads as "+".
+   *      The "-" of a negative literal follows "(" or "=" and is untouched;
+   *      the required parens around a negative collapse with it: (-N) ≡ N.
+   *   4. A math function of a value is a value: SIN[R[62]] is read the way
+   *      R[62] is, so built-in functions collapse to V[n].
+   *   5. A parenthesized plain value assigned is the bare value: =(225) ≡
+   *      =225 — the parens are legal either way and carry no form.
    * PR, SR, P and TIMER stay distinct — positions, strings and timers have
    * genuinely different legal forms. */
   var SCALAR_RE = /\b(?:DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|WI|WO|AI|AO|F|M|R)\[n\]/g;
+  var MATH_FN = /\b(?:SIN|COS|TAN|ASIN|ACOS|ATAN|SQRT|LN|EXP|ABS|TRUNC|ROUND)\[(?:[^\[\]]|\[[^\[\]]*\])*\]/g;
 
   // "A OR A OR A" -> "A OR A"; mixed operators or units break the run
   function collapseChain(s) {
@@ -352,6 +362,10 @@
 
   function family(shape) {
     var s = String(shape).replace(SCALAR_RE, 'V[n]');
+    s = s.replace(MATH_FN, 'V[n]');                                  // 4
+    s = s.replace(/\(-N\)/g, 'N');                                   // 3
+    s = s.replace(/([\]N]) ?[*\/+-] ?(?=\S)/g, '$1+').replace(/ (?:MOD|DIV) /g, '+');
+    s = s.replace(/=\((V\[n\]|N)\)$/, '=$1');                        // 5
     var groups = [];
     var prev = null;
     while (prev !== s) {           // innermost parens become opaque tokens,

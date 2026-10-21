@@ -786,6 +786,13 @@ check(ok('IF ((R[51:Pal At Zn 1]=1) AND (R[52:Pal At Zn 2]=1)) JMP LBL[112]') &&
   'mixed IF accepts a spaced JMP/CALL action (controller-written), not a spaced assignment');
 check(S.family('DO[n]=(F[n] OR F[n] OR F[n] OR F[n])') === S.family('GO[n]=(DI[n] OR DI[n])'),
   'OR-chains of any scalar type and length share one family');
+check(ok('R[99:temp]=R[99:temp]*R[98:temp 2]') && ok('R[1]=R[2]/R[3]') && ok('R[5]=R[5] MOD 2') &&
+      ok('R[1]=R[2]*(-3)'),
+  'arithmetic operators never make a form novel — * / MOD read as the known + family');
+check(ok('PR[62,3:Pallet Angle]=(225)') && ok('R[1]=(5)'),
+  'a parenthesized plain value is the same family as the bare value');
+check(ok('R[99:temp]=(SIN[R[62]])') && ok('R[99:temp]=(COS[R[62]])'),
+  'a math function of a value is a value — SIN/COS forms are not novel');
 {
   // DO[n]=(F[n] OR F[n]) is in the dictionary, so any scalar OR-chain
   // assignment is a known family — even one no listing contains verbatim
