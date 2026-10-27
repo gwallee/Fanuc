@@ -1285,7 +1285,7 @@ tr:last-child td { border-bottom: none; }
   .pane.splitting .code-pane { display: flex; flex-direction: column; min-height: 0; }
   .pane.splitting .code-pane .codebox { flex: 1 1 auto; min-height: 0; overflow: auto; }
 }
-.pane-head { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.pane-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
 .prog-select {
   font: inherit;
   font-family: "IBM Plex Mono", monospace;

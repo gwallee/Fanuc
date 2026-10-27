@@ -606,6 +606,112 @@
     return { folder: parts[i], dir: parts.join('/') };
   }
 
+  /* ---- new programs and copies ----
+   * A program can only be born in the library: a controller will not make an
+   * empty one for you, and a .LS the translator refuses comes back as a
+   * DELETED program. So both of these write to the library and leave the
+   * send as its own deliberate step.
+   *
+   * Names follow what the bridge enforces on upload — letters, digits, _ and
+   * - — and are uppercased, because /PROG is what the controller reads and it
+   * speaks upper case. */
+  function cleanProgName(raw) {
+    var n = String(raw == null ? '' : raw).trim().replace(/\.LS$/i, '').toUpperCase();
+    return /^[A-Z0-9_-]+$/.test(n) ? n : null;
+  }
+
+  function badNameToast(raw) {
+    toast('“' + String(raw).trim() + '” is not a name the controller would take — letters, digits, _ and - only.');
+  }
+
+  /* A blank program the translator accepts, in the shape a controller writes
+   * one. PROG_SIZE, LINE_COUNT, MEMORY_SIZE and MODIFIED are rewritten during
+   * LS→TP, so the zeros here are placeholders. DEFAULT_GROUP 1,*,*,*,* is a
+   * motion program; a utility that must never move the robot wants *,*,*,*,*,
+   * which is one edit away in the header the editor opens on. */
+  function stubSource(name) {
+    var d = new Date();
+    function p2(n) { return (n < 10 ? '0' : '') + n; }
+    var stamp = 'DATE ' + p2(d.getFullYear() % 100) + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) +
+      '  TIME ' + p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds());
+    return [
+      '/PROG  ' + name,
+      '/ATTR',
+      'OWNER\t\t= MNEDITOR;',
+      'COMMENT\t\t= "";',
+      'PROG_SIZE\t= 0;',
+      'CREATE\t\t= ' + stamp + ';',
+      'MODIFIED\t= ' + stamp + ';',
+      'FILE_NAME\t= ;',
+      'VERSION\t\t= 0;',
+      'LINE_COUNT\t= 1;',
+      'MEMORY_SIZE\t= 0;',
+      'PROTECT\t\t= READ_WRITE;',
+      'TCD:  STACK_SIZE\t= 0,',
+      '      TASK_PRIORITY\t= 50,',
+      '      TIME_SLICE\t= 0,',
+      '      BUSY_LAMP_OFF\t= 0,',
+      '      ABORT_REQUEST\t= 0,',
+      '      PAUSE_REQUEST\t= 0;',
+      'DEFAULT_GROUP\t= 1,*,*,*,*;',
+      'CONTROL_CODE\t= 00000000 00000000;',
+      'LOCAL_REGISTERS\t= 0,0,0;',
+      '/MN',
+      '   1:   ;',
+      '/POS',
+      '/END',
+      ''
+    ].join('\n');
+  }
+
+  /* Straight into the editor: a stub nobody has read yet is not worth a tab
+   * to click first. */
+  function newProgram() {
+    var raw = prompt('New program name — letters, digits, _ and -.\nThe shop prefix A_ or _ keeps it listed without “Show all”.', 'A_');
+    if (raw === null) return;
+    var name = cleanProgName(raw);
+    if (!name) { badNameToast(raw); return; }
+    if (state.programs[name]) { toast(name + ' is already in the ' + libLabel(state.library) + ' library.'); return; }
+    addProgram(stubSource(name), name + '.LS', { type: 'new' });
+    rebuildDerived();
+    persist();
+    state.tab = 'code';
+    state.selected = name;
+    beginEdit(name);
+    render();
+    toast(name + ' started in the ' + libLabel(state.library) + ' library — it is nowhere else until you Save & Upload.', 7000);
+  }
+
+  /* NAME_2, NAME_3… — the prompt opens on a name that is free. */
+  function nextCopyName(name) {
+    var base = name.replace(/_\d+$/, '');
+    for (var i = 2; i < 100; i++) {
+      if (!state.programs[base + '_' + i]) return base + '_' + i;
+    }
+    return '';
+  }
+
+  /* Save-as: `src` becomes a new program and the original keeps whatever was
+   * last saved. /PROG carries the real name — a copy still headed with the
+   * old one uploads straight over the program it was copied from — so that
+   * line is rewritten. The copy's origin is 'new' whatever the original's
+   * was: it is not the file on disk it came from and must never be saved back
+   * over it, and it is on no robot yet. Returns the new name, or null if the
+   * prompt was cancelled or the name refused. */
+  function saveAsCopy(from, src) {
+    var raw = prompt('Copy ' + from + ' to a new program — the copy stays in the library until you send it:', nextCopyName(from));
+    if (raw === null) return null;
+    var name = cleanProgName(raw);
+    if (!name) { badNameToast(raw); return null; }
+    if (name === from) { toast('That is the same name — a copy needs a different one.'); return null; }
+    if (state.programs[name] &&
+        !confirm(name + ' is already in the ' + libLabel(state.library) + ' library. Replace it with this copy of ' + from + '?')) return null;
+    var made = addProgram(src.replace(/^\/PROG[ \t]+\S+/m, '/PROG  ' + name), name + '.LS', { type: 'new', copyOf: from });
+    rebuildDerived();
+    persist();
+    return made;
+  }
+
   function importFiles(fileList) {
     var all = Array.prototype.slice.call(fileList);
     var files = all.filter(function (f) {
@@ -2328,7 +2434,7 @@
       terms.length ? names.length + ' of ' + shown.length :
       shown.length + ' program' + (shown.length === 1 ? '' : 's');
     if (!all.length) {
-      list.appendChild(h('div', { class: 'empty', text: 'No programs yet. Import .LS files or open a backup folder.' }));
+      list.appendChild(h('div', { class: 'empty', text: 'No programs yet. Import .LS files, open a backup folder, or start one with New program below.' }));
       return;
     }
     if (!shown.length) {
@@ -3490,6 +3596,11 @@
               ? h('button', { class: 'btn', text: 'Save & Upload', title: 'Save and FTP to ' + state.robot.ip + ' with snapshot + verify + auto-restore', onclick: ed.saveAndSend })
               : null,
             h('button', {
+              class: 'btn', text: 'Save as copy',
+              title: 'Save what is in the editor as a NEW program and carry on editing that — ' + name + ' goes back to its last saved version',
+              onclick: ed.saveCopy
+            }),
+            h('button', {
               class: 'btn subtle', text: 'Cancel',
               onclick: function () {
                 if (state.editDrafts[name] !== undefined && state.editDrafts[name] !== p.source &&
@@ -3576,6 +3687,17 @@
           sendToRobot(name, p.source, function () { render(); });
         }
       }) : null,
+      h('button', {
+        class: 'btn', text: 'Save as copy',
+        title: 'Copy ' + name + ' into the library under a new name — ' + name + ' is left alone, here and on the robot',
+        onclick: function () {
+          var made = saveAsCopy(name, p.source);
+          if (!made) return;
+          state.selected = made;
+          render();
+          toast(made + ' copied from ' + name + ' — library only, on no robot until you send it.', 7000);
+        }
+      }),
       h('button', { class: 'btn subtle', text: 'Export .LS', onclick: function () { exportProgram(p); } }),
       h('button', {
         class: 'btn subtle', text: 'Remove',
@@ -4271,8 +4393,28 @@
       });
     }
 
+    /* Save-as from inside the editor: the text in hand becomes the copy and
+     * the original drops back to its last saved version — the edits move
+     * with the draft, the way Save As behaves anywhere else — then the
+     * editor stays open on the copy. */
+    function saveCopy() {
+      var made = saveAsCopy(oldName, ta.value);
+      if (!made) return;
+      delete state.editDrafts[oldName];
+      beginEdit(made);
+      if (opts.side === 'right') {
+        openDoc('P:' + made, true, 'right');
+      } else {
+        state.selected = made;
+        docSelSync = made;
+        openDoc('P:' + made, true, 'left');
+      }
+      render();
+      toast(made + ' copied from ' + oldName + ' — editing the copy now; ' + oldName + ' keeps its last saved version.', 7000);
+    }
+
     return {
-      el: editorWrap, ta: ta, status: status, save: save, saveAndSend: saveAndSend,
+      el: editorWrap, ta: ta, status: status, save: save, saveAndSend: saveAndSend, saveCopy: saveCopy,
       // the syntax-check strip, its problem list, the snippet menu and the
       // repaint hook all live in here — hand them out so any editor surface
       // (full page or a split half) can mount them
@@ -4309,6 +4451,11 @@
       (state.server && state.robot.ip)
         ? h('button', { class: 'btn', text: 'Save & Upload', title: 'FTP to ' + state.robot.ip + ' with snapshot + verify + auto-restore', onclick: saveAndSend })
         : null,
+      h('button', {
+        class: 'btn', text: 'Save as copy',
+        title: 'Save what is in the editor as a NEW program and carry on editing that — ' + oldName + ' goes back to its last saved version',
+        onclick: ed.saveCopy
+      }),
       h('button', { class: 'btn subtle', text: 'Cancel', onclick: function () { state.editing = false; delete state.editDrafts[oldName]; render(); } })
     ]);
     pane.appendChild(bar);
@@ -8106,6 +8253,10 @@
       state.showAllProgs = this.checked;
       savePrefs();
       renderSidebar();
+    });
+    document.getElementById('btn-new').addEventListener('click', function () {
+      setNav(false);
+      newProgram();
     });
     document.getElementById('btn-clear').addEventListener('click', function () {
       if (!Object.keys(state.programs).length) return;
