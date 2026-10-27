@@ -61,7 +61,11 @@
     </div>
     <div class="lib-ws" id="lib-ws-row" hidden>
       <select id="lib-ws"
-              title="Each robot keeps its own program library. Picking one here only changes which library is shown — connecting to a robot switches to its library automatically."></select>
+              title="Each robot keeps its own program library, and a robot you only have a backup of gets one named after its folder. Picking one here only changes which library is shown — connecting to a robot, or opening a backup folder, switches automatically."></select>
+      <button class="btn subtle" id="btn-lib-rename" hidden
+              title="Rename this backup library">✎</button>
+      <button class="btn subtle" id="btn-lib-forget" hidden
+              title="Forget this backup library — the backup folder on disk is untouched">✕</button>
     </div>
     <div class="lib-filter">
       <input id="lib-filter" type="search" placeholder="Filter programs…"

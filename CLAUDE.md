@@ -59,7 +59,10 @@ TP; keep UI text terse, prefer code over prose, colors over bold.
 - Program names prefixed `A_`/`_` are the shop's own; everything else is
   controller furniture (sidebar hides it by default).
 - Sidebar/library is per-robot (`setLibrary`); slow importers capture
-  `libGen` and drop results after a switch.
+  `libGen` and drop results after a switch. A robot you only have a backup
+  of gets `backup:<name>` — the name IS the id, so rename moves the stored
+  keys. Register/IO names (`buildExtern`) come from the ACTIVE library and
+  nowhere else: a connected robot speaks only for its own.
 - git: commits as Brian (`-c user.email=brian.jalufka@dacrobotics.com
   -c user.name="Brian Jalufka"`), imperative subject + body explaining why,
   "build N" line at the end.

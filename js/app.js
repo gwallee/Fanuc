@@ -16,10 +16,19 @@
   var STORE_PREFIX = 'fanuc-tp-studio.programs.v3.';
   var ACTIVE_LIB_KEY = 'fanuc-tp-studio.library.v1';
   var LOCAL_LIB = 'local';
+  /* A robot you only have a backup of has no IP to key a library by, so it
+   * gets a named one: id 'backup:<name>', the name taken from the folder it
+   * was opened from. The name IS the id — renaming moves the stored keys —
+   * which keeps the whole scheme to one string and no name table. */
+  var BACKUP_PREFIX = 'backup:';
+  /* backup library id -> the folder it was opened from, so switching back to
+   * it can re-read that backup's NUMREG/IOSTATE for register and I/O names
+   * (cheap over the bridge; far smaller than persisting the parsed tables). */
+  var LIB_DIR_KEY = 'fanuc-tp-studio.libdir.v1';
 
   var state = {
     programs: {},          // NAME -> { parsed, analysis, source, origin }
-    library: LOCAL_LIB,    // whose library is loaded: a robot IP, or 'local'
+    library: LOCAL_LIB,    // whose library is loaded: a robot IP, 'backup:<name>', or 'local'
     selected: null,
     tab: 'code',
     editing: false,
@@ -36,7 +45,7 @@
     backupPick: {},        // ip -> bool, which saved robots the next sweep covers
     backupAll: null,       // multi-robot backup in progress / its last result
     subnets: null,         // the bridge PC's own networks, for the default CIDR
-    dirExtern: null,       // register/IO label data found in an opened folder
+    dirExtern: null,       // {lib, source, registers, io, posregs} — label data from an opened folder
     dirStatus: null,
     compare: null,         // { label, programs: {NAME: source}, results, open: name|null }
     pair: null,            // { a, b } two-program comparison
@@ -209,17 +218,25 @@
 
   /* ================= library ================= */
 
+  /* Register and I/O names shown against the loaded programs. They must come
+   * from the library being looked at and nowhere else: a connected robot's
+   * R[] names on a backup's programs are plausible, wrong, and silent — and
+   * the checks run against them too. So the live robot only speaks for its
+   * own library, and a folder's data only for the library it was read into. */
   function buildExtern() {
     var regs = null, io = null, posregs = null, source = null;
-    if (state.robot.registers && !state.robot.registers.error) {
-      regs = state.robot.registers;
-      source = 'robot ' + state.robot.ip;
+    if (state.robot.ip && state.library === state.robot.ip) {
+      if (state.robot.registers && !state.robot.registers.error) {
+        regs = state.robot.registers;
+        source = 'robot ' + state.robot.ip;
+      }
+      if (state.robot.ioComments) { io = state.robot.ioComments; source = 'robot ' + state.robot.ip; }
+      if (state.robot.posregs && !state.robot.posregs.error) { posregs = state.robot.posregs; source = 'robot ' + state.robot.ip; }
     }
-    if (state.robot.ioComments) { io = state.robot.ioComments; source = 'robot ' + state.robot.ip; }
-    if (state.robot.posregs && !state.robot.posregs.error) { posregs = state.robot.posregs; source = 'robot ' + state.robot.ip; }
-    if (!regs && state.dirExtern && state.dirExtern.registers) { regs = state.dirExtern.registers; source = state.dirExtern.source; }
-    if (!io && state.dirExtern && state.dirExtern.io) { io = state.dirExtern.io; source = source || state.dirExtern.source; }
-    if (!posregs && state.dirExtern && state.dirExtern.posregs) { posregs = state.dirExtern.posregs; source = source || state.dirExtern.source; }
+    var dx = (state.dirExtern && state.dirExtern.lib === state.library) ? state.dirExtern : null;
+    if (!regs && dx && dx.registers) { regs = dx.registers; source = dx.source; }
+    if (!io && dx && dx.io) { io = dx.io; source = source || dx.source; }
+    if (!posregs && dx && dx.posregs) { posregs = dx.posregs; source = source || dx.source; }
     if (!regs && !io && !posregs) return null;
     return { registers: regs || [], io: io || [], posregs: posregs || [], source: source };
   }
@@ -312,14 +329,20 @@
 
   function libStoreKey(id) { return STORE_PREFIX + id; }
 
+  function isBackupLib(id) { return String(id).indexOf(BACKUP_PREFIX) === 0; }
+  function backupLibName(id) { return String(id).slice(BACKUP_PREFIX.length); }
+
   function libLabel(id) {
     if (id === LOCAL_LIB) return 'Local files';
+    if (isBackupLib(id)) return backupLibName(id) + ' (backup)';
     var r = state.knownRobots.filter(function (x) { return x.ip === id; })[0];
     return r && r.name ? r.name + ' — ' + id : id;
   }
 
   /* Every library that has ever been stored, plus the active one (which may
-   * not have been written yet) and 'local' (always offered). */
+   * not have been written yet) and 'local' (always offered). Robots first,
+   * then backups: on a bench day the list is mostly backups, and the robot
+   * you can actually reach should not be buried among them. */
   function listLibraries() {
     var ids = [];
     try {
@@ -333,9 +356,75 @@
     ids.sort(function (a, b) {
       if (a === LOCAL_LIB) return -1;
       if (b === LOCAL_LIB) return 1;
+      if (isBackupLib(a) !== isBackupLib(b)) return isBackupLib(a) ? 1 : -1;
       return libLabel(a).localeCompare(libLabel(b));
     });
     return ids;
+  }
+
+  /* ---- backup libraries ----
+   * The folder a backup library was read from, remembered so that coming
+   * back to it can re-read its register and I/O names. */
+  function libDirs() {
+    try { return JSON.parse(localStorage.getItem(LIB_DIR_KEY) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+
+  function setLibDir(id, dirPath) {
+    try {
+      var m = libDirs();
+      if (dirPath) m[id] = dirPath; else delete m[id];
+      localStorage.setItem(LIB_DIR_KEY, JSON.stringify(m));
+    } catch (e) { /* storage unavailable */ }
+  }
+
+  /* A backup library id from a folder name. Device directories are no name
+   * at all (every backup has an MD), and two backups of different cells must
+   * not collide, so an existing name is offered with a number. */
+  function newBackupLibId(name) {
+    var base = String(name || '').replace(/[\\/]+/g, ' ').trim() || 'Backup';
+    if (DEVICE_DIR_RE.test(base)) base = 'Backup';
+    var taken = listLibraries();
+    var id = BACKUP_PREFIX + base, n = 2;
+    while (taken.indexOf(id) !== -1) id = BACKUP_PREFIX + base + ' ' + (n++);
+    return id;
+  }
+
+  /* Rename = move the stored keys, because the name is the id. */
+  function renameBackupLib(id, name) {
+    var next = BACKUP_PREFIX + String(name || '').replace(/[\\/]+/g, ' ').trim();
+    if (!isBackupLib(id) || next === BACKUP_PREFIX || next === id) return id;
+    if (listLibraries().indexOf(next) !== -1) { toast('There is already a ' + libLabel(next) + ' library.'); return id; }
+    try {
+      var progs = localStorage.getItem(libStoreKey(id));
+      var view = localStorage.getItem(viewKey(id));
+      if (progs !== null) localStorage.setItem(libStoreKey(next), progs);
+      if (view !== null) localStorage.setItem(viewKey(next), view);
+      localStorage.removeItem(libStoreKey(id));
+      localStorage.removeItem(viewKey(id));
+      var dir = libDirs()[id];
+      if (dir) { setLibDir(next, dir); setLibDir(id, null); }
+    } catch (e) { /* storage unavailable — the rename is session-only */ }
+    if (state.library === id) {
+      state.library = next;
+      if (state.dirExtern && state.dirExtern.lib === id) state.dirExtern.lib = next;
+      persist();
+    }
+    return next;
+  }
+
+  /* Forget a backup library outright: its programs only ever came from a
+   * folder that is still on disk, so this throws away nothing original. */
+  function forgetBackupLib(id) {
+    if (!isBackupLib(id)) return;
+    // switch away first — setLibrary persists the outgoing library, which
+    // would write the very keys we are about to remove straight back
+    if (state.library === id) setLibrary(LOCAL_LIB, { force: true });
+    try {
+      localStorage.removeItem(libStoreKey(id));
+      localStorage.removeItem(viewKey(id));
+    } catch (e) { /* storage unavailable */ }
+    setLibDir(id, null);
   }
 
   function persist() {
@@ -369,9 +458,10 @@
    * a loaded Compare baseline keeps its own sources and is simply re-run
    * against the new set by rebuildDerived(). Returns false if the user
    * chose to stay (unsaved editor text). */
-  function setLibrary(id) {
+  function setLibrary(id, opts) {
     if (id === state.library) return true;
-    if ((state.editing || anyEditSide()) && editorDirty() && !confirm('Switch libraries? Unsaved editor changes will be lost.')) return false;
+    if (!(opts && opts.force) && (state.editing || anyEditSide()) && editorDirty() &&
+        !confirm('Switch libraries? Unsaved editor changes will be lost.')) return false;
     if (state.robotImport) state.robotImport.cancel = true;
     persist();                      // save the outgoing library
     libGen++;
@@ -385,12 +475,30 @@
     state.active = { left: null, right: null };
     state.pair = null;
     state.checksProg = null;
+    state.dirExtern = null;         // register/IO names belong to the library they came from
     loadLibraryStore(id);
     state.selected = Object.keys(state.programs)[0] || null;
     loadViewState();                // each library remembers its own tabs
     rebuildDerived();
     persist();                      // records the new active library
+    if (!(opts && opts.keepExtern)) loadLibExtern(id);
     return true;
+  }
+
+  /* Re-read a backup library's register and I/O names from the folder it was
+   * opened from. Needs the bridge; without one (file://, or the bridge shut
+   * down) the programs simply show bare R[n] — the same as before the folder
+   * was ever opened, and no worse than the names of some other robot. */
+  function loadLibExtern(id) {
+    if (!isBackupLib(id) || !state.server) return;
+    var dir = libDirs()[id];
+    if (!dir) return;
+    readExtern(dir, id).then(function (ex) {
+      if (!ex || state.library !== id) return;
+      state.dirExtern = ex;
+      rebuildDerived();
+      render();
+    });
   }
 
   function restore() {
@@ -499,6 +607,18 @@
         : 'Nothing was selected.');
       return;
     }
+    /* A picked folder that carries NUMREG.VA and friends is a robot backup,
+     * not a pile of files: it gets its own library, the same one the bridge
+     * would open that backup into. Loose .LS files still land where the user
+     * already is. The browser hands over no filesystem path, so this library
+     * has no folder to re-read register names from later — unlike one opened
+     * through the bridge. */
+    var fo = null;
+    for (var i = 0; i < all.length && !fo; i++) fo = folderOf(all[i]);
+    if (fo && looksLikeBackup(all.map(function (f) { return f.name; }))) {
+      if (!setLibrary(backupLibByName(fo.folder))) return;
+      render();
+    }
     var lastName = null;
     var imported = 0, skipped = 0;
     var gen = libGen;
@@ -520,7 +640,8 @@
           persist();
           render();
           toast(imported
-            ? 'Imported ' + imported + ' program' + (imported > 1 ? 's' : '') + (skipped ? ' (skipped ' + skipped + ' log file' + (skipped > 1 ? 's' : '') + ' — no /PROG header)' : '') + '.'
+            ? 'Imported ' + imported + ' program' + (imported > 1 ? 's' : '') + (skipped ? ' (skipped ' + skipped + ' log file' + (skipped > 1 ? 's' : '') + ' — no /PROG header)' : '') +
+              (isBackupLib(state.library) ? ' into the ' + libLabel(state.library) + ' library.' : '.')
             : 'No programs found — ' + skipped + ' file' + (skipped > 1 ? 's are' : ' is') + ' a controller log export, not a TP program.');
         }
       };
@@ -572,10 +693,17 @@
             state.robot.ftpUser = state.lastRobot.ftpUser || '';
             state.robot.ftpPass = state.sessionFtpPass || '';
             var keepTab = state.tab;
+            /* Connecting switches to the robot's library, which is right when
+             * the user asked for it and wrong here: someone who left the app
+             * on a backup gets reconnected in the background, not dragged off
+             * the programs they were reading. */
+            var keepLib = isBackupLib(state.library) ? state.library : null;
             connectRobot(state.lastRobot.ip);
+            if (keepLib) setLibrary(keepLib, { force: true, keepExtern: true });
             state.tab = keepTab; // reconnecting is background work, not navigation
             render();
           }
+          loadLibExtern(state.library);   // a backup library's register names
         }
       })
       .catch(function () { state.server = false; renderConnect(); });
@@ -1658,31 +1786,93 @@
     });
   }
 
+  /* The controller data files a backup carries next to its programs. Their
+   * presence is what makes a folder a backup rather than a pile of .LS. */
+  function backupDataFile(name) { return /^(numreg\.va|posreg\.va|iostate\.dg|diocfgsv\.io)$/i.test(name); }
+  function looksLikeBackup(names) { return names.some(backupDataFile); }
+
+  /* Register/I/O names out of one backup folder, tagged with the library
+   * they belong to. Resolves to null when the folder carries none. */
+  function readExternFiles(files, dirPath, lib) {
+    var numreg = files.find(function (f) { return /^numreg\.va$/i.test(f.name); });
+    var iocfg = files.find(function (f) { return /^diocfgsv\.io$/i.test(f.name); });
+    var iostate = files.find(function (f) { return /^iostate\.dg$/i.test(f.name); });
+    var posregVa = files.find(function (f) { return /^posreg\.va$/i.test(f.name); });
+    var extern = { lib: lib, source: 'backup ' + dirPath, registers: null, io: null, posregs: null };
+    var loads = [];
+    if (numreg) loads.push(api('/api/dir/file?path=' + encodeURIComponent(numreg.path)).then(function (f) {
+      extern.registers = VA.parseNumreg(f.content);
+    }).catch(function () {}));
+    if (posregVa) loads.push(api('/api/dir/file?path=' + encodeURIComponent(posregVa.path)).then(function (f) {
+      extern.posregs = VA.parsePosreg(f.content);
+    }).catch(function () {}));
+    if (iostate) loads.push(api('/api/dir/file?path=' + encodeURIComponent(iostate.path)).then(function (f) {
+      extern.io = VA.parseIOState(f.content).filter(function (p) { return p.comment; });
+    }).catch(function () {}));
+    else if (iocfg) loads.push(api('/api/dir/file?path=' + encodeURIComponent(iocfg.path)).then(function (f) {
+      extern.io = VA.parseIOComments(f.content);
+    }).catch(function () {}));
+    return Promise.all(loads).then(function () {
+      return (extern.registers || extern.io || extern.posregs) ? extern : null;
+    });
+  }
+
+  function readExtern(dirPath, lib) {
+    return api('/api/dir/list?path=' + encodeURIComponent(dirPath)).then(function (b) {
+      return readExternFiles(b.files, b.path, lib);
+    }).catch(function () { return null; });
+  }
+
+  /* The name a backup folder gives its library. Device directories name
+   * every backup alike, so "…\CELL4_0412\MD" is CELL4_0412. */
+  function backupNameFromPath(p) {
+    var parts = String(p).split(/[\\/]+/).filter(Boolean);
+    var i = parts.length - 1;
+    while (i > 0 && DEVICE_DIR_RE.test(parts[i])) i--;
+    return parts[i] || 'Backup';
+  }
+
+  /* A backup folder gets a library of its own, named after the folder, so a
+   * robot you only have a backup of is no worse off than one you can reach:
+   * its programs, tabs, and register names stay its own instead of piling
+   * into Local files with every other backup. Re-opening the same folder
+   * lands back in the same library rather than making a second one. */
+  function backupLibFor(dirPath) {
+    var dirs = libDirs();
+    var hit = Object.keys(dirs).filter(function (id) {
+      return isBackupLib(id) && String(dirs[id]).toLowerCase() === String(dirPath).toLowerCase();
+    })[0];
+    if (hit) return hit;
+    var id = newBackupLibId(backupNameFromPath(dirPath));
+    setLibDir(id, dirPath);
+    return id;
+  }
+
+  /* Same backup, picked in the browser instead of through the bridge: all we
+   * have is the folder's own name, so an existing library of that name is
+   * the one meant. */
+  function backupLibByName(name) {
+    var id = BACKUP_PREFIX + String(name || '').replace(/[\\/]+/g, ' ').trim();
+    return listLibraries().indexOf(id) !== -1 ? id : newBackupLibId(name);
+  }
+
   function openDirectory(dirPath) {
     state.dirStatus = 'Reading ' + dirPath + '…';
     renderConnect();
     api('/api/dir/list?path=' + encodeURIComponent(dirPath)).then(function (b) {
-      // pick up controller label data if the folder is a backup
-      var numreg = b.files.find(function (f) { return /^numreg\.va$/i.test(f.name); });
-      var iocfg = b.files.find(function (f) { return /^diocfgsv\.io$/i.test(f.name); });
-      var iostate = b.files.find(function (f) { return /^iostate\.dg$/i.test(f.name); });
-      var posregVa = b.files.find(function (f) { return /^posreg\.va$/i.test(f.name); });
-      var extern = { source: 'backup ' + b.path, registers: null, io: null, posregs: null };
-      var externLoads = [];
-      if (numreg) externLoads.push(api('/api/dir/file?path=' + encodeURIComponent(numreg.path)).then(function (f) {
-        extern.registers = VA.parseNumreg(f.content);
-      }).catch(function () {}));
-      if (posregVa) externLoads.push(api('/api/dir/file?path=' + encodeURIComponent(posregVa.path)).then(function (f) {
-        extern.posregs = VA.parsePosreg(f.content);
-      }).catch(function () {}));
-      if (iostate) externLoads.push(api('/api/dir/file?path=' + encodeURIComponent(iostate.path)).then(function (f) {
-        extern.io = VA.parseIOState(f.content).filter(function (p) { return p.comment; });
-      }).catch(function () {}));
-      else if (iocfg) externLoads.push(api('/api/dir/file?path=' + encodeURIComponent(iocfg.path)).then(function (f) {
-        extern.io = VA.parseIOComments(f.content);
-      }).catch(function () {}));
-      Promise.all(externLoads).then(function () {
-        if (extern.registers || extern.io || extern.posregs) { state.dirExtern = extern; rebuildDerived(); render(); }
+      var names = b.files.map(function (f) { return f.name; });
+      if (looksLikeBackup(names)) {
+        var lib = backupLibFor(b.path);
+        /* keepExtern: this folder's own data is read below — no point
+         * re-listing the folder we are already standing in. */
+        if (!setLibrary(lib, { keepExtern: true })) { state.dirStatus = null; renderConnect(); return; }
+      }
+      var intoLib = state.library;
+      readExternFiles(b.files, b.path, intoLib).then(function (ex) {
+        if (!ex || state.library !== intoLib) return;
+        state.dirExtern = ex;
+        rebuildDerived();
+        render();
       });
 
       var lsFiles = b.files.filter(function (f) { return /\.ls$/i.test(f.name); });
@@ -1703,7 +1893,9 @@
           } else skipped++;
         }).catch(function () { /* unreadable file — skip */ }).then(function () {
           if (--pending === 0) {
-            state.dirStatus = 'Loaded ' + imported + ' program' + (imported === 1 ? '' : 's') + (skipped ? ' (+' + skipped + ' log files skipped)' : '') + ' from ' + b.path;
+            state.dirStatus = 'Loaded ' + imported + ' program' + (imported === 1 ? '' : 's') +
+              (skipped ? ' (+' + skipped + ' log files skipped)' : '') + ' from ' + b.path +
+              (isBackupLib(intoLib) ? ' into the ' + libLabel(intoLib) + ' library' : '');
             state.selected = state.selected || Object.keys(state.programs)[0];
             rebuildDerived();
             persist();
@@ -2076,7 +2268,17 @@
     if (!row || !sel) return;
     var ids = listLibraries();
     row.hidden = ids.length < 2;
-    if (row.hidden) return;
+    /* Rename and forget are for backup libraries only: a robot's library is
+     * named by the robot (Robot tab), and Local files is not a thing you can
+     * be rid of. */
+    var backup = isBackupLib(state.library);
+    var ren = document.getElementById('btn-lib-rename');
+    var forget = document.getElementById('btn-lib-forget');
+    if (ren) ren.hidden = !backup;
+    if (forget) forget.hidden = !backup;
+    /* The options are rebuilt even while the row is hidden: a forgotten
+     * library must not sit in the list waiting to be picked the moment a
+     * second one turns up. */
     var key = ids.map(libLabel).join(',') + '#' + state.library;
     if (sel.getAttribute('data-key') !== key) {
       sel.innerHTML = '';
@@ -7778,6 +7980,20 @@
       var v = this.value;
       if (!v || v === state.library) return;
       if (!setLibrary(v)) { this.value = state.library; return; }
+      render();
+    });
+    document.getElementById('btn-lib-rename').addEventListener('click', function () {
+      var id = state.library;
+      if (!isBackupLib(id)) return;
+      var name = prompt('Name for this backup library — the cell or robot it came from:', backupLibName(id));
+      if (name === null || !name.trim()) return;
+      if (renameBackupLib(id, name) !== id) render();
+    });
+    document.getElementById('btn-lib-forget').addEventListener('click', function () {
+      var id = state.library;
+      if (!isBackupLib(id)) return;
+      if (!confirm('Forget the ' + libLabel(id) + ' library? Its programs go with it — the backup folder on disk is untouched, so re-opening that folder brings them back.')) return;
+      forgetBackupLib(id);
       render();
     });
     document.getElementById('robot-select').addEventListener('change', function () {
