@@ -687,19 +687,19 @@
           loadKnownRobots();
           loadSubnets();
           loadBackupHome();
-          // pick up where the last page load left off: silently reconnect to
-          // the robot that was selected before the refresh
-          if (state.lastRobot && state.lastRobot.ip && !state.robot.ip) {
+          /* Pick up where the last page load left off, but only when the
+           * library just restored is that robot's own. state.lastRobot is
+           * written solely by a connect that answered, and nothing else
+           * touches it — opening a backup, switching libraries and forgetting
+           * a robot all leave it alone — so after a spell of offline work it
+           * names a controller nobody has opened in weeks, and reconnecting
+           * pre-selects a robot the user is not working on. */
+          if (state.lastRobot && state.lastRobot.ip && !state.robot.ip &&
+              state.lastRobot.ip === state.library) {
             state.robot.ftpUser = state.lastRobot.ftpUser || '';
             state.robot.ftpPass = state.sessionFtpPass || '';
             var keepTab = state.tab;
-            /* Connecting switches to the robot's library, which is right when
-             * the user asked for it and wrong here: someone who left the app
-             * on a backup gets reconnected in the background, not dragged off
-             * the programs they were reading. */
-            var keepLib = isBackupLib(state.library) ? state.library : null;
             connectRobot(state.lastRobot.ip);
-            if (keepLib) setLibrary(keepLib, { force: true, keepExtern: true });
             state.tab = keepTab; // reconnecting is background work, not navigation
             render();
           }
