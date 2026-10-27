@@ -12,6 +12,7 @@ const X = require('../js/explain.js');
 const L = require('../js/linter.js');
 const FL = require('../js/flow.js');
 const VA = require('../js/vaparse.js');
+const AL = require('../js/alarms.js');
 
 let failures = 0;
 function check(cond, msg) {
@@ -867,6 +868,44 @@ check(pl[1] === '   2:  ADO[2]=ON ;' && pl[3] === '   4:  CCC;' && pl[4] === '  
 cr = CSL.paste(colSrc, { r0: 0, c0: 7, r1: 1, c1: 9 }, 'R\nR\n');
 check(cr.text.split('\n')[0] === '   1:  R[1]=ON ;' && cr.rect.r1 === 1, 'a pasted block replaces the rect contents; a trailing newline is not a row');
 check(JSON.stringify(CSL.toRowCol('ab\ncd', 4)) === '{"row":1,"col":1}' && CSL.toPos('ab\ncd', 1, 9) === 5 && CSL.toPos('ab\ncd', 7, 0) === 5, 'row/col <-> offset conversion clamps to the text');
+
+console.log('\n-- alarms --');
+/* Code parsing is pure, so it is checked unconditionally. The lookups need
+ * js/alarms/ present; a slim checkout skips them rather than failing. */
+check(AL.parse('SRVO-063').code === 'SRVO-063', 'a canonical code parses');
+check(AL.parse('srvo 63').code === 'SRVO-063', 'the pendant spelling "srvo 63" normalises and zero-pads');
+check(AL.parse('IB-S-001').code === 'IB-S-001' && AL.parse('IB-S-001').fclt === 'IB-S', 'a hyphenated facility is not mistaken for a shorter prefix');
+check(AL.parse('FOO-001') === null && AL.parse('SRVO-1234') === null && AL.parse('') === null, 'a non-facility, an over-long number and an empty string are all rejected');
+check(AL.facilities.indexOf('SRVO') !== -1 && AL.facilities.length > 90, 'the facility index is populated');
+
+const sp = AL.split('SRVO-063 RCAL alarm\nCause:  Counter is bad.\nRemedy:\n1. Replace it.');
+check(sp.title === 'SRVO-063 RCAL alarm' && /Counter is bad\./.test(sp.cause) && /Replace it\./.test(sp.remedy), 'detail text splits into title, cause and remedy');
+const sp2 = AL.split('ODD-001 no sections here');
+check(sp2.cause === '' && sp2.remedy === '' && sp2.detail === 'ODD-001 no sections here', 'an unrecognised shape keeps the whole text in .detail');
+
+if (fs.existsSync(path.join(__dirname, '..', 'js', 'alarms', 'SRVO.js'))) {
+  let hit = 'pending', hitSt, miss = 'pending', missSt;
+  AL.lookup('SRVO-063', (e, s) => { hit = e; hitSt = s; });
+  AL.lookup('SRVO-999', (e, s) => { miss = e; missSt = s; });
+  check(hit && /Pulsecoder/.test(hit.cause) && hitSt === 'ok', 'SRVO-063 resolves to its real cause text');
+  check(hit && hit.remedy.length > 0 && hit.code === 'SRVO-063', 'the resolved entry carries a remedy and its canonical code');
+  check(miss === null && missSt === 'no-code', 'a code its facility does not define reports no-code');
+  check(AL.ready('SRVO-063') && AL.peek('SRVO-063').entry.code === 'SRVO-063', 'a loaded facility answers synchronously on re-render');
+
+  /* The distinction that keeps a half-built dictionary honest: an uninstalled
+   * facility must not be reported as a non-existent code. */
+  let absent = 'pending', absentSt;
+  AL.lookup('ZZZZ-001', (e, s) => { absent = e; absentSt = s; });
+  check(absent === null && absentSt === 'bad-code', 'a non-facility reports bad-code');
+  const unbuilt = AL.facilities.find((f) => !fs.existsSync(path.join(__dirname, '..', 'js', 'alarms', f + '.js')));
+  if (unbuilt) {
+    let nd = 'pending', ndSt;
+    AL.lookup(unbuilt + '-001', (e, s) => { nd = e; ndSt = s; });
+    check(nd === null && ndSt === 'no-data', 'a real facility with no data file reports no-data, not no-code (' + unbuilt + ')');
+  }
+} else {
+  console.log('  --  js/alarms/ not installed; run `node tools/fetch-alarms.js` for lookup coverage');
+}
 
 console.log('');
 if (failures) {

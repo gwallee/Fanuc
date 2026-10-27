@@ -7254,6 +7254,109 @@
     render();
   }
 
+  /* ---- offline alarm dictionary (js/alarms.js + js/alarms/<FCLT>.js) ----
+   * The controller tells you SRVO-063 happened; the dictionary tells you what
+   * that means. Facility files load on first use, so this costs nothing until
+   * someone actually expands a code, and nothing at all if js/alarms/ is not
+   * installed — entry comes back null and the caller shows plain text. */
+
+  function alarmDict() {
+    return typeof FanucAlarms !== 'undefined' ? FanucAlarms : null;
+  }
+
+  function alarmKnown(code) {
+    var d = alarmDict();
+    return !!(d && code && d.parse(code));
+  }
+
+  // Cause/Remedy block, shared by the expanded error row and the lookup box.
+  function alarmDetailEl(entry, code, status) {
+    if (!entry) {
+      /* "we have no file for that facility" is a different answer from "that
+       * code does not exist" — saying the second when it is the first sends
+       * someone hunting a fault that is not there. */
+      var d = alarmDict();
+      var p = d && d.parse(code);
+      return h('p', { class: 'muted', text: status === 'no-data'
+        ? (p ? p.fclt : code) + ' codes are not installed — run node tools/fetch-alarms.js (or reconnect, if this device is offline).'
+        : code + ' is not a FANUC alarm code.' });
+    }
+    var box = h('div', { class: 'alarm-detail' });
+    if (entry.title) box.appendChild(h('div', { class: 'alarm-title', text: entry.title }));
+    if (entry.cause || entry.remedy) {
+      if (entry.cause) {
+        box.appendChild(h('div', { class: 'alarm-head', text: 'Cause' }));
+        box.appendChild(h('div', { class: 'alarm-body', text: entry.cause }));
+      }
+      if (entry.remedy) {
+        box.appendChild(h('div', { class: 'alarm-head', text: 'Remedy' }));
+        box.appendChild(h('div', { class: 'alarm-body', text: entry.remedy }));
+      }
+    } else {
+      // Unrecognised shape — show the whole entry rather than lose any of it.
+      box.appendChild(h('div', { class: 'alarm-body', text: entry.detail }));
+    }
+    return box;
+  }
+
+  /* Resolve a code into `host`, synchronously when the facility is already
+   * cached so a re-render never flashes "Looking up…". */
+  function alarmFill(host, code) {
+    var d = alarmDict();
+    if (!d) return;
+    if (d.ready(code)) {
+      var got = d.peek(code);
+      host.appendChild(alarmDetailEl(got.entry, code, got.status));
+      return;
+    }
+    host.appendChild(h('p', { class: 'muted', text: 'Looking up ' + code + '…' }));
+    d.lookup(code, function (entry, status) {
+      host.innerHTML = '';
+      host.appendChild(alarmDetailEl(entry, code, status));
+    });
+  }
+
+  /* Its own section rather than a corner of the error history, because looking
+   * a code up is most useful when you are NOT connected — the cell is faulted,
+   * or you are at a desk with a photo of the pendant. renderRobot returns early
+   * in both of those cases, so this has to sit above that. */
+  function alarmSection(pane) {
+    var d = alarmDict();
+    var sec = secHead('Alarm codes (offline)', 'robot-alarms', false);
+    pane.appendChild(sec.el);
+    if (!sec.open) return;
+    if (!d) {
+      pane.appendChild(h('p', { class: 'muted', text: 'The alarm dictionary is not installed. Run node tools/fetch-alarms.js to build js/alarms/.' }));
+      return;
+    }
+    pane.appendChild(h('p', { class: 'muted', text: 'Cause and remedy for any FANUC alarm code, with no network — ' + d.facilities.length + ' facilities. Codes in the error history below are clickable too.' }));
+    pane.appendChild(alarmLookupEl());
+  }
+
+  // Standalone lookup — for a code read off the pendant that is not in the log.
+  function alarmLookupEl() {
+    var wrap = h('div', {});
+    var out = h('div', {});
+    var input = h('input', { type: 'search', placeholder: 'Look up an alarm code… e.g. SRVO-063 or srvo 63' });
+    var go = function () {
+      var v = input.value.trim();
+      out.innerHTML = '';
+      if (!v) return;
+      var d = alarmDict();
+      var p = d && d.parse(v);
+      if (!p) {
+        out.appendChild(h('p', { class: 'muted', text: d ? 'Not an alarm code: ' + v : 'The offline dictionary is not installed.' }));
+        return;
+      }
+      alarmFill(out, p.code);
+    };
+    input.addEventListener('change', go);
+    input.addEventListener('search', go);
+    wrap.appendChild(h('div', { class: 'search-bar' }, [input]));
+    wrap.appendChild(out);
+    return wrap;
+  }
+
   function renderRobot(pane) {
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Robot connection' }),
@@ -7303,6 +7406,8 @@
 
     var banner = uploadBanner();
     if (banner) pane.appendChild(banner);
+
+    alarmSection(pane);
 
     if (state.robot.error) {
       pane.appendChild(h('p', {}, [h('span', { class: 'badge warn', text: 'connection failed' })]));
@@ -7572,6 +7677,7 @@
         pane.appendChild(eBar);
         var eWrap = h('div', { class: 'table-wrap' });
         pane.appendChild(eWrap);
+        var eOpen = {};                        // seq -> expanded, survives filtering
         var drawErrs = function () {
           var q = eIn.value.trim().toLowerCase();
           eWrap.innerHTML = '';
@@ -7582,15 +7688,33 @@
             var hay = (e2.time + ' ' + (e2.code || '') + ' ' + e2.text + ' ' + e2.severity).toLowerCase();
             if (q && hay.indexOf(q) === -1) return;
             if (++shown > 300) return;
+            var codeCell;
+            if (alarmKnown(e2.code)) {
+              codeCell = h('td', { class: 'n' }, [
+                h('button', {
+                  class: 'alarm-code' + (eOpen[e2.seq] ? ' open' : ''),
+                  text: e2.code,
+                  title: 'Cause and remedy for ' + e2.code,
+                  onclick: function () { eOpen[e2.seq] = !eOpen[e2.seq]; drawErrs(); }
+                })
+              ]);
+            } else {
+              codeCell = h('td', { class: 'n', text: e2.code || '—' });
+            }
             tbl.appendChild(h('tr', {}, [
               h('td', { class: 'n', text: e2.time }),
-              h('td', { class: 'n', text: e2.code || '—' }),
+              codeCell,
               h('td', { text: e2.text }),
               h('td', {}, [
                 e2.severity ? h('span', { class: 'badge ' + (/SERVO|ABORT|STOP/.test(e2.severity) ? 'warn' : 'mid'), text: e2.severity }) : null,
                 e2.active ? h('span', { class: 'badge warn', text: 'ACTIVE' }) : null
               ])
             ]));
+            if (eOpen[e2.seq]) {
+              var cell = h('td', { colspan: '4' });
+              tbl.appendChild(h('tr', { class: 'alarm-row' }, [cell]));
+              alarmFill(cell, alarmDict().parse(e2.code).code);
+            }
           });
           eWrap.appendChild(tbl);
           if (!shown) eWrap.appendChild(h('p', { class: 'muted', text: 'No errors match.' }));

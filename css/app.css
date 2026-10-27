@@ -520,6 +520,31 @@ body.ctrl-held .codebox .tok-call { cursor: pointer; }   /* opens on Ctrl+click 
 .attr-table td:first-child { color: var(--muted); white-space: nowrap; width: 1%; padding-right: 22px; }
 tr:last-child td { border-bottom: none; }
 
+/* Alarm codes that the offline dictionary (js/alarms/) can explain — the code
+ * cell becomes a toggle, and the Cause/Remedy opens in a row beneath it. */
+.alarm-code {
+  font: inherit;
+  color: var(--accent);
+  background: none;
+  border: none;
+  border-bottom: 1px dotted var(--accent);
+  padding: 0;
+  cursor: pointer;
+}
+.alarm-code:hover, .alarm-code.open { border-bottom-style: solid; }
+.alarm-code:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.alarm-row td { background: var(--panel-2); }
+.alarm-detail { max-width: 80ch; padding: 2px 0 6px; }
+.alarm-title { font-weight: 600; margin-bottom: 6px; }
+.alarm-head {
+  color: var(--accent);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 8px;
+}
+.alarm-body { white-space: pre-wrap; margin-top: 2px; }
+
 .chip {
   display: inline-block;
   font-family: "IBM Plex Mono", monospace;
