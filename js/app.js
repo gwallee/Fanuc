@@ -4405,6 +4405,13 @@
    */
 
   var CFG_KMIN = 0.05, CFG_KMAX = 2.5;
+  /* The stops the +/− buttons and keys walk. A fixed ratio per press was a
+   * jump rather than a nudge, so the ladder is finer — and it includes the
+   * tier thresholds (0.26, 0.30, 0.55, 0.62), so a press lands exactly where
+   * the detail changes instead of stepping over it. */
+  var CFG_KSTEPS = [0.05, 0.06, 0.07, 0.08, 0.09, 0.10, 0.12, 0.15, 0.18, 0.22,
+    0.26, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.62, 0.70, 0.80, 0.90, 1.00,
+    1.10, 1.25, 1.40, 1.60, 1.80, 2.00, 2.25, 2.50];
   var CFG_FIT_FLOOR = 0.12;      // below this nothing is legible; pan instead
   var CFG_CARD_W = { chartFull: 470, chartMap: 330 };
   var CFG_TIERS = ['full', 'compact', 'map'];
@@ -4502,11 +4509,11 @@
 
     var g1 = grp();
     g1.appendChild(h('button', { class: 'btn subtle', text: '−', title: 'Zoom out (−)',
-      onclick: function () { cfgZoomTo(cfgView.k / 1.25); } }));
+      onclick: function () { cfgZoomStep(-1); } }));
     cfg.zoomRead = h('span', { class: 'flow-zoom', text: '100%' });
     g1.appendChild(cfg.zoomRead);
     g1.appendChild(h('button', { class: 'btn subtle', text: '+', title: 'Zoom in (+)',
-      onclick: function () { cfgZoomTo(cfgView.k * 1.25); } }));
+      onclick: function () { cfgZoomStep(1); } }));
     g1.appendChild(h('button', { class: 'btn subtle', text: 'Fit', title: 'Fit the whole program on screen (F)',
       onclick: cfgFit }));
     g1.appendChild(h('button', { class: 'btn subtle', text: '1:1', title: 'Back to 100% (0)',
@@ -5163,6 +5170,35 @@
     else { cfgHush(); cfgScheduleEdges(); }
   }
 
+  /* One stop along the ladder from wherever the view is now, so a press or a
+   * wheel notch after a free zoom or a Fit still lands on a round number.
+   * cx/cy hold a point still under the step — the pointer, for the wheel. */
+  function cfgZoomStep(dir, cx, cy) {
+    var k = cfgView.k, eps = 1e-4, i;
+    if (dir > 0) {
+      for (i = 0; i < CFG_KSTEPS.length; i++) {
+        if (CFG_KSTEPS[i] > k + eps) { cfgZoomTo(CFG_KSTEPS[i], cx, cy); return; }
+      }
+      cfgZoomTo(CFG_KMAX, cx, cy);
+      return;
+    }
+    for (i = CFG_KSTEPS.length - 1; i >= 0; i--) {
+      if (CFG_KSTEPS[i] < k - eps) { cfgZoomTo(CFG_KSTEPS[i], cx, cy); return; }
+    }
+    cfgZoomTo(CFG_KMIN, cx, cy);
+  }
+
+  /* A wheel notch is one stop on the ladder; a trackpad is not. A wheel
+   * reports in lines or pages, or in a pixel lump of about a notch’s worth,
+   * while a trackpad streams small pixel deltas — snapping those would fly
+   * across the whole range, so they stay continuous, as a pinch does. */
+  var CFG_NOTCH_PX = 40;
+  function cfgWheelIsNotch(ev, dy) {
+    if (ev.ctrlKey) return false;           // trackpad pinch
+    if (ev.deltaMode !== 0) return true;    // lines or pages: only a wheel
+    return Math.abs(dy) >= CFG_NOTCH_PX;
+  }
+
   /* Only the stroke width depends on zoom, so redrawing the arrows can wait
    * for the wheel to settle. */
   var cfgEdgeTimer = null;
@@ -5261,10 +5297,12 @@
         cfgApplyView();
         return;
       }
-      // ctrlKey arrives from a trackpad pinch: same gesture, finer steps
-      var rate = ev.ctrlKey ? 0.010 : 0.0022;
       var r = vp.getBoundingClientRect();
-      cfgZoomTo(cfgView.k * Math.exp(-dy * rate), ev.clientX - r.left, ev.clientY - r.top);
+      var cx = ev.clientX - r.left, cy = ev.clientY - r.top;
+      if (cfgWheelIsNotch(ev, dy)) { cfgZoomStep(dy > 0 ? -1 : 1, cx, cy); return; }
+      // ctrlKey arrives from a trackpad pinch: same gesture, finer steps
+      var rate = ev.ctrlKey ? 0.010 : 0.0011;
+      cfgZoomTo(cfgView.k * Math.exp(-dy * rate), cx, cy);
     }, { passive: false });
 
     /* A left drag pans only from the background: inside a block the browser is
@@ -5532,8 +5570,8 @@
     if (state.tab !== 'flow' || !cfg) return false;
     if (/^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName)) return false;
     if (ev.ctrlKey || ev.metaKey || ev.altKey) return false;
-    if (ev.key === '+' || ev.key === '=') { cfgZoomTo(cfgView.k * 1.25); return true; }
-    if (ev.key === '-' || ev.key === '_') { cfgZoomTo(cfgView.k / 1.25); return true; }
+    if (ev.key === '+' || ev.key === '=') { cfgZoomStep(1); return true; }
+    if (ev.key === '-' || ev.key === '_') { cfgZoomStep(-1); return true; }
     if (ev.key === '0') { cfgZoomTo(1); return true; }
     if (ev.key === 'f' || ev.key === 'F') { cfgFit(); return true; }
     if (ev.key === 'c' || ev.key === 'C') {
