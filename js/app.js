@@ -166,6 +166,16 @@
       if (CODE_SIZES.indexOf(p.codeSize) !== -1) state.codeSize = p.codeSize;
       if (typeof p.ignoreIoState === 'boolean') state.ignoreIoState = p.ignoreIoState;
       if (p.lastRobot && p.lastRobot.ip) state.lastRobot = p.lastRobot; // {ip, ftpUser}
+      /* Which robots the backup sweep covers is a decision about this shop's
+       * cells, not about this page load: without it a refresh re-ticked
+       * every robot that answers, and the sweep quietly grew back to all of
+       * them. Only real booleans come back in — a corrupt entry would read
+       * as "ticked" and put a cell back in the sweep unasked. */
+      if (p.backupPick && typeof p.backupPick === 'object') {
+        Object.keys(p.backupPick).forEach(function (ip) {
+          if (typeof p.backupPick[ip] === 'boolean') state.backupPick[ip] = p.backupPick[ip];
+        });
+      }
       if (p.theme === 'light' || p.theme === 'dark' || p.theme === 'auto') state.theme = p.theme;
       if (typeof p.splitPct === 'number' && p.splitPct >= 20 && p.splitPct <= 80) state.splitPct = p.splitPct;
       if (typeof p.showAllProgs === 'boolean') state.showAllProgs = p.showAllProgs;
@@ -197,7 +207,8 @@
         flowLayout: state.flowLayout, flowGaps: state.flowGaps, flowDetail: state.flowDetail,
         flowMini: state.flowMini, flowHideNav: state.flowHideNav, hideNav: state.hideNav,
         xrefFolded: state.xrefFolded, xrefHideUnused: state.xrefHideUnused,
-        lastRobot: state.lastRobot || null, theme: state.theme, splitPct: state.splitPct,
+        lastRobot: state.lastRobot || null, backupPick: state.backupPick,
+        theme: state.theme, splitPct: state.splitPct,
         showAllProgs: state.showAllProgs, showData: state.showData, dataSeg: state.dataSeg
       }));
     } catch (e) { /* session-only */ }
@@ -849,6 +860,10 @@
     postJSON('/api/robots/forget', { ip: ip }).then(function (b) {
       state.knownRobots = b.robots || [];
       delete state.robotProbe[ip];
+      /* A forgotten robot takes its tick with it: re-adding one later is a
+       * fresh decision, and it defaults to in like any other. */
+      delete state.backupPick[ip];
+      savePrefs();
       render();
     }).catch(function (e) { toast('Could not forget ' + ip + ': ' + e.message); });
   }
@@ -6964,6 +6979,7 @@
       cb.disabled = running;
       cb.addEventListener('change', function () {
         state.backupPick[r.ip] = cb.checked;
+        savePrefs();   // the sweep's robots have to survive a refresh
         render();
       });
       function seedCreds() {
