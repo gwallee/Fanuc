@@ -469,6 +469,7 @@ body.dragging .drop-hint, body.dragging .pane { outline: 2px dashed var(--accent
 .tok-str { color: var(--str); }
 .tok-call { color: var(--motion); text-decoration: underline; text-underline-offset: 2px; }
 body.ctrl-held .codebox .tok-call { cursor: pointer; }   /* opens on Ctrl+click */
+body.ctrl-held .codebox .tok-lbl { cursor: pointer; }    /* goes to the label */
 
 /* ---------- summary / cards ---------- */
 /* The band above the counts. Frames and parser trouble decide how you read
@@ -746,6 +747,7 @@ tr:last-child td { border-bottom: none; }
 .editor-hl .ln-unk { text-decoration: underline dotted var(--warn); text-underline-offset: 3px; }
 .editor-status { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; padding: 6px 2px 0; font-size: 12.5px; min-height: 24px; }
 .editor-status .msg { color: var(--muted); }
+.editor-status .pos { order: 99; margin-left: auto; font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink); white-space: pre; }
 .editor-status .msg.err { color: var(--write); }
 .editor-status .msg.unk { color: var(--warn); }
 .editor-status .ex { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink); }

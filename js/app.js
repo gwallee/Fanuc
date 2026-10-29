@@ -2973,6 +2973,20 @@
         var name = t.getAttribute('data-call').toUpperCase();
         if (state.programs[name]) { state.selected = name; render(); }
       }
+      // …and on a jump's LBL[n], to the LBL[n] line
+      var lb = (ev.ctrlKey || ev.metaKey) && t.closest && t.closest('.tok-lbl');
+      var lm = lb && /LBL\[\s*(\d+)/.exec(lb.textContent);
+      if (lm) {
+        var def = new RegExp('^\\s*LBL\\[\\s*0*' + (+lm[1]) + '\\s*[:\\]]');
+        var srcs = box.querySelectorAll('.cline .src'), hit = null;
+        for (var i = 0; i < srcs.length && !hit; i++) if (def.test(srcs[i].textContent)) hit = srcs[i].parentNode;
+        if (!hit) toast('LBL[' + (+lm[1]) + '] is not defined in this program.');
+        else if (hit !== cl) {
+          hit.scrollIntoView({ block: 'center' });
+          hit.classList.add('flash');
+          setTimeout(function () { hit.classList.remove('flash'); }, 1600);
+        }
+      }
     });
     /* Cross-referencing a register or I/O point is a DOUBLE click. On a
      * single one it fired while you were only trying to place the caret or
@@ -3973,20 +3987,49 @@
       if (opts.side === 'right' && !paneOf(id)) { openDoc(id, true, 'right'); render(); }
       else activateDoc(id);
     }
-    function setCallHover(name) {
-      ta.classList.toggle('call-link', !!name);
+    /* Ctrl+click a jump's LBL[n] (JMP, IF…JMP, SELECT…JMP) to go to the
+     * LBL[n] line in this text — the live draft, so a label you just
+     * typed counts. The definition itself is not a link. */
+    function lblAt(rc) {
+      var rows = ta.value.split('\n'), txt = rows[rc.row] || '';
+      if (/^\s*(\d+:)?\s*!/.test(txt)) return null;
+      var re = /LBL\[\s*(\d+)[^\]]*\]/g, m;
+      while ((m = re.exec(txt)) !== null) {
+        if (rc.col < m.index || rc.col > m.index + m[0].length) continue;
+        var n = String(+m[1]);
+        var def = new RegExp('^\\s*\\d+:\\s*LBL\\[\\s*0*' + n + '\\s*[:\\]]');
+        if (def.test(txt)) return null;
+        for (var i = 0; i < rows.length; i++) if (def.test(rows[i])) return { n: n, row: i };
+        return { n: n, row: -1 };
+      }
+      return null;
+    }
+    function setCallHover(name, lbl) {
+      ta.classList.toggle('call-link', !!(name || lbl));
       if (name) ta.title = 'Ctrl+click to open ' + name;
+      else if (lbl) ta.title = 'Ctrl+click to go to LBL[' + lbl.n + ']' + (lbl.row < 0 ? ' (not defined here)' : '');
       else if (ta.title) ta.removeAttribute('title');
     }
     ta.addEventListener('mousemove', function (e) {
-      setCallHover((e.ctrlKey || e.metaKey) && !e.altKey ? callAt(mouseRC(e)) : null);
+      if (e.buttons & 1) updatePos();                 // drag-selecting: Sel counts live
+      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+        var rc = mouseRC(e), called = callAt(rc);
+        setCallHover(called, called ? null : lblAt(rc));
+      } else setCallHover(null);
     });
     ta.addEventListener('keyup', function (e) { if (e.key === 'Control' || e.key === 'Meta') setCallHover(null); });
     ta.addEventListener('mouseleave', function () { setCallHover(null); });
     ta.addEventListener('mousedown', function (e) {
       if ((e.ctrlKey || e.metaKey) && !e.altKey && e.button === 0) {
-        var called = callAt(mouseRC(e));
+        var rc = mouseRC(e), called = callAt(rc);
         if (called) { e.preventDefault(); setCallHover(null); openCalled(called); return; }
+        var lbl = lblAt(rc);
+        if (lbl) {
+          e.preventDefault();
+          setCallHover(null);
+          if (lbl.row < 0) toast('LBL[' + lbl.n + '] is not defined in this program.');
+          else gotoRow(lbl.row);
+        }
       }
     });
 
@@ -4123,14 +4166,33 @@
       return null;
     }
 
+    /* Notepad++'s Ln / Col / Sel readout — Sel is characters | lines, the
+     * count that keeps alarm and message strings inside their limits. */
+    var posEl = h('span', { class: 'pos' });
+    function updatePos() {
+      var txt = ta.value, a = ta.selectionStart, b = ta.selectionEnd;
+      var rc = ColSel.toRowCol(txt, ta.selectionEnd);
+      var chars = b - a, lines = chars ? txt.slice(a, b).split('\n').length : 0;
+      if (colRect) {
+        var cr = ColSel.normalise(colRect);
+        lines = cr.r1 - cr.r0 + 1;
+        chars = (cr.c1 - cr.c0) * lines;
+      }
+      posEl.textContent = 'Ln: ' + (rc.row + 1) + '   Col: ' + (rc.col + 1) + '   Sel: ' + chars + ' | ' + lines;
+    }
+    ta.addEventListener('select', updatePos);
+    ta.addEventListener('selectionchange', updatePos);
+
     var lastDataLine = null;
     function renderStatus() {
+      updatePos();
       // the data sidebar follows the caret line of whichever editor has focus
       if (document.activeElement === ta) {
         var cur = ta.value.split('\n')[caretRow()] || '';
         if (cur !== lastDataLine) { lastDataLine = cur; markDataLine(cur); }
       }
       statusBar.innerHTML = '';
+      statusBar.appendChild(posEl);          // first in the DOM, last on screen (order)
       if (colRect) {
         var cr = ColSel.normalise(colRect);
         statusBar.appendChild(h('span', {
@@ -4143,8 +4205,8 @@
           title: 'Alt+drag or Alt+Shift+arrows selects a column across rows (Notepad++ column mode). Typing, Backspace, Delete, cut, copy and paste then act on every row at once; a column copy pasted back lands as a column at the caret.'
         }));
         statusBar.appendChild(h('span', {
-          class: 'hint', text: 'Ctrl+click CALL · open',
-          title: 'Ctrl+click the program name after CALL or RUN to open it. This program stays in edit mode with its changes.'
+          class: 'hint', text: 'Ctrl+click CALL · LBL',
+          title: 'Ctrl+click the program name after CALL or RUN to open it (this program stays in edit mode with its changes), or a jump\'s LBL[n] to go to that label.'
         }));
       }
       if (!TPS) return;
