@@ -523,9 +523,22 @@ async function handleApi(req, res, u) {
     try {
       // never retried: an upload must not be able to run twice
       await pooledFtp(t, user, pass, async (ftp) => {
-      // 1. snapshot what's on the robot now
+      // 1. snapshot what's on the robot now. Only a clean 550 proves the
+      // program is not on the robot yet; anything else (dead control socket,
+      // refused data connection) means we could not tell, and uploading with
+      // no snapshot is exactly how a translation failure loses the version
+      // that was there. Give up instead: an upload that did not happen beats
+      // one nobody can undo.
       let prev = null;
-      try { prev = await ftp.retr(result.name); } catch (e) { /* program not on robot yet */ }
+      try { prev = await ftp.retr(result.name); }
+      catch (e) {
+        if (e.code !== 550) {
+          result.aborted = true;
+          result.error = 'Could not read the current version off the robot, so nothing was sent: ' + e.message;
+          return;
+        }
+        /* 550 -- the program is not on the robot yet */
+      }
       if (prev && prev.length) {
         fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
         const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -536,34 +549,51 @@ async function handleApi(req, res, u) {
       let uploadError = null;
       try { await ftp.stor(result.name, Buffer.from(content, 'utf8')); }
       catch (e) { uploadError = e.message; }
-      // 3. verify the program still exists (translation errors delete it)
-      let verified = false;
+      // 3. verify. Three outcomes, not two: the program is on the robot, the
+      // controller deleted it (a clean 550), or we could not find out. That
+      // last one used to read as 'deleted', so a flaky read made step 4 send
+      // the old version back over an upload that had translated fine.
+      let onRobot = 'unknown';          // 'present' | 'gone' | 'unknown'
+      let verifyError = null;
       try {
         const back = await ftp.retr(result.name);
-        verified = back && back.length > 0;
-      } catch (e) { verified = false; }
-      if (uploadError || !verified) {
-        result.error = uploadError
-          ? 'The controller rejected the upload: ' + uploadError
-          : 'Upload finished but the program is GONE on the robot — the .LS→TP translation failed and the controller deleted it.';
-        // grab the newest error-log entries — they carry the ASBN load
-        // errors with the failing file line
-        try {
-          const log = await ftp.retr('ERRALL.LS');
-          result.errlog = log.toString('latin1').split(/\r?\n/).slice(0, 40).join('\n');
-        } catch (e) { /* no error log available — banner just shows less */ }
-        // 4. auto-restore the snapshot so nothing is lost on the robot
-        if (result.snapshot) {
-          try {
-            await ftp.stor(result.name, fs.readFileSync(result.snapshot));
-            const check = await ftp.retr(result.name);
-            result.restored = !!(check && check.length);
-          } catch (e) { result.restoreError = e.message; }
-        }
+        onRobot = back && back.length ? 'present' : 'unknown';
+      } catch (e) {
+        if (e.code === 550) onRobot = 'gone';   // the controller says it is not there
+        else verifyError = e.message;           // we simply could not look
+      }
+      if (!uploadError && onRobot === 'present') {
+        result.ok = true;
+        result.verified = true;
         return;
       }
-      result.ok = true;
-      result.verified = true;
+      if (uploadError) {
+        result.error = 'The controller rejected the upload: ' + uploadError;
+      } else if (onRobot === 'gone') {
+        result.error = 'Upload finished but the program is GONE on the robot — the .LS→TP translation failed and the controller deleted it.';
+      } else {
+        result.unconfirmed = true;
+        result.error = 'Upload finished but it could not be confirmed on the robot' +
+          (verifyError ? ' (' + verifyError + ')' : '') +
+          '. Nothing was restored — check the program on the pendant.';
+      }
+      // grab the newest error-log entries — they carry the ASBN load
+      // errors with the failing file line
+      try {
+        const log = await ftp.retr('ERRALL.LS');
+        result.errlog = log.toString('latin1').split(/\r?\n/).slice(0, 40).join('\n');
+      } catch (e) { /* no error log available — banner just shows less */ }
+      // 4. auto-restore the snapshot so nothing is lost on the robot. Only
+      // when we know the new version is not on the robot: restoring on a
+      // verify we could not complete would undo a good upload, and the
+      // snapshot file is still there for a hand-restore either way.
+      if (result.snapshot && !result.unconfirmed) {
+        try {
+          await ftp.stor(result.name, fs.readFileSync(result.snapshot));
+          const check = await ftp.retr(result.name);
+          result.restored = !!(check && check.length);
+        } catch (e) { result.restoreError = e.message; }
+      }
       }, undefined, false);
     } catch (e) {
       result.error = result.error || e.message;

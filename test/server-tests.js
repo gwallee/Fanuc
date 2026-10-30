@@ -35,8 +35,9 @@ async function post(route, body) {
     'PICK.LS': '/PROG PICK\n/MN\n   1:  R[2]=2 ;\n/END\n',
     'NUMREG.VA': "[1] = 0  'count'\n"
   };
+  const brokenReads = [];   // names whose RETR fails on the transport, not with 550
   const refusedDeletes = [];  // programs the controller will not delete (selected / running)
-  const ftpServer = await startMockFtp(FTP_PORT, files, { deleRefused: refusedDeletes });
+  const ftpServer = await startMockFtp(FTP_PORT, files, { retrBroken: brokenReads, deleRefused: refusedDeletes });
   const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server.js'), String(APP_PORT)], { stdio: 'ignore' });
   await new Promise((r) => setTimeout(r, 600));
 
@@ -72,6 +73,37 @@ async function post(route, body) {
     r = await post('/api/robot/upload', { ip: ROBOT, name: 'NEWPROG.LS', content: '/PROG NEWPROG\n/MN\n   1:  BADSYNTAX ;\n/END\n' });
     check(r.ok === false && !r.restored && !r.snapshot, 'failure reported, no snapshot (program was new)');
     check(!('NEWPROG.LS' in files), 'nothing left behind on the robot');
+
+    console.log('\n-- safe upload: a current version we cannot read aborts the upload --');
+    /* Only a 550 means "not on the robot". Any other RETR failure leaves us
+     * unable to snapshot, and sending anyway is how a translation failure
+     * wipes a program with nothing to restore. */
+    const keepPick = files['PICK.LS'];
+    brokenReads.push('PICK.LS');
+    r = await post('/api/robot/upload', { ip: ROBOT, name: 'PICK.LS', content: '/PROG PICK\n/MN\n   1:  R[2]=5 ;\n/END\n' });
+    brokenReads.length = 0;
+    check(r.ok === false && r.aborted === true, 'upload refused when the version on the robot cannot be read');
+    check(!r.snapshot, 'no snapshot claimed');
+    check(/425|could not read/i.test(r.error || ''), 'error names the failed read: ' + r.error);
+    check(files['PICK.LS'] === keepPick, 'robot still holds the previous version, byte-identical');
+    r = await post('/api/robot/upload', { ip: ROBOT, name: 'PICK.LS', content: keepPick });
+    check(r.ok === true, 'and the same upload goes through once the read works again');
+
+    console.log('\n-- safe upload: a verify we cannot finish must not restore over a good upload --');
+    /* The read-back is the only proof an upload survived translation. When it
+     * fails on the transport we do not know, and the old auto-restore turned
+     * that into a silent downgrade: snapshot sent back over a version that
+     * was fine. */
+    const mainNew = '/PROG MAIN\n/MN\n   1:  R[1]=42 ;\n/END\n';
+    const mainOld = files['MAIN.LS'];
+    brokenReads.push({ name: 'MAIN.LS', after: 1 });   // snapshot read works, read-back does not
+    r = await post('/api/robot/upload', { ip: ROBOT, name: 'MAIN.LS', content: mainNew });
+    brokenReads.length = 0;
+    check(r.ok === false && r.unconfirmed === true, 'reported as unconfirmed rather than failed');
+    check(r.restored === false, 'no auto-restore was attempted');
+    check(files['MAIN.LS'] === mainNew, 'the version that landed is still on the robot, not the snapshot');
+    check(r.snapshot && fs.readFileSync(r.snapshot, 'utf8') === mainOld, 'the previous version is on disk for a hand-restore');
+    check(/could not be confirmed/i.test(r.error || ''), 'error says so plainly: ' + r.error);
 
     console.log('\n-- delete on robot: snapshot, DELE, verified gone --');
     const tempSrc = '/PROG TEMP\n/MN\n   1:  R[9]=9 ;\n/END\n';

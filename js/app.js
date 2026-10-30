@@ -1743,9 +1743,11 @@
       el.appendChild(h('strong', { text: u.name + ' uploaded to ' + state.robot.ip + ' and verified on the robot. ' }));
       if (u.snapshot) el.appendChild(h('span', { text: 'The previous version was snapshotted to ' + u.snapshot + ' before the upload.' }));
     } else {
-      el.appendChild(h('strong', { text: u.name + ' — upload failed. ' }));
+      el.appendChild(h('strong', { text: u.name + (u.unconfirmed ? ' — upload not confirmed. ' : ' — upload failed. ') }));
       el.appendChild(h('span', { text: (u.error || 'unknown error') + ' ' }));
-      if (u.restored) el.appendChild(h('span', { text: 'The previous version was automatically restored on the robot from the pre-upload snapshot — nothing was lost. Fix the program here and send again.' }));
+      if (u.aborted) el.appendChild(h('span', { text: 'Nothing was sent — the robot still holds whatever it held before, and your source is safe in the library. Check the connection and send again.' }));
+      else if (u.unconfirmed) el.appendChild(h('span', { text: 'Re-sending the previous version could undo an upload that in fact worked, so it was left alone' + (u.snapshot ? '; the version from before the send is saved at ' + u.snapshot + '.' : '.') }));
+      else if (u.restored) el.appendChild(h('span', { text: 'The previous version was automatically restored on the robot from the pre-upload snapshot — nothing was lost. Fix the program here and send again.' }));
       else if (u.snapshot) el.appendChild(h('span', { text: 'Auto-restore did not succeed' + (u.restoreError ? ' (' + u.restoreError + ')' : '') + ' — the previous version is saved at ' + u.snapshot + '.' }));
       else el.appendChild(h('span', { text: 'The program did not exist on the robot before this upload, so there is nothing to restore. Your source is safe in the library.' }));
 

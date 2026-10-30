@@ -6,6 +6,10 @@
  * - opts.unreadable: names that NLST lists but RETR refuses. A real
  *   controller has files it will name and then not hand over, and a backup
  *   has to survive one and carry on rather than abandoning the robot.
+ * - opts.retrBroken: names that EXIST but whose RETR fails on the transport
+ *   (425) instead of being cleanly refused (550). Mutable, so a test can
+ *   break one read and then heal it; an entry may be a name or
+ *   { name, after: N } to let the first N reads through.
  * - DELE NAME.TP removes the program (its NAME.LS view goes with it), like a
  *   controller; opts.deleRefused: program names the controller will not
  *   delete (selected / running) -- answered 550.
@@ -66,6 +70,11 @@ function startMockFtp(port, files, opts) {
         }
         case 'RETR': {
           if (cwd !== 'md:' || !(arg in files)) { send('550 file not found'); break; }
+          const brk = (opts.retrBroken || []).filter((b) => (b.name || b) === arg)[0];
+          if (brk) {
+            if (brk.after) brk.after--;          // wave this many reads through first
+            else { send('425 cannot open data connection'); break; }
+          }
           send('150 opening data connection');
           const ds = await pasvConn;
           ds.end(files[arg]);
