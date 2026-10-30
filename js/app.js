@@ -7,6 +7,7 @@
   // TP syntax: the grammar, and the shape dictionary mined from real listings
   // (absent only if js/tpshapes.js was never built — the grammar still runs)
   var TPS = window.FanucSyntax || null, TP_DICT = window.TP_SHAPES || null;
+  var CMP = window.Complete || null;
   var STORE_KEY_V1 = 'fanuc-tp-studio.programs.v1';
   var STORE_KEY_V2 = 'fanuc-tp-studio.programs.v2';
   /* v3: one library per robot. Each robot's programs live under their own
@@ -4417,9 +4418,94 @@
       onclick: openMenu
     }));
 
+    /* ---- name completion ----
+     * Typing DI[ lists the controller's named inputs under the caret; digits
+     * narrow by index, letters by name; Enter, Tab or a click writes
+     * DI[3:Part Present]. It must never get in the way of typing: a keystroke
+     * outside an opener costs one regex over the current row, the list is a
+     * fixed box that never takes focus, typing on past it (the ] or a :)
+     * closes it, and so do Escape, a click, and every caret move. Column
+     * mode and a selection never open it. */
+    var ac = null, acItems = [], acSel = 0, acCtx = null, acIdx = null, acRev = -1;
+    function acClose() { if (!ac) return; ac.remove(); ac = null; acCtx = null; }
+    function acUpdate() {
+      if (!CMP || colRect || !state.liveNames || ta.selectionStart !== ta.selectionEnd) { acClose(); return; }
+      var ctx = CMP.context(ta.value, ta.selectionStart);
+      if (!ctx) { acClose(); return; }
+      if (acRev !== state.namesRev || !acIdx) { acIdx = CMP.index(state.liveNames); acRev = state.namesRev; }
+      acItems = CMP.matches(acIdx, ctx);
+      if (!acItems.length) { acClose(); return; }
+      acCtx = ctx;
+      acSel = 0;
+      if (!ac) { ac = h('div', { class: 'ac-menu' }); document.body.appendChild(ac); }
+      acDraw();
+      acPlace();
+    }
+    function acDraw() {
+      ac.innerHTML = '';
+      acItems.forEach(function (it, i) {
+        ac.appendChild(h('div', {
+          class: 'ac-item' + (i === acSel ? ' active' : ''),
+          onmousedown: function (e) { e.preventDefault(); },   // keep the textarea's caret
+          onclick: function () { acAccept(it); }
+        }, [
+          h('span', { class: 'idx', text: acCtx.type + '[' + it.index + ']' }),
+          h('span', { class: 'nm', text: it.name })
+        ]));
+      });
+    }
+    function acPlace() {
+      var m = colMetrics(), rc = ColSel.toRowCol(ta.value, acCtx.start), r = ta.getBoundingClientRect();
+      var x = r.left + m.padL + rc.col * m.cw - ta.scrollLeft;
+      var y = r.top + m.padT + (rc.row + 1) * m.lh - ta.scrollTop;
+      var w = 300;
+      ac.style.left = Math.max(8, Math.min(x, window.innerWidth - w - 8)) + 'px';
+      var below = window.innerHeight - y - 8, above = y - m.lh - 8;
+      if (below < 160 && above > below) {
+        ac.style.top = '';
+        ac.style.bottom = (window.innerHeight - (y - m.lh)) + 'px';
+        ac.style.maxHeight = above + 'px';
+      } else {
+        ac.style.bottom = '';
+        ac.style.top = y + 'px';
+        ac.style.maxHeight = below + 'px';
+      }
+    }
+    function acAccept(it) {
+      var ctx = acCtx, repl = CMP.insertion(it);
+      acClose();
+      ta.focus();
+      ta.setSelectionRange(ctx.start, ctx.end);
+      // execCommand keeps the textarea's own undo stack; 'input' fires from it
+      if (!document.execCommand || !document.execCommand('insertText', false, repl)) {
+        ta.setRangeText(repl, ctx.start, ctx.end, 'end');
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      renderStatus();
+    }
+    ta.addEventListener('keydown', function (e) {
+      if (!ac) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        acSel = (acSel + (e.key === 'ArrowDown' ? 1 : acItems.length - 1)) % acItems.length;
+        acDraw();
+        if (ac.children[acSel].scrollIntoView) ac.children[acSel].scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        acAccept(acItems[acSel]);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        acClose();
+      } else if (/^(ArrowLeft|ArrowRight|Home|End|PageUp|PageDown)$/.test(e.key)) acClose();
+    });
+    ta.addEventListener('blur', acClose);
+    ta.addEventListener('click', acClose);
+    ta.addEventListener('scroll', function () { if (ac) acPlace(); });
+
     ta.addEventListener('input', function () {
       if (!applyingCol) exitCol();     // native typing, undo, IME — the rect no longer fits the text
       state.editDrafts[oldName] = ta.value;
+      acUpdate();
       if (repaintQueued) return;
       repaintQueued = true;
       requestAnimationFrame(function () { repaintQueued = false; paint(); });

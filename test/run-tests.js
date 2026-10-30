@@ -917,6 +917,26 @@ cr = CSL.paste(colSrc, { r0: 0, c0: 7, r1: 1, c1: 9 }, 'R\nR\n');
 check(cr.text.split('\n')[0] === '   1:  R[1]=ON ;' && cr.rect.r1 === 1, 'a pasted block replaces the rect contents; a trailing newline is not a row');
 check(JSON.stringify(CSL.toRowCol('ab\ncd', 4)) === '{"row":1,"col":1}' && CSL.toPos('ab\ncd', 1, 9) === 5 && CSL.toPos('ab\ncd', 7, 0) === 5, 'row/col <-> offset conversion clamps to the text');
 
+console.log('\n-- name completion --');
+const CMP = require('../js/complete.js');
+const cmpNames = { r: { 1: 'Task ID', 2: 'Manual TaskID', 20: 'Count' }, pr: { 1: 'Home' }, io: { 'DI[1]': 'Auto Mode', 'DI[2]': 'Start', 'DI[21]': 'Part Present', 'DO[1]': 'Clamp' } };
+const cmpIdx = CMP.index(cmpNames);
+const cmpTxt = (t) => CMP.context(t, t.length);
+check(cmpTxt('   1:  WAIT DI[') && cmpTxt('   1:  WAIT DI[').type === 'DI', 'DI[ at the caret opens completion');
+check(CMP.matches(cmpIdx, cmpTxt('   1:  WAIT DI[')).length === 3, 'an empty prefix lists every named point of the type');
+check(CMP.matches(cmpIdx, cmpTxt('   1:  WAIT DI[2')).map(i => i.index).join() === '2,21', 'digits narrow by index prefix');
+check(CMP.matches(cmpIdx, cmpTxt('   1:  WAIT DI[part')).map(i => i.index).join() === '21', 'letters narrow by name, case-insensitively');
+check(CMP.matches(cmpIdx, cmpTxt('   1:  R[')).length === 3 && CMP.matches(cmpIdx, cmpTxt('   1:  PR[')).length === 1, 'R[ and PR[ are separate lists');
+check(!cmpTxt('   1:  WAIT DI[1]') && !cmpTxt('   1:  WAIT DI[1:') && !cmpTxt('   1:  WAIT DI') && !cmpTxt('   1:  ODI['), 'no completion past ] or :, before [, or inside a longer word');
+check(!cmpTxt('   1:  !check DI['), 'no completion inside a comment row');
+check(!cmpTxt('   1:  LBL[') && !cmpTxt('   1:  P['), 'only registers and I/O complete');
+const cmpMid = '   1:  WAIT DI[2]=ON ;';
+const cmpC = CMP.context(cmpMid, cmpMid.indexOf('2]') + 1);
+check(cmpC && cmpC.start === cmpMid.indexOf('2]') && cmpC.end === cmpMid.indexOf(']=') + 1, 'editing an existing index replaces through its ]');
+check(!CMP.context(cmpMid, cmpMid.indexOf('2]')), 'a caret before the digit (inside the token) does not open');
+check(CMP.insertion({ index: 21, name: 'Part Present' }) === '21:Part Present]', 'the chosen item is written the pendant way');
+check(Object.keys(CMP.index(null)).length === 0, 'no names, no lists');
+
 console.log('\n-- alarms --');
 /* Code parsing is pure, so it is checked unconditionally. The lookups need
  * js/alarms/ present; a slim checkout skips them rather than failing. */

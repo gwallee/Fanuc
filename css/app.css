@@ -776,6 +776,18 @@ tr:last-child td { border-bottom: none; }
 .snip-item .code { font-family: "IBM Plex Mono", monospace; font-size: 12px; white-space: pre; color: var(--ink); }
 .snip-item .note { font-size: 11.5px; color: var(--muted); }
 
+/* name completion: a fixed box under the caret (see acPlace in app.js) */
+.ac-menu {
+  position: fixed; z-index: 40; overflow: auto; width: 300px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); padding: 4px 0;
+  font-family: "IBM Plex Mono", monospace; font-size: 12px;
+}
+.ac-item { display: flex; gap: 10px; padding: 2px 10px; cursor: pointer; white-space: nowrap; overflow: hidden; }
+.ac-item .idx { color: var(--accent); min-width: 7ch; }
+.ac-item .nm { color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+.ac-item:hover, .ac-item.active { background: var(--accent-bg); }
+
 /* ---------- checks ---------- */
 .card.sev-error .k { color: var(--write); }
 .card.sev-warn .k { color: var(--accent); }
