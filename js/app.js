@@ -8021,6 +8021,17 @@
       }
     }
 
+    /* A controller's register and PR tables are sized at cold start, so how
+     * many rows there are is the controller's business, not ours — a table
+     * grown from 100 to 300 must list 300. The cap is only there to keep one
+     * repaint from building ten thousand rows, and when it bites it SAYS so:
+     * a list that silently stops at its cap reads as the app losing rows. */
+    var ROW_CAP = 1000;
+    function capNote(wrap, total) {
+      if (total <= ROW_CAP) return;
+      wrap.appendChild(h('p', { class: 'muted', text: 'Showing first ' + ROW_CAP + ' of ' + total + ' — use the filter to narrow.' }));
+    }
+
     // registers
     var regs = state.robot.registers;
     var secRegs = secHead('Registers (NUMREG.VA)' + (regs && !regs.error ? ' — ' + regs.length : ''), 'robot-regs', false);
@@ -8043,11 +8054,10 @@
         regWrap.innerHTML = '';
         var tbl = h('table', { class: 'xref-table' });
         tbl.appendChild(h('tr', {}, [h('th', { text: 'Register' }), h('th', { text: 'Live value' }), h('th', { text: 'Comment' }), h('th', { text: 'Used at' })]));
-        var shown = 0;
-        regs.forEach(function (r) {
-          var hay = ('r[' + r.index + '] ' + r.value + ' ' + r.comment).toLowerCase();
-          if (q && hay.indexOf(q) === -1) return;
-          if (++shown > 200) return;
+        var hits = regs.filter(function (r) {
+          return !q || ('r[' + r.index + '] ' + r.value + ' ' + r.comment).toLowerCase().indexOf(q) !== -1;
+        });
+        hits.slice(0, ROW_CAP).forEach(function (r) {
           var used = h('td');
           var x = state.xref.registers[r.index];
           if (x) x.refs.slice(0, 6).forEach(function (ref) { used.appendChild(chip(ref, ref.write ? 'write' : 'read')); });
@@ -8059,7 +8069,8 @@
           ]));
         });
         regWrap.appendChild(tbl);
-        if (!shown) regWrap.appendChild(h('p', { class: 'muted', text: 'No registers match.' }));
+        if (!hits.length) regWrap.appendChild(h('p', { class: 'muted', text: 'No registers match.' }));
+        else capNote(regWrap, hits.length);
       }
       fIn.addEventListener('input', drawRegs);
       drawRegs();
@@ -8100,12 +8111,14 @@
           prWrap.innerHTML = '';
           var tbl = h('table', { class: 'xref-table' });
           tbl.appendChild(h('tr', {}, [h('th', { text: 'PR' }), h('th', { text: 'Comment' }), h('th', { text: 'Type' }), h('th', { text: 'Values' }), h('th', { text: 'Used at' })]));
-          var shown = 0;
-          prsOk.forEach(function (r) {
+          var hits = prsOk.filter(function (r) {
+            if (!q) return true;
+            var key = 'PR[' + r.index + ']' + (r.group > 1 ? ' GP' + r.group : '');
+            return (key + ' ' + r.comment + ' ' + VA.posregValueStr(r)).toLowerCase().indexOf(q) !== -1;
+          });
+          hits.slice(0, ROW_CAP).forEach(function (r) {
             var key = 'PR[' + r.index + ']' + (r.group > 1 ? ' GP' + r.group : '');
             var vals = VA.posregValueStr(r);
-            if (q && (key + ' ' + r.comment + ' ' + vals).toLowerCase().indexOf(q) === -1) return;
-            if (++shown > 300) return;
             var used = h('td');
             var xr = r.group === 1 ? state.xref.posRegs[r.index] : null;
             if (xr) xr.refs.slice(0, 6).forEach(function (ref) { used.appendChild(chip(ref, ref.write ? 'write' : 'read')); });
@@ -8121,7 +8134,8 @@
             ]));
           });
           prWrap.appendChild(tbl);
-          if (!shown) prWrap.appendChild(h('p', { class: 'muted', text: 'No position registers match.' }));
+          if (!hits.length) prWrap.appendChild(h('p', { class: 'muted', text: 'No position registers match.' }));
+          else capNote(prWrap, hits.length);
         };
         prIn.addEventListener('input', drawPRs);
         drawPRs();
@@ -8216,17 +8230,16 @@
         if (q) {
           // filtering: one flat table of matches across every type
           var tbl = ioTable();
-          var shown = 0;
-          state.robot.ioState.forEach(function (p) {
+          var ioHits = state.robot.ioState.filter(function (p) {
             var key = p.type + '[' + p.index + ']';
-            if ((key + ' ' + p.state + ' ' + p.comment).toLowerCase().indexOf(q) === -1) return;
-            if (++shown > 300) return;
-            ioRow(tbl, p);
+            return (key + ' ' + p.state + ' ' + p.comment).toLowerCase().indexOf(q) !== -1;
           });
+          ioHits.slice(0, ROW_CAP).forEach(function (p) { ioRow(tbl, p); });
           var tw = h('div', { class: 'table-wrap' });
           tw.appendChild(tbl);
           ioWrap.appendChild(tw);
-          if (!shown) ioWrap.appendChild(h('p', { class: 'muted', text: 'No I/O points match.' }));
+          if (!ioHits.length) ioWrap.appendChild(h('p', { class: 'muted', text: 'No I/O points match.' }));
+          else capNote(ioWrap, ioHits.length);
           return;
         }
         // no filter: collapsible group per I/O type

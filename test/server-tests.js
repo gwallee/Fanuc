@@ -132,6 +132,11 @@ async function post(route, body) {
     check(r.ok === false && r.refused === true && /in use/i.test(r.error), 'controller refusal reported: ' + r.error);
     check(files['PICK.LS'] === pickNow, 'refused delete leaves the program on the robot');
     refusedDeletes.length = 0;
+    brokenReads.push('PICK.LS');
+    r = await post('/api/robot/delete', { ip: ROBOT, name: 'PICK' });
+    brokenReads.length = 0;
+    check(r.ok === false && r.aborted === true && !r.snapshot, 'delete aborted when the program cannot be snapshotted');
+    check(files['PICK.LS'] === pickNow, 'and the program is still there');
     const bad = await fetch(BASE + '/api/robot/delete', { method: 'POST', body: JSON.stringify({ ip: ROBOT, name: '../X' }) });
     check(bad.status === 400, 'a name that is not a program name is refused');
 

@@ -6,6 +6,8 @@
 (function (global) {
   'use strict';
 
+  var ENTITIES = { lt: '<', gt: '>', quot: '"', apos: "'", '#39': "'", amp: '&' };
+
   /* Controllers with the web server enabled serve MD: files wrapped in an
    * HTML page (the iPendant homepage) with the real listing inside <XMP>.
    * Unwrap that so the stored source is the clean .LS. */
@@ -15,9 +17,26 @@
     if (m) return m[1];
     // no closing tag (truncated page) — take /PROG through /END
     var start = source.search(/^\/PROG\b/m);
-    if (start === -1) return source;
-    var endM = /^\/END\b.*$/m.exec(source.slice(start));
-    return endM ? source.slice(start, start + endM.index + endM[0].length) + '\n' : source.slice(start);
+    if (start !== -1) {
+      var endM = /^\/END\b.*$/m.exec(source.slice(start));
+      return endM ? source.slice(start, start + endM.index + endM[0].length) + '\n' : source.slice(start);
+    }
+    /* Variable and diagnostic pages (.VA, .DG) come wrapped in <PRE> alone —
+     * only program listings carry the inner <XMP>. Without this the whole
+     * iPendant page reaches the VA parsers: they are line-anchored so the
+     * registers still come out, but the raw views show the page's own nav.
+     * <PRE> escapes its content where <XMP> keeps it literal, so the
+     * entities have to come back out. */
+    var pre = /<PRE>\r?\n?/i.exec(source);
+    if (pre) {
+      var body = source.slice(pre.index + pre[0].length);
+      var cut = body.search(/<\/PRE>/i);
+      if (cut !== -1) body = body.slice(0, cut);
+      return body.replace(/&(lt|gt|quot|apos|#39|amp);/gi, function (whole, name) {
+        return ENTITIES[name.toLowerCase()] || whole;
+      });
+    }
+    return source;
   }
 
   function parseLS(rawSource, filename) {

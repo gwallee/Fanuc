@@ -325,6 +325,24 @@ check(wp.source.trim().startsWith('/PROG'), 'parsed.source is the CLEAN listing 
 check(P.unwrapMd('/PROG X\n/MN\n   1:  END ;\n/END\n').startsWith('/PROG'), 'clean listings pass through untouched');
 check(P.unwrapMd("[1] = 5  'x'\n") === "[1] = 5  'x'\n", 'non-program VA content passes through untouched');
 
+/* .VA / .DG pages carry no inner <XMP> — the content sits in <PRE> alone, and
+ * <PRE> escapes what <XMP> keeps literal. */
+const preOnly = `<html>
+<BODY>
+<strong>File Name: /MD/NUMREG.VA<br></strong>
+<A HREF="../">Home Page</A>
+<PRE>
+[*NUMREG*]$NUMREG  Storage: CMOS  Access: RW  : ARRAY[200] OF Register
+  [1] = 25  'count &lt; max'
+  [2] = 0  'R&amp;D'
+</PRE>
+</BODY>
+</HTML>`;
+const preUn = P.unwrapMd(preOnly);
+check(preUn.trim().startsWith('[*NUMREG*]'), 'PRE-wrapped variable page stripped to the bare listing');
+check(!/<\/?(html|body|strong|a|pre)\b/i.test(preUn), 'no HTML tags left in a PRE-wrapped page');
+check(preUn.includes("'count < max'") && preUn.includes("'R&D'"), 'PRE entities decoded back to the controller\'s own text');
+
 console.log('\n-- comments must never read as instructions --');
 const cmSrc = `/PROG CM
 /MN
@@ -365,6 +383,27 @@ const pr7 = prsAll.find(r => r.index === 7 && r.group === 1);
 check(pr7 && pr7.rep === 'uninitialized', 'uninitialized PR[7] recognized');
 check(VA.posregValueStr(prHome).startsWith('J1 '), 'compact value string: ' + VA.posregValueStr(prHome));
 console.log('  (' + prsAll.length + ' entries parsed from the real backup, ' + prsAll.filter(r => r.rep !== 'uninitialized').length + ' initialized)');
+
+/* How many PRs a controller has is set at cold start ($MAXPREGNUM), so the
+ * same robot reads 100 one week and 300 the next. Every one of them has to
+ * come out — and the comment array the file ends with ($EXPPREGCMT, printed
+ * as single-index [n] rows) must not be read as position registers of its
+ * own, or a 300-PR table would come back 600 rows long. */
+const big = ['<html><BODY><A HREF="../">Home Page</A>', '<PRE>',
+  '[*POSREG*]$POSREG  Storage: SHADOW  Access: RW  : ARRAY[1,300] OF Position Reg'];
+for (let i = 1; i <= 300; i++) {
+  big.push(i === 1
+    ? "    [1,1] =   'Home'   Group: 1\n  J1 =     0.000 deg   J2 =   -45.000 deg   J3 =    30.000 deg"
+    : "    [1," + i + "] =   '' Uninitialized");
+}
+big.push('', '[*POSREG*]$MAXPREGNUM  Storage: CMOS  Access: RW  : INTEGER = 300', '',
+  '[*POSREG*]$EXPPREGCMT  Storage: SHADOW  Access: RW  : ARRAY[300] OF STRING[16]');
+for (let i = 1; i <= 300; i++) big.push('  [' + i + '] = Uninitialized');
+big.push('</PRE>', '</BODY></HTML>');
+const grown = VA.parsePosreg(P.unwrapMd(big.join('\n')));
+check(grown.length === 300, 'a grown PR table lists every register (' + grown.length + ' of 300)');
+check(grown[grown.length - 1].index === 300, 'the last PR is PR[300], not PR[100] (' + grown[grown.length - 1].index + ')');
+check(grown.filter(r => r.group !== 1).length === 0, 'the trailing comment array is not read as position registers');
 
 console.log('\n-- labeled but never used: posregs --');
 const prExtern = { source: 'test', registers: [], io: [], posregs: [
