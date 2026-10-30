@@ -419,11 +419,27 @@
    * controller wraps them: a row starting with ":" continues the previous. */
   function instructions(src) {
     var rows = String(src).split(/\r\n|\r|\n/);
-    var out = [], inMn = false, i, raw, m, cur = null;
+    var out = [], inMn = false, ended = false, said = false, i, raw, m, cur = null;
     for (i = 0; i < rows.length; i++) {
       raw = rows[i];
       if (/^\s*\/MN\b/i.test(raw)) { inMn = true; continue; }
-      if (/^\s*\/(?:POS|END)\b/i.test(raw)) { inMn = false; cur = null; continue; }
+      if (/^\s*\/(?:POS|END)\b/i.test(raw)) {
+        inMn = false; cur = null;
+        if (/^\s*\/END\b/i.test(raw)) ended = true;
+        continue;
+      }
+      /* Past /END the file is over. Of 825 controller listings in testdata
+       * and backups, not one puts anything but whitespace here, so a row
+       * below /END is always something typed past the end of the program --
+       * and it is invisible to every other check, which only walks /MN. Say
+       * it once: a paste that lands below /END is one mistake, not fifty. */
+      if (ended) {
+        if (raw.trim() && !said) {
+          said = true;
+          out.push({ row: i, rows: [i], num: null, text: raw.trim(), raw: raw, afterEnd: true });
+        }
+        continue;
+      }
       if (!inMn) continue;
       if (!raw.trim()) { cur = null; continue; }
       m = raw.match(/^\s*(\d+)\s*:(.*)$/);
@@ -449,6 +465,10 @@
   function checkSource(src, dict) {
     var issues = [];
     instructions(src).forEach(function (ins) {
+      if (ins.afterEnd) {
+        issues.push({ row: ins.row, rows: ins.rows, num: null, level: 'error', message: '/END closes the program — this row, and anything under it, is outside the program and never runs' });
+        return;
+      }
       if (ins.badRow) {
         issues.push({ row: ins.row, rows: ins.rows, num: null, level: 'error', message: 'every instruction row starts with its line number and a colon — "  12:  R[1]=0 ;" — or ":" to continue the row above' });
         return;

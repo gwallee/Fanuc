@@ -827,6 +827,15 @@ const rowIssues = S.checkSource(rowSrc, SH);
 check(rowIssues.length === 3 && rowIssues[0].row === 3 && /end with " ;"/.test(rowIssues[0].message), 'a row without " ;" is flagged (got ' + rowIssues.length + ')');
 check(rowIssues[1].row === 5 && /line number/.test(rowIssues[1].message), 'a row without a line number is flagged');
 check(rowIssues[2].level === 'unknown' && rowIssues[2].rows.length === 2 && rowIssues[2].shape === 'CALL PROG(N,N)', 'a wrapped CALL is checked as one instruction spanning two rows (shape ' + rowIssues[2].shape + ')');
+// a row typed below /END is outside the program, and nothing else walks past /END
+{
+  const endSrc = '/PROG RS\r\n/MN\r\n   1:  R[1]=0 ;\r\n/POS\r\nP[1]{\r\n   X = 1.0 mm\r\n};\r\n/END\r\n   2:  R[2]=1 ;\r\n   3:  R[3]=2 ;\r\n';
+  const endIssues = S.checkSource(endSrc, SH);
+  check(endIssues.length === 1 && endIssues[0].level === 'error' && endIssues[0].row === 8 && /\/END closes/.test(endIssues[0].message),
+    'a row below /END is one error on the first stray row (got ' + JSON.stringify(endIssues.map((i) => i.row)) + ')');
+  check(S.checkSource('/PROG RS\r\n/MN\r\n   1:  R[1]=0 ;\r\n/POS\r\nP[1]{\r\n   X = 1.0 mm\r\n};\r\n/END\r\n', SH).length === 0,
+    'whitespace below /END is how every controller listing ends, so it is never flagged');
+}
 const renumbered = S.renumber(rowSrc);
 check(/\r\n   4:  R\[3\]/.test(renumbered) === false && /\r\n   3:J P\[1\]/.test(renumbered) && /   4:  CALL VERY_LONG\(1,\r\n    :  2\) ;/.test(renumbered), 'renumber counts only numbered rows and keeps continuation rows (CRLF kept)');
 check(S.formatRow(12, 'R[1]=0') === '  12:  R[1]=0 ;' && S.formatRow(3, 'J P[1] 100% FINE') === '   3:J P[1] 100% FINE ;', 'formatRow writes rows the way the controller does');
