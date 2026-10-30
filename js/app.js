@@ -768,9 +768,21 @@
 
   /* ================= bridge (server) API ================= */
 
+  /* Every bridge reply goes through here. The page reloads its files on every
+   * refresh, but the bridge only reads server.js when it starts — so a page
+   * newer than the bridge calls routes the bridge has never heard of. Say
+   * that plainly instead of passing on "unknown API route". */
+  var STALE_BRIDGE = 'The bridge is older than this page and does not know this command. Close the "Start FANUC Studio" window, start it again, then refresh.';
+  function bridgeJSON(r) {
+    return r.json().catch(function () { return {}; }).then(function (b) {
+      if (r.status === 404 && b.error === 'unknown API route') throw new Error(STALE_BRIDGE);
+      return b;
+    });
+  }
+
   function api(pathname) {
     return fetch(pathname).then(function (r) {
-      return r.json().then(function (body) {
+      return bridgeJSON(r).then(function (body) {
         if (!r.ok) throw new Error(body.error || ('HTTP ' + r.status));
         return body;
       });
@@ -785,7 +797,7 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     }).then(function (r) {
-      return r.json().then(function (b) {
+      return bridgeJSON(r).then(function (b) {
         if (!r.ok) throw new Error(b.error || ('HTTP ' + r.status));
         return b;
       });
@@ -1660,7 +1672,7 @@
         user: state.robot.ftpUser || undefined,
         pass: state.robot.ftpPass || undefined
       })
-    }).then(function (r) { return r.json(); }).then(function (b) {
+    }).then(function (r) { return bridgeJSON(r); }).then(function (b) {
       b.sentContent = content; // for mapping controller file-line errors back to program lines
       /* A good send is news for a moment, not a banner that outlives the next
        * edit: it goes out as a toast. A failure stays as the banner, because
@@ -1699,7 +1711,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ip: ip, name: name, user: state.robot.ftpUser || undefined, pass: state.robot.ftpPass || undefined })
-    }).then(function (r) { return r.json(); }).then(function (b) {
+    }).then(function (r) { return bridgeJSON(r); }).then(function (b) {
       if (b.ok) {
         if (state.robot.ip === ip) {
           var up = name.toUpperCase();
@@ -4470,7 +4482,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: p.origin.path, content: src })
-        }).then(function (r) { return r.json(); }).then(function (b) {
+        }).then(function (r) { return bridgeJSON(r); }).then(function (b) {
           if (b.error) throw new Error(b.error);
           stopEditing();
           render();
