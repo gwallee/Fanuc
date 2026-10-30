@@ -1663,11 +1663,12 @@
   }
 
   function sendToRobot(name, content, onDone) {
+    var ip = state.robot.ip;
     fetch('/api/robot/upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        ip: state.robot.ip,
+        ip: ip,
         name: name + '.LS',
         content: content,
         user: state.robot.ftpUser || undefined,
@@ -1680,6 +1681,14 @@
        * its controller error log and "fix line" chips are what you work from. */
       if (b.ok) {
         state.upload = null;
+        /* The file list is read on connect and on Check against robot. A
+         * verified send is the controller confirming the program is there
+         * now, so the list says so too — otherwise a program first sent this
+         * session reads as library-only (no Delete on robot) until reconnect.
+         * The same bookkeeping deleteOnRobot does in reverse. */
+        if (state.robot.ip === ip && !onRobotList(name)) {
+          state.robot.files = (state.robot.files || []).concat(name.toUpperCase() + '.LS').sort();
+        }
         toast(name + '.LS sent to ' + state.robot.ip + ' and verified on the robot' +
           (b.snapshot ? ' — previous version saved in backups\\pre-upload' : '') + '.', 7000);
         // the controller regenerates register/IO comments during LS→TP→LS, so
