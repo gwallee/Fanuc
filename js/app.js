@@ -1641,6 +1641,14 @@
       });
     });
   }
+  function onRobotList(name) {
+    var up = String(name).toUpperCase() + '.';
+    return (state.robot.files || []).some(function (f) {
+      var F = f.toUpperCase();
+      return F === up + 'LS' || F === up + 'TP';
+    });
+  }
+
   function sendToRobot(name, content, onDone) {
     fetch('/api/robot/upload', {
       method: 'POST',
@@ -1672,6 +1680,42 @@
     }).catch(function (e) {
       state.upload = { ok: false, name: name + '.LS', error: e.message };
       onDone(state.upload);
+    });
+  }
+
+  /* Delete a program off the connected robot. The bridge snapshots the .LS
+   * and .TP to backups\pre-delete first and refuses if it cannot; the library
+   * copy is left alone either way, so the program can be sent back. Typing
+   * the name is the confirmation — a production robot is no place for a
+   * misclick on OK. */
+  function deleteOnRobot(name) {
+    var ip = state.robot.ip;
+    var typed = prompt('DELETE ' + name + ' from robot ' + ip + '?\n\n' +
+      'The controller copy is removed (pendant SELECT > DELETE). It is snapshotted to backups\\pre-delete first, and the library copy stays.\n\n' +
+      'Type ' + name + ' to confirm:', '');
+    if (typed === null) return;
+    if (typed.trim().toUpperCase() !== name.toUpperCase()) { toast('Name did not match — nothing deleted.'); return; }
+    fetch('/api/robot/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip: ip, name: name, user: state.robot.ftpUser || undefined, pass: state.robot.ftpPass || undefined })
+    }).then(function (r) { return r.json(); }).then(function (b) {
+      if (b.ok) {
+        if (state.robot.ip === ip) {
+          var up = name.toUpperCase();
+          state.robot.files = (state.robot.files || []).filter(function (f) {
+            return f.toUpperCase() !== up + '.LS' && f.toUpperCase() !== up + '.TP';
+          });
+          if (state.robotCheck && state.robotCheck.differs) delete state.robotCheck.differs[name];
+        }
+        toast(name + ' deleted from ' + ip + (b.verified ? ' (verified gone)' : ' — controller accepted it, but the read-back could not confirm') +
+          '. Snapshot: ' + b.snapshot + '. Library copy kept — Send to robot puts it back.', 10000);
+      } else {
+        toast(name + ' NOT deleted: ' + (b.error || 'unknown error'), 10000);
+      }
+      render();
+    }).catch(function (e) {
+      toast(name + ' NOT deleted: ' + e.message, 10000);
     });
   }
 
@@ -3712,6 +3756,11 @@
           toast(made + ' copied from ' + name + ' — library only, on no robot until you send it.', 7000);
         }
       }),
+      (state.server && state.robot.ip && onRobotList(name)) ? h('button', {
+        class: 'btn danger', text: 'Delete on robot',
+        title: 'Delete ' + name + ' from ' + state.robot.ip + ' (snapshot to backups\\pre-delete first; library copy kept)',
+        onclick: function () { deleteOnRobot(name); }
+      }) : null,
       h('button', { class: 'btn subtle', text: 'Export .LS', onclick: function () { exportProgram(p); } }),
       h('button', {
         class: 'btn subtle', text: 'Remove',

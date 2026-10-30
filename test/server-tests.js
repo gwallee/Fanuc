@@ -35,7 +35,8 @@ async function post(route, body) {
     'PICK.LS': '/PROG PICK\n/MN\n   1:  R[2]=2 ;\n/END\n',
     'NUMREG.VA': "[1] = 0  'count'\n"
   };
-  const ftpServer = await startMockFtp(FTP_PORT, files);
+  const refusedDeletes = [];  // programs the controller will not delete (selected / running)
+  const ftpServer = await startMockFtp(FTP_PORT, files, { deleRefused: refusedDeletes });
   const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server.js'), String(APP_PORT)], { stdio: 'ignore' });
   await new Promise((r) => setTimeout(r, 600));
 
@@ -71,6 +72,27 @@ async function post(route, body) {
     r = await post('/api/robot/upload', { ip: ROBOT, name: 'NEWPROG.LS', content: '/PROG NEWPROG\n/MN\n   1:  BADSYNTAX ;\n/END\n' });
     check(r.ok === false && !r.restored && !r.snapshot, 'failure reported, no snapshot (program was new)');
     check(!('NEWPROG.LS' in files), 'nothing left behind on the robot');
+
+    console.log('\n-- delete on robot: snapshot, DELE, verified gone --');
+    const tempSrc = '/PROG TEMP\n/MN\n   1:  R[9]=9 ;\n/END\n';
+    files['TEMP.LS'] = tempSrc;
+    r = await post('/api/robot/delete', { ip: ROBOT, name: 'TEMP' });
+    check(r.ok === true && r.verified === true, 'delete verified: ' + JSON.stringify(r));
+    check(!('TEMP.LS' in files), 'program is gone from the robot');
+    check(r.snapshot && fs.readFileSync(r.snapshot, 'utf8') === tempSrc, 'pre-delete snapshot holds the exact listing');
+    check(/pre-delete/.test(r.snapshot || ''), 'snapshot lives in backups/pre-delete');
+
+    console.log('\n-- delete on robot: refusals leave the program alone --');
+    r = await post('/api/robot/delete', { ip: ROBOT, name: 'TEMP' });
+    check(r.ok === false && r.notFound === true, 'deleting a program not on the robot says so');
+    refusedDeletes.push('PICK');
+    const pickNow = files['PICK.LS'];
+    r = await post('/api/robot/delete', { ip: ROBOT, name: 'PICK.LS' });
+    check(r.ok === false && r.refused === true && /in use/i.test(r.error), 'controller refusal reported: ' + r.error);
+    check(files['PICK.LS'] === pickNow, 'refused delete leaves the program on the robot');
+    refusedDeletes.length = 0;
+    const bad = await fetch(BASE + '/api/robot/delete', { method: 'POST', body: JSON.stringify({ ip: ROBOT, name: '../X' }) });
+    check(bad.status === 400, 'a name that is not a program name is refused');
 
     console.log('\n-- backup with date + incremental suffix --');
     const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'fanuc-bk-'));

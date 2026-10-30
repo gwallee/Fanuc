@@ -218,6 +218,8 @@ button { font: inherit; }
 }
 .btn.subtle { border-color: transparent; background: transparent; color: var(--muted); }
 .btn.subtle:not(:disabled):hover { color: var(--ink); }
+.btn.danger { color: var(--warn); }
+.btn.danger:not(:disabled):hover { border-color: var(--warn); }
 
 /* ---------- sidebar ---------- */
 .sidebar {

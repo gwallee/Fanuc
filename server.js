@@ -29,6 +29,7 @@ const CS = require('./lib/comset.js');
 
 const ROOT = __dirname;
 const SNAPSHOT_DIR = path.join(ROOT, 'backups', 'pre-upload');
+const DELETE_SNAPSHOT_DIR = path.join(ROOT, 'backups', 'pre-delete');
 const PORT = parseInt(process.argv[2], 10) || 8642;
 const ROBOT_TIMEOUT_MS = 6000;
 /* Liveness check for a saved robot: short, because the answer people want is
@@ -563,6 +564,74 @@ async function handleApi(req, res, u) {
       }
       result.ok = true;
       result.verified = true;
+      }, undefined, false);
+    } catch (e) {
+      result.error = result.error || e.message;
+    }
+    return json(res, 200, result);
+  }
+
+  /* Delete a program off the robot over FTP (DELE NAME.TP — the pendant's
+   * SELECT > DELETE). Same discipline as the upload: nothing is removed that
+   * we have not saved first. Both the .LS listing and the binary .TP are
+   * snapshotted to backups/pre-delete; if the listing cannot be read the
+   * delete is refused, because a delete nobody can undo is the one thing
+   * this must never do. Then DELE, then read the listing back to prove the
+   * program is really gone. Never retried. */
+  if (u.pathname === '/api/robot/delete' && req.method === 'POST') {
+    let payload;
+    try { payload = JSON.parse(await readBody(req)); } catch (e) { return fail(res, 400, 'invalid JSON body'); }
+    const { ip, user, pass } = payload;
+    const prog = String(payload.name || '').replace(/\.(LS|TP)$/i, '').toUpperCase();
+    if (!ip || !ROBOT_HOST.test(String(ip).split(':')[0])) return fail(res, 400, 'missing or invalid ip');
+    if (!/^[A-Z0-9_-]+$/.test(prog)) return fail(res, 400, 'name must be a program name');
+    const t = parseTarget(ip);
+    const result = { ok: false, name: prog, snapshot: null, snapshotTp: null };
+    try {
+      await pooledFtp(t, user, pass, async (ftp) => {
+        // 1. snapshot. The .LS is required: it is what we can read, diff and
+        // send back. A clean 550 means the program is not there at all.
+        let ls;
+        try { ls = await ftp.retr(prog + '.LS'); }
+        catch (e) {
+          if (e.code === 550) { result.notFound = true; result.error = prog + ' is not on the robot.'; }
+          else { result.aborted = true; result.error = 'Could not read ' + prog + ' off the robot, so nothing was deleted: ' + e.message; }
+          return;
+        }
+        if (!ls || !ls.length) {
+          result.aborted = true;
+          result.error = 'The robot returned an empty ' + prog + '.LS, so nothing was deleted.';
+          return;
+        }
+        fs.mkdirSync(DELETE_SNAPSHOT_DIR, { recursive: true });
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const base = path.join(DELETE_SNAPSHOT_DIR, t.ip.replace(/[:.]/g, '-') + '_' + prog + '_' + stamp);
+        result.snapshot = base + '.LS';
+        fs.writeFileSync(result.snapshot, ls);
+        // the binary .TP restores exactly (positions, attributes) — best effort
+        try {
+          const tp = await ftp.retr(prog + '.TP');
+          if (tp && tp.length) { result.snapshotTp = base + '.TP'; fs.writeFileSync(result.snapshotTp, tp); }
+        } catch (e) { /* the .LS snapshot is enough to rebuild it */ }
+        // 2. delete
+        try { await ftp.dele(prog + '.TP'); }
+        catch (e) {
+          result.refused = true;
+          result.error = 'The controller refused to delete ' + prog + ': ' + e.message +
+            ' — is it selected, running, or write-protected? Abort it / select another program on the pendant, then try again.';
+          return;
+        }
+        // 3. verify: only a clean 550 proves it is gone
+        try {
+          const back = await ftp.retr(prog + '.LS');
+          if (back && back.length) { result.error = 'The controller answered the delete, but ' + prog + ' is still on the robot.'; return; }
+          result.unconfirmed = true;
+        } catch (e) {
+          if (e.code === 550) { result.ok = true; result.verified = true; return; }
+          result.unconfirmed = true;
+          result.verifyError = e.message;
+        }
+        result.ok = true;   // DELE was accepted; we just could not prove it
       }, undefined, false);
     } catch (e) {
       result.error = result.error || e.message;

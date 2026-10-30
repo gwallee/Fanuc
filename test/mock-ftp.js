@@ -6,6 +6,9 @@
  * - opts.unreadable: names that NLST lists but RETR refuses. A real
  *   controller has files it will name and then not hand over, and a backup
  *   has to survive one and carry on rather than abandoning the robot.
+ * - DELE NAME.TP removes the program (its NAME.LS view goes with it), like a
+ *   controller; opts.deleRefused: program names the controller will not
+ *   delete (selected / running) -- answered 550.
  */
 'use strict';
 const net = require('net');
@@ -85,6 +88,17 @@ function startMockFtp(port, files, opts) {
               send('226 transfer complete');
             }
           });
+          break;
+        }
+        case 'DELE': {
+          const m = /^(.+)\.TP$/i.exec(arg);
+          if (cwd !== 'md:' || !m) { send('550 cannot delete'); break; }
+          const prog = m[1].toUpperCase();
+          if ((opts.deleRefused || []).indexOf(prog) !== -1) { send('550 program is in use'); break; }
+          if (!((prog + '.LS') in files) && !((prog + '.TP') in files)) { send('550 file not found'); break; }
+          delete files[prog + '.LS'];
+          delete files[prog + '.TP'];
+          send('250 file deleted');
           break;
         }
         case 'QUIT': send('221 bye'); sock.end(); break;
