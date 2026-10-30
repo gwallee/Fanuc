@@ -539,6 +539,13 @@ async function handleApi(req, res, u) {
         }
         /* 550 -- the program is not on the robot yet */
       }
+      if (prev && !prev.length) {
+        // the controller handed over the name and then nothing: same unknown
+        // as a refused read, and no basis for a snapshot
+        result.aborted = true;
+        result.error = 'The robot returned an empty ' + result.name + ', so nothing was sent.';
+        return;
+      }
       if (prev && prev.length) {
         fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
         const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);

@@ -89,6 +89,15 @@ async function post(route, body) {
     r = await post('/api/robot/upload', { ip: ROBOT, name: 'PICK.LS', content: keepPick });
     check(r.ok === true, 'and the same upload goes through once the read works again');
 
+    console.log('\n-- safe upload: a current version that reads back empty aborts too --');
+    /* The controller named the file and then handed over nothing: that is no
+     * more an answer than a refused read, and no basis for a snapshot. */
+    files['EMPTY.LS'] = '';
+    r = await post('/api/robot/upload', { ip: ROBOT, name: 'EMPTY.LS', content: '/PROG EMPTY\n/MN\n   1:  R[4]=4 ;\n/END\n' });
+    check(r.ok === false && r.aborted === true, 'an empty read is not taken for "the program is not there"');
+    check(files['EMPTY.LS'] === '', 'nothing was written over it');
+    delete files['EMPTY.LS'];
+
     console.log('\n-- safe upload: a verify we cannot finish must not restore over a good upload --');
     /* The read-back is the only proof an upload survived translation. When it
      * fails on the transport we do not know, and the old auto-restore turned

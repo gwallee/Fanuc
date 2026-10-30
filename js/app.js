@@ -1749,7 +1749,13 @@
       else if (u.unconfirmed) el.appendChild(h('span', { text: 'Re-sending the previous version could undo an upload that in fact worked, so it was left alone' + (u.snapshot ? '; the version from before the send is saved at ' + u.snapshot + '.' : '.') }));
       else if (u.restored) el.appendChild(h('span', { text: 'The previous version was automatically restored on the robot from the pre-upload snapshot — nothing was lost. Fix the program here and send again.' }));
       else if (u.snapshot) el.appendChild(h('span', { text: 'Auto-restore did not succeed' + (u.restoreError ? ' (' + u.restoreError + ')' : '') + ' — the previous version is saved at ' + u.snapshot + '.' }));
-      else el.appendChild(h('span', { text: 'The program did not exist on the robot before this upload, so there is nothing to restore. Your source is safe in the library.' }));
+      else {
+        var lib = state.programs[String(u.name).replace(/\.LS$/i, '').toUpperCase()];
+        var cameFromHere = lib && lib.origin && lib.origin.type === 'robot' && lib.origin.ip === state.robot.ip;
+        el.appendChild(h('span', { text: 'The robot does not have this program, so there was nothing to snapshot or restore. ' +
+          (cameFromHere ? 'It was read off this robot, so the controller has lost it since — a program whose translation fails is deleted, and a failed send is the usual way that happens. ' : '') +
+          'Your source is safe in the library.' }));
+      }
 
       // pull the controller's load errors and translate file lines → program lines
       if (u.errlog) {
