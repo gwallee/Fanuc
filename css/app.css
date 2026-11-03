@@ -1264,6 +1264,20 @@ tr:last-child td { border-bottom: none; }
 .banner-errs .mono { font-size: 12.5px; margin: 3px 0; }
 .banner-errs .chip { cursor: pointer; }
 
+.edit-robot-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  margin-bottom: 6px;
+  border: 1px solid var(--read);
+  border-radius: 6px;
+  background: var(--read-bg);
+  font-size: 12px;
+}
+.edit-robot-check.warn { border-color: var(--write); background: var(--write-bg); }
+.edit-robot-check span { flex: 1; }
+
 /* ---------- search options + groups ---------- */
 .search-bar .btn.opt { font-family: "IBM Plex Mono", monospace; font-size: 12px; padding: 6px 9px; }
 .search-bar .btn.opt.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }

@@ -286,7 +286,26 @@
     return out;
   }
 
-  var api = { parseNumreg: parseNumreg, parseStrreg: parseStrreg, rawLines: rawLines, parseIOComments: parseIOComments, parseIOState: parseIOState, parsePosreg: parsePosreg, posregValueStr: posregValueStr, parseErrall: parseErrall, parsePrgState: parsePrgState };
+  /* A missing or unrecognised value is unknown, not an empty selection. */
+  function parseTpDefaultProgram(text) {
+    var m = String(text || '').match(/^\s*(?:\[\*SYSTEM\*\])?\$TP_DEFPROG\b[^\r\n=]*=\s*'([^'\r\n]*)'/im);
+    return m ? m[1].trim().toUpperCase() : null;
+  }
+
+  /* Require both sections and a complete entry for the target before calling
+   * it clear. A changed/truncated diagnostic must not silently look safe. */
+  function assessProgramState(text, name) {
+    var src = String(text || '');
+    if (!/^TASK STATES:\s*$/m.test(src) || !/^PROGRAM STATES:\s*$/m.test(src)) return null;
+    var parsed = parsePrgState(src);
+    var key = String(name || '').toUpperCase();
+    var program = parsed.programs.filter(function (p) { return p.name.toUpperCase() === key; })[0];
+    if (!program || !program.task || !program.protection) return null;
+    return { task: Object.prototype.hasOwnProperty.call(parsed.locked, key) ? parsed.locked[key] : undefined,
+      held: Object.prototype.hasOwnProperty.call(parsed.locked, key), protection: program.protection };
+  }
+
+  var api = { parseNumreg: parseNumreg, parseStrreg: parseStrreg, rawLines: rawLines, parseIOComments: parseIOComments, parseIOState: parseIOState, parsePosreg: parsePosreg, posregValueStr: posregValueStr, parseErrall: parseErrall, parsePrgState: parsePrgState, parseTpDefaultProgram: parseTpDefaultProgram, assessProgramState: assessProgramState };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucVA = api;
 })(typeof window !== 'undefined' ? window : globalThis);

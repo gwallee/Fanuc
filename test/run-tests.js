@@ -587,6 +587,22 @@ check(pp.programs[0].task === 'yes' && pp.programs[1].protection === 'ON',
   'Task: yes and Protection: ON read');
 check(!Object.prototype.hasOwnProperty.call(pp.locked, '_IDLE_PROG'),
   'an idle, write-protected program is not reported as held by a task');
+const heldAssessment = VA.assessProgramState(pausedDump, '_pl_rack');
+check(heldAssessment && heldAssessment.held && heldAssessment.task.state === 'PAUSED',
+  'edit check finds a paused task holding the target');
+const protectedAssessment = VA.assessProgramState(pausedDump, '_IDLE_PROG');
+check(protectedAssessment && !protectedAssessment.held && protectedAssessment.protection === 'ON',
+  'edit check reports protection independently of task state');
+check(VA.assessProgramState('not a diagnostic', '_PL_RACK') === null &&
+      VA.assessProgramState(pausedDump, 'MISSING') === null &&
+      VA.assessProgramState(pausedDump.replace('Protection:      OFF', ''), '_PL_RACK') === null,
+  'missing, malformed and incomplete reports remain unknown');
+const systemVars = fs.readFileSync(path.join(__dirname, '..', 'testdata', 'system.va'), 'utf8');
+check(VA.parseTpDefaultProgram(systemVars) === 'RSR0001', 'pendant selection read from real SYSTEM.VA listing');
+check(VA.parseTpDefaultProgram("$TP_DEFPROG : STRING[37] = ' main '") === 'MAIN' &&
+      VA.parseTpDefaultProgram("$TP_DEFPROG : STRING = ''") === '' &&
+      VA.parseTpDefaultProgram('bad report') === null,
+  'pendant selection distinguishes empty from an unreadable listing');
 
 console.log('\n-- flow blocks: blanks, captions, inbound --');
 /* The shape that made the Flow view hard to read: a JMP, then a blank run,

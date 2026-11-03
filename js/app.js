@@ -79,6 +79,7 @@
     active: { left: null, right: null },  // each strip's shown doc; right null = no split
     editSides: { left: false, right: false },   // which split halves are editors
     editDrafts: {},        // NAME -> unsaved editor text, survives tab switches and renders
+    editRobotChecks: {},   // NAME -> live task / pendant checks for this edit session
     splitPct: 50,          // side-by-side: left half's share of the width (persisted)
     showAllProgs: false,   // sidebar: also list programs not prefixed A_/_ (persisted)
     dataFilter: {},        // data-sidebar filter text — survives re-renders
@@ -483,6 +484,7 @@
     state.editing = false;
     state.editSides = { left: false, right: false };
     state.editDrafts = {};
+    state.editRobotChecks = {};
     state.docs = { left: [], right: [] };
     state.active = { left: null, right: null };
     state.pair = null;
@@ -3206,7 +3208,91 @@
   function beginEdit(name) {
     if (state.programs[name] && state.editDrafts[name] === undefined) {
       state.editDrafts[name] = state.programs[name].source;
+      checkEditRobot(name);
     }
+  }
+
+  /* The check is informational and never interrupts or rebuilds an editor.
+   * In particular, asynchronous replies must not reset the caret or draft. */
+  function checkEditRobot(name) {
+    var ip = state.robot.ip;
+    if (!state.server || !ip) { delete state.editRobotChecks[name]; return; }
+    var check = { ip: ip, robot: state.robot, started: new Date(), tasks: 'checking', selected: 'checking' };
+    var gen = libGen;
+    state.editRobotChecks[name] = check;
+    function update() {
+      if (state.editRobotChecks[name] !== check || state.robot !== check.robot || gen !== libGen) return;
+      document.querySelectorAll('[data-edit-robot-check]').forEach(function (el) {
+        if (el.getAttribute('data-edit-robot-check') === name) paintEditRobotCheck(el, name);
+      });
+    }
+    function file(filename) {
+      return api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=' + filename + ftpQS());
+    }
+    update();
+    file('PRGSTATE.DG').then(function (b) {
+      check.tasks = VA.assessProgramState(b.content, name) || 'unknown';
+      update();
+    }).catch(function () { check.tasks = 'unknown'; update(); });
+
+    /* SYSVARS.VA is the documented MD: variable listing. Some controllers
+     * expose SYSTEM.VA instead; neither a failed read nor an unfamiliar format
+     * is evidence that the pendant has no selection. */
+    function readSelection(filename) {
+      return file(filename).then(function (b) {
+        var selected = VA.parseTpDefaultProgram(b.content);
+        if (selected === null) throw new Error('selection missing from listing');
+        return selected;
+      });
+    }
+    readSelection('SYSVARS.VA').catch(function () { return readSelection('SYSTEM.VA'); })
+      .then(function (selected) { check.selected = selected; update(); })
+      .catch(function () { check.selected = null; update(); });
+  }
+
+  function paintEditRobotCheck(el, name) {
+    var c = state.editRobotChecks[name];
+    var parts = [], warn = false;
+    if (!c || c.robot !== state.robot || !state.server) {
+      parts.push(state.server && state.robot.ip ? 'Robot status unknown — check again before sending.' :
+        'Robot status unknown — connect to check before sending.');
+      warn = true;
+    } else {
+      parts.push('Robot ' + c.ip + ' · checked ' + c.started.toLocaleTimeString() + '.');
+      if (c.tasks === 'checking') parts.push('Checking tasks…');
+      else if (c.tasks === 'unknown') { parts.push('Task / protection status unknown.'); warn = true; }
+      else {
+        if (c.tasks.held) {
+          var task = c.tasks.task;
+          parts.push('Held by ' + (task ? 'task ' + task.name + ' (' + task.state + ')' : 'a live task') + '; upload may be refused.');
+          warn = true;
+        } else parts.push('No live task found holding this program.');
+        if (String(c.tasks.protection).toUpperCase() !== 'OFF') {
+          parts.push('Protection: ' + c.tasks.protection + '; upload may be refused.'); warn = true;
+        }
+      }
+      if (c.selected === 'checking') parts.push('Checking pendant selection…');
+      else if (c.selected === null) { parts.push('Pendant selection unknown.'); warn = true; }
+      else if (c.selected === name.toUpperCase()) {
+        parts.push('Pendant default matches this program; upload may be refused.'); warn = true;
+      } else parts.push('Pendant default: ' + (c.selected || 'none') + '.');
+      parts.push('Status can change; the controller decides whether to accept an upload.');
+    }
+    el.className = 'edit-robot-check' + (warn ? ' warn' : '');
+    el.textContent = '';
+    el.appendChild(h('span', { text: parts.join(' ') }));
+    if (state.server && state.robot.ip) el.appendChild(h('button', {
+      class: 'btn subtle', text: 'Check again',
+      onclick: function () { checkEditRobot(name); }
+    }));
+  }
+
+  function editRobotCheck(p) {
+    if (!(state.server && state.robot.ip) && p.origin.type !== 'robot') return null;
+    var name = p.parsed.name;
+    var el = h('div', { 'data-edit-robot-check': name, role: 'status', 'aria-live': 'polite' });
+    paintEditRobotCheck(el, name);
+    return el;
   }
 
   function syncDocs() {
@@ -3699,6 +3785,8 @@
               }
             })
           ]));
+          var editCheck = editRobotCheck(p);
+          if (editCheck) col.appendChild(editCheck);
           col.appendChild(ed.el);
           col.appendChild(ed.statusBar);
           col.appendChild(ed.problems);
@@ -4687,6 +4775,8 @@
     pane.appendChild(bar);
     var banner = uploadBanner(p.parsed.name);
     if (banner) pane.appendChild(banner);
+    var editCheck = editRobotCheck(p);
+    if (editCheck) pane.appendChild(editCheck);
     if (p.origin.type === 'robot' && !(state.server && state.robot.ip)) {
       pane.appendChild(h('p', { class: 'muted', text: 'This program was read from robot ' + p.origin.ip + '. Connect to the robot (Robot tab) to send edits back over FTP with the snapshot/auto-restore safety net.' }));
     }
