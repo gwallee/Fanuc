@@ -3252,34 +3252,20 @@
 
   function paintEditRobotCheck(el, name) {
     var c = state.editRobotChecks[name];
-    var parts = [], warn = false;
-    if (!c || c.robot !== state.robot || !state.server) {
-      parts.push(state.server && state.robot.ip ? 'Robot status unknown — check again before sending.' :
-        'Robot status unknown — connect to check before sending.');
-      warn = true;
-    } else {
-      parts.push('Robot ' + c.ip + ' · checked ' + c.started.toLocaleTimeString() + '.');
-      if (c.tasks === 'checking') parts.push('Checking tasks…');
-      else if (c.tasks === 'unknown') { parts.push('Task / protection status unknown.'); warn = true; }
-      else {
-        if (c.tasks.held) {
-          var task = c.tasks.task;
-          parts.push('Held by ' + (task ? 'task ' + task.name + ' (' + task.state + ')' : 'a live task') + '; upload may be refused.');
-          warn = true;
-        } else parts.push('No live task found holding this program.');
-        if (String(c.tasks.protection).toUpperCase() !== 'OFF') {
-          parts.push('Protection: ' + c.tasks.protection + '; upload may be refused.'); warn = true;
-        }
-      }
-      if (c.selected === 'checking') parts.push('Checking pendant selection…');
-      else if (c.selected === null) { parts.push('Pendant selection unknown.'); warn = true; }
-      else if (c.selected === name.toUpperCase()) {
-        parts.push('Pendant default matches this program; upload may be refused.'); warn = true;
-      } else parts.push('Pendant default: ' + (c.selected || 'none') + '.');
-      parts.push('Status can change; the controller decides whether to accept an upload.');
-    }
-    el.className = 'edit-robot-check' + (warn ? ' warn' : '');
+    var current = c && c.robot === state.robot && state.server;
+    var held = current && c.tasks && c.tasks.held;
+    var selected = current && c.selected === name.toUpperCase();
+    el.hidden = !held && !selected;
+    el.className = 'edit-robot-check warn';
     el.textContent = '';
+    if (el.hidden) return;
+    var parts = ['Robot ' + c.ip + ' · checked ' + c.started.toLocaleTimeString() + '.'];
+    if (held) {
+      var task = c.tasks.task;
+      parts.push('Held by ' + (task ? 'task ' + task.name + ' (' + task.state + ')' : 'a live task') + '; upload may be refused.');
+    }
+    if (selected) parts.push('Pendant default matches this program; upload may be refused.');
+    parts.push('Status can change; the controller decides whether to accept an upload.');
     el.appendChild(h('span', { text: parts.join(' ') }));
     if (state.server && state.robot.ip) el.appendChild(h('button', {
       class: 'btn subtle', text: 'Check again',

@@ -39,7 +39,38 @@ The bridge serves this same app and adds what a browser alone cannot do — brow
 - **Local directory by path** — point at a backup folder; every `.LS` loads into the library (plus `NUMREG.VA`/`DIOCFGSV.IO` label data if present), and edits can be saved back to disk.
 - **Phone access** — run the bridge on a shop-floor PC and open `http://<that-pc-ip>:8642` from your phone on the same network: full app, live robot data. **Phone** in the header shows that address as a QR code — point the phone's camera at the PC screen instead of typing an IP. A plant PC usually has several addresses, so all of them are offered: the Wi-Fi one leads, since that is the network a phone actually joins, and the `/30` point-to-point links to individual controllers are ranked below it (they have room for the PC and one robot, and nothing else). The QR is drawn locally — nothing is sent anywhere to make it.
 
-Want a double-click desktop install later? Wrap this same code in Electron/Tauri — no rewrite needed.
+## Build a distribution
+
+In the source folder on Windows, double-click **`Build Distribution.bat`**. The build PC needs
+Node.js installed (or a portable runtime in `runtime/node.exe`). The tool creates:
+
+```
+dist/FanucStudio-portable-win-x64.zip
+dist/FanucStudio-portable-win-x64.zip.sha256
+```
+
+Share the ZIP. Recipients extract the whole `FanucStudio` folder and double-click
+**`Start FANUC Studio.bat`**. The Windows x64 Node.js runtime is included, so they
+do not need to install Node.js or download anything. The app opens in their browser;
+Chrome or Edge can also install it as an app window.
+
+The first build downloads a pinned runtime from nodejs.org and verifies its
+SHA-256 checksum. Later builds reuse the verified ZIP cached in `dist/`.
+Only application files are packaged: saved robots, settings, backups, logs,
+tests and the separate development checkout are excluded. Build details and
+getting-started instructions are included in the ZIP.
+
+From a terminal, including on Linux/macOS:
+
+```
+node tools/build-release.js
+node tools/build-release.js --offline
+```
+
+`--offline` requires the cached runtime ZIP. Windows uses its built-in PowerShell
+and curl; Linux/macOS need curl, unzip and zip. Build failures leave the previous
+distribution intact. The tool packages this source folder without changing its
+build number; `js/version.js` identifies the packaged app build.
 
 ## What it does
 
@@ -51,7 +82,7 @@ Want a double-click desktop install later? Wrap this same code in Electron/Tauri
 - **Phone / tablet**: below 760px the program library becomes an off-canvas drawer behind ☰ (tap a program, the backdrop, or Escape to close), and the header collapses to that toggle plus the build tag — the file pickers are desktop-only, since the drawer already has robot IP and bridge folder path. The code text size control stays on the Code tab, where a phone actually wants it. Open `http://<bridge-pc-ip>:8642` from any device on the same network — or scan the QR behind **Phone** in the bridge PC's header
 
 ### Edit
-- **Robot status before editing** — opening an editor while connected reads `PRGSTATE.DG` and the controller's system-variable listing. The editor shows whether a live task holds the program, whether it is protected, and whether it matches the pendant's default program (`$TP_DEFPROG`). **Check again** refreshes both without disturbing the draft. A failed or unfamiliar report says status is unknown; editing is always available. The pendant default is a useful indication, not a complete test of every open/background-edit state. The robot can change after a check and remains the final authority on uploads.
+- **Robot status before editing** — opening an editor while connected reads `PRGSTATE.DG` and the controller's system-variable listing. A warning appears if a live task holds the program or it matches the pendant's default program (`$TP_DEFPROG`). **Check again** refreshes both without disturbing the draft. The pendant default is a useful indication, not a complete test of every open/background-edit state. An unavailable report cannot establish whether a program is in use; the robot can change after a check and remains the final authority on uploads.
 - Full-source editor per program, syntax-highlighted and filling the tab: **Save to library** re-parses and refreshes every view and re-runs all checks; for programs opened from a directory via the bridge, **Save to library + disk** writes the file back
 - **Save + send to robot** uploads over FTP with the snapshot/verify/auto-restore safety net; if the checks find errors that would fail translation, it warns before sending
 - ON in green, OFF in red, comments recognized, full syntax highlighting in viewer and search results

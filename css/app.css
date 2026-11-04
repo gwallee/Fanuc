@@ -1276,6 +1276,7 @@ tr:last-child td { border-bottom: none; }
   font-size: 12px;
 }
 .edit-robot-check.warn { border-color: var(--write); background: var(--write-bg); }
+.edit-robot-check[hidden] { display: none; }
 .edit-robot-check span { flex: 1; }
 
 /* ---------- search options + groups ---------- */
