@@ -246,6 +246,32 @@ const rbLib = { RB: { parsed: rbParsed, analysis: rbA, source: rbSrc } };
 const rbFind = L.lint(rbLib, A.buildCallGraph(rbLib), A.buildGlobalXref(rbLib));
 check(!rbFind.some(f => f.rule === 'unreachable-code'), 'blank line + LBL after JMP not flagged unreachable');
 
+console.log('\n-- VERSION.DG robot info and options --');
+const versionText = fs.readFileSync(path.join(__dirname, '..', 'testdata', 'version.dg'), 'utf8');
+const robotVersion = VA.parseVersion(versionText);
+check(robotVersion.model === 'R-1000iA/80F' && robotVersion.robotNumber === 'F333543' &&
+  robotVersion.software === 'HandlingTool' && robotVersion.version === 'V9.40526',
+  'real backup reports model, robot number, application and software version');
+check(robotVersion.fields.some(f => f.name === 'Controller ID' && f.value === '6733557') &&
+  robotVersion.fields.some(f => f.name === 'S/W Serial No.' && f.value === '7579620001') &&
+  robotVersion.fields.some(f => f.name === 'DCS' && f.value === 'V4.5.15'),
+  'controller identifiers and firmware details retain the report values');
+check(robotVersion.options.length === 164 && robotVersion.options.some(o => o.code === 'R784' && o.name === 'Ethernet/IP Adapter') &&
+  robotVersion.options.some(o => o.code === 'OPCU' && o.name === 'OPC-UA'),
+  'all 164 installed features include numeric and alphabetic order codes');
+const summaryVersion = VA.parseVersion(P.unwrapMd(fs.readFileSync(path.join(__dirname, '..', 'testdata', 'summary.dg'), 'utf8')));
+check(JSON.stringify(summaryVersion) === JSON.stringify(robotVersion), 'HTML SUMMARY.DG yields the same robot info as VERSION.DG');
+const demoVersion = VA.parseVersion('F Number: F123\r\nCONFIG::\r\nFEATURE: ORD NO:\r\nKAREL Run-Time Env J539\r\nKAREL Run-Time Env J539\r\nCONFIG2::\r\nDEMO. FEATURE: ORD NO:\r\nMath Function J593\r\nMOTOR::\r\nMotor diagnostic ABCD\r\nSERVO::\r\nServo diagnostic R999\r\n');
+check(demoVersion.options.length === 1 && demoVersion.options[0].code === 'J539' &&
+  demoVersion.demoOptions.length === 1 && demoVersion.demoOptions[0].code === 'J593',
+  'demo features and later diagnostic sections never enter installed options; duplicate codes collapse');
+check(VA.parseVersion('F Number: F123').options === null && VA.parseVersion('CONFIG::\nFEATURE: ORD NO:\nCONFIG2::').options.length === 0,
+  'missing options report differs from a reported empty list');
+check(VA.parseVersion('not a version report').fields.length === 0 && VA.parseVersion('').robotNumber === '',
+  'unrecognized reports invent no robot info');
+check(VA.parseVersion('VERSION INFORMATION::\nSOFTWARE: ID:\nHandlingTool 7DF5/83\nRobot No.: F123\n').software === 'HandlingTool',
+  'application is available from the software table when the report preamble is absent');
+
 console.log('\n-- ERRALL.LS parser --');
 const errText = fs.readFileSync(path.join(__dirname, '..', 'testdata', 'errall.ls'), 'latin1');
 const errs = VA.parseErrall(errText);
@@ -945,13 +971,48 @@ check(CMP.matches(cmpIdx, cmpTxt('   1:  WAIT DI[part')).map(i => i.index).join(
 check(CMP.matches(cmpIdx, cmpTxt('   1:  R[')).length === 3 && CMP.matches(cmpIdx, cmpTxt('   1:  PR[')).length === 1, 'R[ and PR[ are separate lists');
 check(!cmpTxt('   1:  WAIT DI[1]') && !cmpTxt('   1:  WAIT DI[1:') && !cmpTxt('   1:  WAIT DI') && !cmpTxt('   1:  ODI['), 'no completion past ] or :, before [, or inside a longer word');
 check(!cmpTxt('   1:  !check DI['), 'no completion inside a comment row');
-check(!cmpTxt('   1:  LBL[') && !cmpTxt('   1:  P['), 'only registers and I/O complete');
+check(!cmpTxt('   1:  LBL[') && !cmpTxt('   1:  P['), 'labels and position indices do not open name completion');
 const cmpMid = '   1:  WAIT DI[2]=ON ;';
 const cmpC = CMP.context(cmpMid, cmpMid.indexOf('2]') + 1);
 check(cmpC && cmpC.start === cmpMid.indexOf('2]') && cmpC.end === cmpMid.indexOf(']=') + 1, 'editing an existing index replaces through its ]');
 check(!CMP.context(cmpMid, cmpMid.indexOf('2]')), 'a caret before the digit (inside the token) does not open');
 check(CMP.insertion({ index: 21, name: 'Part Present' }) === '21:Part Present]', 'the chosen item is written the pendant way');
 check(Object.keys(CMP.index(null)).length === 0, 'no names, no lists');
+
+console.log('\n-- program name completion --');
+const cmpPrograms = {
+  MAIN: { parsed: { attrs: { COMMENT: 'Main cycle' } } },
+  _PICK: { parsed: { attrs: { COMMENT: 'Pick a part' } } },
+  _PICK_PART: { parsed: { attrs: { COMMENT: 'Pick with offset' } } },
+  PLACE: { parsed: { attrs: {} } },
+  '-BCKED9-': { parsed: { attrs: {} } }
+};
+const cmpProgs = CMP.index(null, cmpPrograms);
+check(cmpTxt('   1:  CALL ').kind === 'program' && cmpTxt('   1:  RUN _P').type === 'RUN', 'CALL and RUN open program completion');
+check(CMP.matches(cmpProgs, cmpTxt('   1:  CALL ')).map(i => i.name).join() === 'MAIN,PLACE,_PICK,_PICK_PART', 'offline library supplies program names, excluding uncallable backup names');
+check(CMP.matches(cmpProgs, cmpTxt('   1:  CALL pick')).map(i => i.name).join() === '_PICK,_PICK_PART', 'program names match case-insensitively, including past an underscore');
+check(CMP.matches(CMP.index(null, { GRIPPER: {}, PICK: {}, PLACE: {} }), cmpTxt('CALL P')).map(i => i.name).join() === 'PICK,PLACE,GRIPPER', 'program-name prefix matches come before matches inside a name');
+check(CMP.matches(cmpProgs, cmpTxt('   1:  run _pi'))[0].comment === 'Pick a part', 'lowercase instructions complete and program comments are available');
+check(CMP.matches(cmpProgs, cmpTxt('   1:  CALL missing')).length === 0 && CMP.matches(CMP.index(null, {}), cmpTxt('CALL ')).length === 0, 'unknown names and an empty library have no suggestions');
+check(CMP.matches(CMP.index(null, { OTHER_ROBOT: {} }), cmpTxt('CALL pick')).length === 0, 'a different library does not retain program suggestions from the previous one');
+check(CMP.matches(cmpProgs, cmpTxt('CALL '), 2).length === 2, 'program suggestions obey the menu limit');
+for (const instruction of [
+  'IF R[1]=1,CALL _P', 'IF (!DI[1]),CALL _P', 'IF (DI[1]) CALL _P',
+  'SELECT R[1]=1,CALL _P', '=2,CALL _P', 'ELSE,CALL _P',
+  'J P[1] 100% CNT50 TA 0.2sec,CALL _P', 'IF (DI[1:Part\'s ready]),RUN _P'
+]) check(cmpTxt('   1:  ' + instruction)?.kind === 'program', 'program completion in ' + instruction);
+for (const instruction of [
+  '!CALL _P', '// RUN _P', 'MESSAGE[CALL _P', 'R[1:RUN _P',
+  'SR[1]="CALL _P', "SR[1]='RUN _P", 'CALL _PICK(', 'CALL SR[', 'MYCALL _P', 'RUNNING _P'
+]) check(!cmpTxt('   1:  ' + instruction), 'no program completion in comments, literals or non-target text: ' + instruction);
+const cmpCall = '/PROG MAIN\r\n/MN\r\n   1:  IF R[1]=1,CALL _PICK(1,R[2]) ;\r\n/END';
+const cmpCallCaret = cmpCall.indexOf('_PICK') + 3;
+const cmpCallCtx = CMP.context(cmpCall, cmpCallCaret);
+const cmpPick = CMP.matches(cmpProgs, cmpCallCtx).find(i => i.name === '_PICK_PART');
+check(cmpCallCtx.start === cmpCall.indexOf('_PICK') && cmpCallCtx.end === cmpCall.indexOf('(1,R[2])'), 'program replacement covers the whole target when editing inside its name');
+check(cmpCall.slice(0, cmpCallCtx.start) + CMP.insertion(cmpPick) + cmpCall.slice(cmpCallCtx.end) === cmpCall.replace('_PICK(', '_PICK_PART('), 'accepting a program preserves arguments, surrounding instructions and CRLF endings');
+check(CMP.insertion(cmpPick) === '_PICK_PART', 'program completion inserts just the program name');
+check(CMP.matches(CMP.index(cmpNames, cmpPrograms), cmpTxt('   1:  CALL _PICK(1,DI[')).length === 3, 'register/I-O completion still works inside call arguments');
 
 console.log('\n-- alarms --');
 /* Code parsing is pure, so it is checked unconditionally. The lookups need

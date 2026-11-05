@@ -27,6 +27,68 @@
       .filter(function (l) { return l.trim().length > 0; });
   }
 
+  /* VERSION.DG (also the first section of SUMMARY.DG). CONFIG is the
+   * installed feature list; CONFIG2 contains demo features, not installed
+   * options. null means a section was absent, [] means it was present/empty.
+   * Keep the controller's names and order codes rather than a local catalog. */
+  function parseVersion(text) {
+    var out = { robotNumber: '', software: '', version: '', softwareDate: '',
+      reportDate: '', model: '', fields: [], options: null, demoOptions: null };
+    var section = '', seen = {}, demoSeen = {};
+    String(text || '').split(/\r\n|\r|\n/).forEach(function (line) {
+      line = line.trim();
+      var m = line.match(/^([A-Z][A-Z0-9 ._\/-]*)::\s*$/i);
+      if (m) {
+        section = m[1].toUpperCase();
+        if (section === 'CONFIG') out.options = out.options || [];
+        if (section === 'CONFIG2') out.demoOptions = out.demoOptions || [];
+        return;
+      }
+      if (section === 'CONFIG' || section === 'CONFIG2') {
+        m = line.match(/^(.+?)\s+([A-Z0-9]{4})$/i);
+        if (!m) return;
+        var list = section === 'CONFIG' ? out.options : out.demoOptions;
+        var codes = section === 'CONFIG' ? seen : demoSeen;
+        if (!codes[m[2]]) { list.push({ name: m[1].trim(), code: m[2] }); codes[m[2]] = true; }
+        return;
+      }
+      if (!section) {
+        m = line.match(/^(F Number|VERSION|\$VERSION|DATE)\s*:\s*(.*)$/i);
+        if (!m) return;
+        var key = m[1].toUpperCase(), value = m[2].trim();
+        if (key === 'F NUMBER') out.robotNumber = value;
+        if (key === 'VERSION') out.software = value;
+        if (key === 'DATE') out.reportDate = value;
+        if (key === '$VERSION') {
+          var v = value.match(/^(\S+)(?:\s+(.+))?$/);
+          if (v) { out.version = v[1]; out.softwareDate = v[2] || ''; }
+        }
+      } else if (section === 'VERSION INFORMATION') {
+        m = line.match(/^([^:]+?)\s*:\s*(.*)$/);
+        if (m) {
+          var name = m[1].trim(), val = m[2].trim();
+          if (name.toUpperCase() === 'SOFTWARE') return; // column headings
+          if (/^Robot No\.$/i.test(name) && val) out.robotNumber = val;
+          if (val) out.fields.push({ name: name, value: val });
+        } else {
+          // The model/version row has no colon: R-1000iA/80F  V9.40P/83.
+          m = line.match(/^(.+?)\s+(V\d\S*)$/i);
+          if (m) {
+            out.model = m[1].trim();
+            out.fields.push({ name: 'Robot software', value: m[2] });
+          } else {
+            m = line.match(/^(.+?)\s+([A-Z0-9]+\/\S+)$/i);
+            if (m) {
+              if (!out.software) out.software = m[1].trim();
+              out.fields.push({ name: 'Software ID', value: m[2] });
+            }
+          }
+        }
+      }
+    });
+    return out;
+  }
+
   // Pull I/O comments out of DIOCFGSV.IO / similar config dumps: any line that
   // mentions TYPE[ n ] and carries a 'quoted comment'.
   function parseIOComments(text) {
@@ -305,7 +367,7 @@
       held: Object.prototype.hasOwnProperty.call(parsed.locked, key), protection: program.protection };
   }
 
-  var api = { parseNumreg: parseNumreg, parseStrreg: parseStrreg, rawLines: rawLines, parseIOComments: parseIOComments, parseIOState: parseIOState, parsePosreg: parsePosreg, posregValueStr: posregValueStr, parseErrall: parseErrall, parsePrgState: parsePrgState, parseTpDefaultProgram: parseTpDefaultProgram, assessProgramState: assessProgramState };
+  var api = { parseVersion: parseVersion, parseNumreg: parseNumreg, parseStrreg: parseStrreg, rawLines: rawLines, parseIOComments: parseIOComments, parseIOState: parseIOState, parsePosreg: parsePosreg, posregValueStr: posregValueStr, parseErrall: parseErrall, parsePrgState: parsePrgState, parseTpDefaultProgram: parseTpDefaultProgram, assessProgramState: assessProgramState };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucVA = api;
 })(typeof window !== 'undefined' ? window : globalThis);

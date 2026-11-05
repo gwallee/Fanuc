@@ -1386,6 +1386,12 @@ tr:last-child td { border-bottom: none; }
 .xs-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .xs-head.folded { margin-bottom: 2px; }
 .robot-tools { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.robot-info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 10px; margin: 12px 0; }
+.robot-info-grid > div { padding: 12px; border: 1px solid var(--line); border-radius: 6px; }
+.robot-info-grid dt { color: var(--muted); font-size: 12px; margin-bottom: 5px; }
+.robot-info-grid dd { margin: 0; font-family: "IBM Plex Mono", monospace; overflow-wrap: anywhere; }
+.robot-version-details { margin: 12px 0; }
+.robot-version-details summary { cursor: pointer; color: var(--muted); margin-bottom: 10px; }
 .robot-tools label { color: var(--muted); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .xref-item {
   border: 1px solid var(--line);

@@ -46,7 +46,7 @@
     backupPick: {},        // ip -> bool, which saved robots the next sweep covers
     backupAll: null,       // multi-robot backup in progress / its last result
     subnets: null,         // the bridge PC's own networks, for the default CIDR
-    dirExtern: null,       // {lib, source, registers, io, posregs} — label data from an opened folder
+    dirExtern: null,       // {lib, source, registers, io, posregs, info} — label data + VERSION.DG report from an opened folder
     dirStatus: null,
     compare: null,         // { label, programs: {NAME: source}, results, open: name|null }
     pair: null,            // { a, b } two-program comparison
@@ -721,12 +721,6 @@
       return /\.(ls|txt)$/i.test(f.name) || all.length === 1;
     });
     var pending = files.length;
-    if (!pending) {
-      toast(all.length
-        ? 'No .LS files in that selection (' + all.length + ' file' + (all.length > 1 ? 's' : '') + ' skipped — names must end in .LS).'
-        : 'Nothing was selected.');
-      return;
-    }
     /* A picked folder that carries NUMREG.VA and friends is a robot backup,
      * not a pile of files: it gets its own library, the same one the bridge
      * would open that backup into. Loose .LS files still land where the user
@@ -742,6 +736,32 @@
     var lastName = null;
     var imported = 0, skipped = 0;
     var gen = libGen;
+    if (fo && looksLikeBackup(all.map(function (f) { return f.name; }))) {
+      var intoLib = state.library;
+      readBackupInfo(all, function (f) {
+        return new Promise(function (resolve, reject) {
+          var reader = new FileReader();
+          reader.onload = function () { resolve(String(reader.result)); };
+          reader.onerror = function () { reject(new Error('Could not read ' + f.name)); };
+          reader.readAsText(f);
+        });
+      }).then(function (info) {
+        if (gen !== libGen || !info) return;
+        // The same backup may already be open through the bridge, with
+        // register names this picker cannot read: add to it, never replace.
+        var dx = state.dirExtern;
+        if (!dx || dx.lib !== intoLib) dx = { lib: intoLib, source: 'backup ' + fo.folder, registers: null, io: null, posregs: null };
+        dx.info = info;
+        state.dirExtern = dx;
+        render();
+      });
+    }
+    if (!pending) {
+      toast(all.length
+        ? 'No .LS programs in that selection. Robot info is loaded when the folder includes VERSION.DG or SUMMARY.DG.'
+        : 'Nothing was selected.');
+      return;
+    }
     files.forEach(function (f) {
       var reader = new FileReader();
       reader.onload = function () {
@@ -1348,10 +1368,12 @@
     // each robot works against its own stored library
     if (!setLibrary(ip)) return;
     state.robot = { ip: ip, ftpUser: state.robot.ftpUser, ftpPass: state.robot.ftpPass, files: [], registers: null, posregs: null, strregs: null, rawIO: null, ioState: null, ioComments: null, errors: undefined, error: null, loadedAt: null, backup: null, notPrograms: {}, prgState: undefined };
+    var robot = state.robot;
     state.robotCheck = null;   // verdicts belong to the robot they were read from
     state.tab = 'robot';
     render();
     api('/api/robot/list?ip=' + encodeURIComponent(ip) + ftpQS()).then(function (b) {
+      if (state.robot !== robot) return;
       state.robot.files = b.files;
       state.robot.loadedAt = new Date();
       render();
@@ -1363,6 +1385,7 @@
       loadRobotRegisters();
       loadRobotPosregs();
       loadRobotStrregs();
+      loadRobotInfo();
       /* "Import programs" from a saved-robot row: connect (which switched
        * the library to this robot's) and pull everything in one gesture.
        * The Programs section is opened so the chips fill in visibly. */
@@ -1376,6 +1399,7 @@
         }
       }
     }).catch(function (e) {
+      if (state.robot !== robot) return;
       state.robot.error = e.message;
       render();
     });
@@ -1386,6 +1410,41 @@
   function robotDataLoaded() {
     if (state.tab === 'robot') render();
     else renderDataSide();
+  }
+
+  /* Read-only reports, using the same HTTP/FTP bridge path as registers.
+   * Some controllers expose the version report only inside SUMMARY.DG. */
+  function readRobotInfo(read) {
+    function report(file) {
+      return read(file).then(function (text) {
+        var data = VA.parseVersion(P.unwrapMd(text));
+        if (!data.robotNumber && !data.software && !data.version && !data.model && !data.fields.length && data.options === null) {
+          throw new Error('No readable version information');
+        }
+        return { data: data, file: file, at: new Date() };
+      });
+    }
+    return report('VERSION.DG').catch(function () { return report('SUMMARY.DG'); });
+  }
+
+  function loadRobotInfo() {
+    var robot = state.robot;
+    if (!robot.ip || robot.info === null) return;
+    var credentials = ftpQS();
+    robot.info = null;
+    if (state.tab === 'robot') render();
+    readRobotInfo(function (file) {
+      return api('/api/robot/file?ip=' + encodeURIComponent(robot.ip) + '&name=' + file + credentials)
+        .then(function (b) { return b.content; });
+    }).then(function (info) {
+      if (state.robot !== robot) return;
+      robot.info = info;
+      if (state.tab === 'robot') render();
+    }).catch(function (e) {
+      if (state.robot !== robot) return;
+      robot.info = { error: 'Could not read VERSION.DG or SUMMARY.DG: ' + e.message };
+      if (state.tab === 'robot') render();
+    });
   }
 
   function loadRobotRegisters() {
@@ -1985,8 +2044,16 @@
 
   /* The controller data files a backup carries next to its programs. Their
    * presence is what makes a folder a backup rather than a pile of .LS. */
-  function backupDataFile(name) { return /^(numreg\.va|posreg\.va|iostate\.dg|diocfgsv\.io)$/i.test(name); }
+  function backupDataFile(name) { return /^(numreg\.va|posreg\.va|iostate\.dg|diocfgsv\.io|version\.dg|summary\.dg)$/i.test(name); }
   function looksLikeBackup(names) { return names.some(backupDataFile); }
+
+  function readBackupInfo(files, read) {
+    if (!files.some(function (f) { return /^(version|summary)\.dg$/i.test(f.name); })) return Promise.resolve(null);
+    return readRobotInfo(function (name) {
+      var file = files.find(function (f) { return f.name.toUpperCase() === name; });
+      return file ? read(file) : Promise.reject(new Error(name + ' is not in this backup'));
+    }).catch(function (e) { return { error: e.message }; });
+  }
 
   /* Register/I/O names out of one backup folder, tagged with the library
    * they belong to. Resolves to null when the folder carries none. */
@@ -1997,6 +2064,9 @@
     var posregVa = files.find(function (f) { return /^posreg\.va$/i.test(f.name); });
     var extern = { lib: lib, source: 'backup ' + dirPath, registers: null, io: null, posregs: null };
     var loads = [];
+    loads.push(readBackupInfo(files, function (file) {
+      return api('/api/dir/file?path=' + encodeURIComponent(file.path)).then(function (f) { return f.content; });
+    }).then(function (info) { extern.info = info; }));
     if (numreg) loads.push(api('/api/dir/file?path=' + encodeURIComponent(numreg.path)).then(function (f) {
       extern.registers = VA.parseNumreg(f.content);
     }).catch(function () {}));
@@ -2010,7 +2080,7 @@
       extern.io = VA.parseIOComments(f.content);
     }).catch(function () {}));
     return Promise.all(loads).then(function () {
-      return (extern.registers || extern.io || extern.posregs) ? extern : null;
+      return (extern.registers || extern.io || extern.posregs || extern.info) ? extern : null;
     });
   }
 
@@ -4508,14 +4578,16 @@
      * outside an opener costs one regex over the current row, the list is a
      * fixed box that never takes focus, typing on past it (the ] or a :)
      * closes it, and so do Escape, a click, and every caret move. Column
-     * mode and a selection never open it. */
+     * mode and a selection never open it. CALL / RUN suggest names and
+     * comments from the current library, even without live register names. */
     var ac = null, acItems = [], acSel = 0, acCtx = null, acIdx = null, acRev = -1;
+    var acInserting = false;
     function acClose() { if (!ac) return; ac.remove(); ac = null; acCtx = null; }
     function acUpdate() {
-      if (!CMP || colRect || !state.liveNames || ta.selectionStart !== ta.selectionEnd) { acClose(); return; }
+      if (!CMP || colRect || acInserting || ta.selectionStart !== ta.selectionEnd) { acClose(); return; }
       var ctx = CMP.context(ta.value, ta.selectionStart);
       if (!ctx) { acClose(); return; }
-      if (acRev !== state.namesRev || !acIdx) { acIdx = CMP.index(state.liveNames); acRev = state.namesRev; }
+      if (acRev !== state.namesRev || !acIdx) { acIdx = CMP.index(state.liveNames, state.programs); acRev = state.namesRev; }
       acItems = CMP.matches(acIdx, ctx);
       if (!acItems.length) { acClose(); return; }
       acCtx = ctx;
@@ -4532,8 +4604,8 @@
           onmousedown: function (e) { e.preventDefault(); },   // keep the textarea's caret
           onclick: function () { acAccept(it); }
         }, [
-          h('span', { class: 'idx', text: acCtx.type + '[' + it.index + ']' }),
-          h('span', { class: 'nm', text: it.name })
+          h('span', { class: 'idx', text: it.kind === 'program' ? it.name : acCtx.type + '[' + it.index + ']' }),
+          h('span', { class: 'nm', text: it.kind === 'program' ? it.comment : it.name })
         ]));
       });
     }
@@ -4559,10 +4631,16 @@
       acClose();
       ta.focus();
       ta.setSelectionRange(ctx.start, ctx.end);
-      // execCommand keeps the textarea's own undo stack; 'input' fires from it
-      if (!document.execCommand || !document.execCommand('insertText', false, repl)) {
-        ta.setRangeText(repl, ctx.start, ctx.end, 'end');
-        ta.dispatchEvent(new Event('input', { bubbles: true }));
+      // Keep native undo. A completed program name is still a valid context,
+      // so suppress reopening the popup from the insertion's input event.
+      acInserting = true;
+      try {
+        if (!document.execCommand || !document.execCommand('insertText', false, repl)) {
+          ta.setRangeText(repl, ctx.start, ctx.end, 'end');
+          ta.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      } finally {
+        acInserting = false;
       }
       renderStatus();
     }
@@ -7822,11 +7900,113 @@
     return wrap;
   }
 
+  function renderRobotInfo(pane, info, source, key, refresh) {
+    var sec = secHead('Robot info — ' + source, key + '-info', true);
+    pane.appendChild(sec.el);
+    if (sec.open) {
+      var tools = h('p', { class: 'robot-tools' });
+      if (refresh) {
+        var refreshButton = h('button', {
+          class: 'btn subtle', text: info === undefined ? 'Read from robot' : 'Refresh from robot', onclick: refresh
+        });
+        refreshButton.disabled = info === null;
+        tools.appendChild(refreshButton);
+      }
+      if (info && info.file) tools.appendChild(h('span', {
+        class: 'muted', text: info.file + ' · read ' + info.at.toLocaleTimeString()
+      }));
+      pane.appendChild(tools);
+      if (info === null) pane.appendChild(h('p', { class: 'muted', text: 'Reading robot info…' }));
+      else if (info && info.error) pane.appendChild(h('p', { class: 'muted', text: info.error }));
+      else if (!info) pane.appendChild(h('p', { class: 'muted', text: 'Robot info has not been read yet.' }));
+      else {
+        var data = info.data;
+        function field(name) {
+          var found = data.fields.find(function (f) { return f.name.toLowerCase() === name.toLowerCase(); });
+          return found ? found.value : '';
+        }
+        var grid = h('dl', { class: 'robot-info-grid' });
+        [['Robot model', data.model], ['Robot number', data.robotNumber],
+         ['Application', data.software], ['Software version', data.version || field('Software Edition No.')],
+         ['Software serial number', field('S/W Serial No.')], ['Controller ID', field('Controller ID')]]
+          .forEach(function (f) {
+            grid.appendChild(h('div', {}, [h('dt', { text: f[0] }), h('dd', { text: f[1] || 'Not reported' })]));
+          });
+        pane.appendChild(grid);
+        var details = h('details', { class: 'robot-version-details' }, [h('summary', { text: 'Software and firmware details' })]);
+        var table = h('table', { class: 'xref-table' });
+        table.appendChild(h('tr', {}, [h('th', { text: 'Item' }), h('th', { text: 'Version / value' })]));
+        var fields = data.fields.slice();
+        if (data.softwareDate) fields.push({ name: 'Software date', value: data.softwareDate });
+        if (data.reportDate) fields.push({ name: 'Report date', value: data.reportDate });
+        fields.forEach(function (f) {
+          table.appendChild(h('tr', {}, [h('td', { text: f.name }), h('td', { class: 'mono', text: f.value })]));
+        });
+        details.appendChild(h('div', { class: 'table-wrap' }, [table]));
+        pane.appendChild(details);
+      }
+    }
+    var dataOk = info && info.data;
+    var options = dataOk && dataOk.options;
+    var secOptions = secHead('Installed options' + (options ? ' — ' + options.length : '') + ' · ' + source, key + '-options', false);
+    pane.appendChild(secOptions.el);
+    if (!secOptions.open) return;
+    if (!dataOk) {
+      pane.appendChild(h('p', { class: 'muted', text: info === null ? 'Reading installed options…'
+        : info && info.error ? 'Installed options are unavailable because the robot info report could not be read.'
+        : 'Read robot info to see the controller’s installed options.' }));
+      return;
+    }
+    if (options === null) {
+      pane.appendChild(h('p', { class: 'muted', text: 'This report does not include an installed options list.' }));
+      return;
+    }
+    pane.appendChild(h('p', { class: 'muted', text: 'Features and order codes reported by the controller in ' + info.file + '.' }));
+    var bar = h('div', { class: 'search-bar' });
+    var input = h('input', { type: 'search', placeholder: 'Filter installed options by name or code…', 'aria-label': 'Filter installed options' });
+    input.value = state.dataFilter[key + '-options'] || '';
+    bar.appendChild(input);
+    pane.appendChild(bar);
+    var count = h('p', { class: 'muted', 'aria-live': 'polite' });
+    var wrap = h('div', { class: 'table-wrap' });
+    pane.appendChild(count);
+    pane.appendChild(wrap);
+    function optionTable(list) {
+      var table = h('table', { class: 'xref-table' });
+      table.appendChild(h('tr', {}, [h('th', { text: 'Feature' }), h('th', { text: 'Order code' })]));
+      list.forEach(function (opt) {
+        table.appendChild(h('tr', {}, [h('td', { text: opt.name }), h('td', { class: 'mono', text: opt.code })]));
+      });
+      return table;
+    }
+    function draw() {
+      var q = input.value.trim().toLowerCase();
+      state.dataFilter[key + '-options'] = input.value;
+      var hits = options.filter(function (opt) { return (opt.name + ' ' + opt.code).toLowerCase().indexOf(q) !== -1; });
+      count.textContent = !options.length ? 'No installed options reported.' : !hits.length ? 'No installed options match.' : hits.length + ' of ' + options.length + ' options';
+      wrap.innerHTML = '';
+      wrap.appendChild(optionTable(hits));
+    }
+    input.addEventListener('input', draw);
+    draw();
+    if (dataOk.demoOptions && dataOk.demoOptions.length) {
+      pane.appendChild(h('details', { class: 'robot-version-details' }, [
+        h('summary', { text: 'Demo features — ' + dataOk.demoOptions.length + ' (reported separately)' }),
+        h('div', { class: 'table-wrap' }, [optionTable(dataOk.demoOptions)])
+      ]));
+    }
+  }
+
   function renderRobot(pane) {
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Robot connection' }),
       state.robot.loadedAt ? h('span', { class: 'muted', text: 'last read ' + state.robot.loadedAt.toLocaleTimeString() }) : null
     ]));
+
+    var backup = state.dirExtern;
+    if (backup && backup.lib === state.library && backup.info) {
+      renderRobotInfo(pane, backup.info, backup.source, 'backup-' + state.library);
+    }
 
     if (!state.server) {
       var box = h('div', { class: 'summary' });
@@ -7883,6 +8063,8 @@
       pane.appendChild(h('p', { class: 'muted', text: 'Enter the controller IP. The bridge reads the program list, register values (NUMREG.VA) and I/O configuration from the robot. Once connected, registers and I/O points can be renamed in place, and R[n] values set (asks first).' }));
       return;
     }
+
+    renderRobotInfo(pane, state.robot.info, state.robot.ip, 'robot-' + state.robot.ip, loadRobotInfo);
 
     // program files — log exports carry a .LS extension too, and offering
     // them here only ever produced a chip that could not be imported

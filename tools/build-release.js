@@ -22,7 +22,7 @@ const DIST = path.join(ROOT, 'dist');
 const OUT = path.join(DIST, 'FanucStudio-portable-win-x64.zip');
 const ZIP_HELPER = path.join(__dirname, 'release-zip.ps1');
 const APP_FILES = [
-  'index.html', 'server.js', 'README.md', 'Start FANUC Studio.bat',
+  'index.html', 'server.js', 'README.md', 'WISHLIST.md', 'Start FANUC Studio.bat',
   'Start FANUC Studio hidden.vbs', 'start.sh', 'manifest.webmanifest',
   'sw.js', 'FANUC Studio.ico', 'css', 'js', 'lib', 'icons'
 ];

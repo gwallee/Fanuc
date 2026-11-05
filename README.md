@@ -72,6 +72,11 @@ and curl; Linux/macOS need curl, unzip and zip. Build failures leave the previou
 distribution intact. The tool packages this source folder without changing its
 build number; `js/version.js` identifies the packaged app build.
 
+## Wishlist status
+
+See [WISHLIST.md](WISHLIST.md) for open requests and completed work, reviewed
+against the current implementation. It ships inside the distribution ZIP.
+
 ## What it does
 
 ### View
@@ -84,6 +89,7 @@ build number; `js/version.js` identifies the packaged app build.
 ### Edit
 - **Robot status before editing** — opening an editor while connected reads `PRGSTATE.DG` and the controller's system-variable listing. A warning appears if a live task holds the program or it matches the pendant's default program (`$TP_DEFPROG`). **Check again** refreshes both without disturbing the draft. The pendant default is a useful indication, not a complete test of every open/background-edit state. An unavailable report cannot establish whether a program is in use; the robot can change after a check and remains the final authority on uploads.
 - Full-source editor per program, syntax-highlighted and filling the tab: **Save to library** re-parses and refreshes every view and re-runs all checks; for programs opened from a directory via the bridge, **Save to library + disk** writes the file back
+- **Program-name autocomplete** — type `CALL ` or `RUN ` and part of a name to suggest programs from the active library, with their comments. Works offline and in conditional calls, SELECT branches and motion triggers. Arrow keys choose a suggestion; Enter, Tab or a click inserts its name while keeping any existing arguments. Escape dismisses the list. Name matching ignores case and also finds fragments such as `pick` in `_PICK_PART`; names starting with the typed text appear first.
 - **Save + send to robot** uploads over FTP with the snapshot/verify/auto-restore safety net; if the checks find errors that would fail translation, it warns before sending
 - ON in green, OFF in red, comments recognized, full syntax highlighting in viewer and search results
 - **Syntax check as you type** — every row is checked against two things: a small grammar for the forms with structure (balanced brackets and quotes, the motion line's speed → termination → options order, mixed-logic parentheses, what may sit left of `=`, SELECT rows, negative literals in parentheses), and a **shape dictionary mined from real controller listings** (`js/tpshapes.js`, built by `node tools/build-shapes.js` from the backup folders — every line in a `.LS` was written by a controller, so its formatting is exactly what the translator accepts). A wavy red underline is something the controller will refuse; a dotted amber one is a form no robot in the dictionary uses — not wrong, just unseen. The strip under the editor explains the row the caret is on and, for an unseen form, shows the closest forms your robots do use. Certain errors also land in the Checks tab, so **Save + send** warns before the upload. The controller's own translator stays the final authority; the upload's snapshot-and-restore remains the backstop
@@ -164,6 +170,8 @@ The Checks tab count updates live as you edit.
 - **Program state (`PRGSTATE.DG`)** — read on demand from the Robot tab: which tasks exist, their state (RUNNING / PAUSED / ABORTED), where each one is, and its routine stack. A controller refuses to overwrite a program that has a live task, and **a PAUSED task is still live — only ABORT releases it**. Every program on a live task's stack is held, not just the one the cursor is in, so an edit can be refused for a program that looks idle: if `_PL_RACK` is paused and `__AUTO` called it, both are locked. The section lists exactly which programs are held and by which task, plus a per-program table with `Task:` and `Protection:` for all 85-odd programs on the controller. Read on demand rather than on connect, since the file is large and only matters when an edit is being refused
 - **Saved robots** — every controller you connect to or find by scanning is remembered (name read from `SUMMARY.DG`, address, when it was last seen). Click a name to connect; a short TCP probe of port 80 shows a live dot for which are answering right now, and ✕ forgets one. The list lives on the bridge in `robots.json`, so every device pointed at that bridge sees the same robots. **FTP passwords are never stored** — the username comes back with the entry, the password is typed each time. The backups live on the same rows: **Quick backup** on a row pulls `.LS` + `.VA` from that one robot immediately, and for full backups tick the robots to include (everything answering is in by default) and **Backup N robots (full)** walks the list one controller at a time — each into its own folder (set from the row's folder button; unset robots file under the bridge's `backups\`), skipping anything powered down after three seconds
 
+- **Robot info and installed options** — the Robot tab reads `VERSION.DG` automatically on connect, with `SUMMARY.DG` as a fallback. It shows the robot model and number, application, software version, software serial number and controller ID, plus expandable firmware details. Expand **Installed options** to search the controller's feature names and order codes; demo features are listed separately. **Refresh from robot** reads both sections again. Opening a backup directory by path or using **Import folder** also makes its report available on the Robot tab, labeled with the backup source, including browser-only offline use. A missing options section is shown as unavailable rather than an empty installed list.
+
 ## Repository layout
 
 ```
@@ -184,7 +192,13 @@ js/colsel.js      column (rectangular) selection text ops for the editor —
 js/explain.js     instruction → plain-English rules (unit-tested; not wired
                   into the UI since the per-line Explain toggle was removed)
 js/vaparse.js     NUMREG.VA / POSREG.VA / STRREG.VA / DIOCFGSV.IO / IOSTATE.DG /
-                  ERRALL.LS / PRGSTATE.DG parsing
+                  ERRALL.LS / PRGSTATE.DG / VERSION.DG (robot info, options) parsing
+js/tpsyntax.js    TP grammar + shape-dictionary checks behind the editor's
+                  syntax underlines
+js/tpshapes.js    GENERATED shape dictionary: node tools/build-shapes.js
+js/complete.js    editor completion: register/I-O names after DI[ R[ …,
+                  program names after CALL / RUN
+js/version.js     the build number shown in the header
 js/qr.js          QR encoder for the "open on your phone" code (byte mode,
                   level M, versions 1-10) — zero deps
 js/alarms.js      offline alarm-code dictionary: the facility index and the
@@ -194,6 +208,10 @@ js/alarms/        one generated file per facility (SRVO.js, INTP.js, …), built
                   is actually expanded, with a <script> tag rather than fetch()
                   so browser-only mode (file://) works too
 js/app.js         UI
+tools/            build-release.js + release-zip.ps1 (portable ZIP, run by
+                  Build Distribution.bat), build-shapes.js, build-icons.js,
+                  fetch-alarms.js
+WISHLIST.md       open requests and completed work
 robots.json       saved robots — address, name, FTP user, and each robot's
                   own backup folder. Written by the bridge (gitignored)
 settings.json     bridge settings: the default backup folder
