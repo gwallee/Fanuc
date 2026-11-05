@@ -124,6 +124,15 @@ function robotGet(host, filePath, timeoutMs) {
 
 /* Read one MD: file, controller web server first and FTP second — the same
  * either-protocol-is-enough fallback the rest of the bridge relies on. */
+/* Two listings of the same program, allowing only for what a transfer can
+ * change: line endings and trailing blanks. The controller rewrites the
+ * header dates when a program is touched, so even an edit that changed no
+ * instruction counts as a change — the pendant did write the program. */
+function sameListing(a, b) {
+  const norm = (s) => String(s).replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n+$/, '');
+  return norm(a) === norm(b);
+}
+
 async function readRobotFile(t, user, pass, name) {
   const upper = name.toUpperCase();
   try {
@@ -406,6 +415,26 @@ async function handleApi(req, res, u) {
     }
   }
 
+  /* The editor's baseline: the program exactly as the upload's snapshot step
+   * will read it (FTP RETR, never the HTTP listing, whose unwrap can differ
+   * by a byte). A clean 550 is an answer too — the program is not on the
+   * robot — so it comes back as absent instead of an error. */
+  if (u.pathname === '/api/robot/program') {
+    const t = target(q);
+    const name = q.get('name');
+    if (!t) return fail(res, 400, 'missing or invalid ?ip=');
+    if (!name || !/^[A-Za-z0-9_-]+\.LS$/i.test(name)) return fail(res, 400, 'name must be NAME.LS');
+    const upper = name.toUpperCase();
+    try {
+      const buf = await pooledFtp(t, q.get('user') || undefined, q.get('pass') || undefined, (ftp) => ftp.retr(upper), undefined, true);
+      if (!buf || !buf.length) return fail(res, 502, 'The robot returned an empty ' + upper);
+      return json(res, 200, { ip: t.ip, name: upper, content: buf.toString('utf8') });
+    } catch (e) {
+      if (e.code === 550) return json(res, 200, { ip: t.ip, name: upper, absent: true });
+      return fail(res, 502, e.message);
+    }
+  }
+
   if (u.pathname === '/api/robot/file') {
     const t = target(q);
     const name = q.get('name');
@@ -514,10 +543,20 @@ async function handleApi(req, res, u) {
     const body = await readBody(req);
     let payload;
     try { payload = JSON.parse(body); } catch (e) { return fail(res, 400, 'invalid JSON body'); }
-    const { ip, name, content, user, pass } = payload;
+    const { ip, name, content, user, pass, baseline } = payload;
     if (!ip || !ROBOT_HOST.test(String(ip).split(':')[0])) return fail(res, 400, 'missing or invalid ip');
     if (!name || !/^[A-Za-z0-9_-]+\.LS$/i.test(name)) return fail(res, 400, 'name must be NAME.LS');
     if (typeof content !== 'string' || !content.trim()) return fail(res, 400, 'missing content');
+    /* baseline — optional: what the editor read off the robot when editing
+     * began, { content } or { absent: true }. The snapshot read happens
+     * right before the STOR anyway, so comparing it against the baseline
+     * costs nothing and closes the window to the width of one FTP command:
+     * a pendant edit, or another Studio user's send, made while this draft
+     * was open stops the upload instead of being overwritten. */
+    if (baseline !== undefined && (!baseline || typeof baseline !== 'object' ||
+        (typeof baseline.content !== 'string') === !baseline.absent)) {
+      return fail(res, 400, 'baseline must be { content } or { absent: true }');
+    }
     const t = parseTarget(ip);
     const result = { ok: false, name: name.toUpperCase(), snapshot: null, restored: false };
     try {
@@ -545,6 +584,21 @@ async function handleApi(req, res, u) {
         result.aborted = true;
         result.error = 'The robot returned an empty ' + result.name + ', so nothing was sent.';
         return;
+      }
+      if (baseline) {
+        const now = prev ? prev.toString('utf8') : null;
+        const was = baseline.absent ? null : baseline.content;
+        if ((now === null) !== (was === null) || (now !== null && !sameListing(now, was))) {
+          result.aborted = true;
+          result.changed = true;
+          result.current = now;
+          result.error = now === null
+            ? 'The program is no longer on the robot, so nothing was sent.'
+            : was === null
+              ? 'The program has appeared on the robot since editing began, so nothing was sent.'
+              : 'The program on the robot has changed since editing began, so nothing was sent.';
+          return;
+        }
       }
       if (prev && prev.length) {
         fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });

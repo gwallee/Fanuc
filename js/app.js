@@ -80,6 +80,7 @@
     editSides: { left: false, right: false },   // which split halves are editors
     editDrafts: {},        // NAME -> unsaved editor text, survives tab switches and renders
     editRobotChecks: {},   // NAME -> live task / pendant checks for this edit session
+    editBaselines: {},     // NAME -> the robot's copy when this edit session began
     splitPct: 50,          // side-by-side: left half's share of the width (persisted)
     showAllProgs: false,   // sidebar: also list programs not prefixed A_/_ (persisted)
     dataFilter: {},        // data-sidebar filter text — survives re-renders
@@ -485,6 +486,7 @@
     state.editSides = { left: false, right: false };
     state.editDrafts = {};
     state.editRobotChecks = {};
+    state.editBaselines = {};
     state.docs = { left: [], right: [] };
     state.active = { left: null, right: null };
     state.pair = null;
@@ -1723,8 +1725,9 @@
     });
   }
 
-  function sendToRobot(name, content, onDone) {
+  function sendToRobot(name, content, onDone, opts) {
     var ip = state.robot.ip;
+    var baseline = opts && opts.baseline;
     fetch('/api/robot/upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1732,11 +1735,19 @@
         ip: ip,
         name: name + '.LS',
         content: content,
+        baseline: baseline || undefined,
         user: state.robot.ftpUser || undefined,
         pass: state.robot.ftpPass || undefined
       })
     }).then(function (r) { return bridgeJSON(r); }).then(function (b) {
       b.sentContent = content; // for mapping controller file-line errors back to program lines
+      if (b.changed) {
+        // not a failure banner: the decision is the user's, made on the diff
+        state.upload = null;
+        showRobotChanged(name, b, baseline, content, onDone);
+        onDone(b);
+        return;
+      }
       /* A good send is news for a moment, not a banner that outlives the next
        * edit: it goes out as a toast. A failure stays as the banner, because
        * its controller error log and "fix line" chips are what you work from. */
@@ -3279,7 +3290,74 @@
     if (state.programs[name] && state.editDrafts[name] === undefined) {
       state.editDrafts[name] = state.programs[name].source;
       checkEditRobot(name);
+      readEditBaseline(name);
     }
+  }
+
+  /* The robot's copy at the moment editing began, read the way the upload
+   * will read it. Save + send hands it back to the bridge, which refuses to
+   * STOR over anything else — a pendant edit or another user's send made
+   * while this draft was open stops the upload and shows the diff instead of
+   * being overwritten. Unreadable means no check, not a refusal: the robot
+   * is still the authority, and the snapshot/restore net is still under it. */
+  function readEditBaseline(name) {
+    var ip = state.robot.ip;
+    if (!state.server || !ip) { delete state.editBaselines[name]; return; }
+    var base = { ip: ip, robot: state.robot, state: 'reading', content: null, at: new Date() };
+    state.editBaselines[name] = base;
+    base.promise = api('/api/robot/program?ip=' + encodeURIComponent(ip) + '&name=' + encodeURIComponent(name + '.LS') + ftpQS())
+      .then(function (b) {
+        base.content = b.absent ? null : b.content;
+        base.state = 'ready';
+      }).catch(function () { base.state = 'unknown'; });
+  }
+
+  /* What saveAndSend sends along: the baseline for THIS robot, once read. */
+  function editBaselineFor(name) {
+    var base = state.editBaselines[name];
+    if (!base || base.ip !== state.robot.ip) return Promise.resolve(null);
+    return base.promise.then(function () {
+      if (base.state !== 'ready' || state.editBaselines[name] !== base) return null;
+      return base.content === null ? { absent: true } : { content: base.content };
+    });
+  }
+
+  /* The bridge found the robot's copy is not what editing began from. Show
+   * exactly what moved, keep the draft, and let the user decide. "Send
+   * anyway" goes out with the robot's CURRENT copy as the new baseline, so a
+   * further change in the meantime is still caught. */
+  function showRobotChanged(name, result, baseline, content, onDone) {
+    var dlg = h('dialog', { class: 'fp-dlg rc-dlg', 'aria-label': name + ' changed on the robot' });
+    var was = baseline && !baseline.absent ? baseline.content : '';
+    var now = result.current || '';
+    var base = state.editBaselines[name];
+    var since = base ? ' at ' + base.at.toLocaleTimeString() : '';
+    function close() { dlg.close(); dlg.remove(); }
+    dlg.appendChild(h('div', { class: 'fp-head' }, [
+      h('h2', { text: name + ' changed on robot ' + state.robot.ip }),
+      h('button', { class: 'btn subtle', text: '✕', title: 'Keep the draft, send nothing', onclick: close })
+    ]));
+    dlg.appendChild(h('p', { class: 'muted fp-hint', text: result.error + ' Your draft is saved in the library and still open. ' +
+      'Left: the robot copy when editing began' + since + '. Right: the robot copy now.' }));
+    dlg.appendChild(renderDiffBody(was, now, true, 'when editing began', 'on the robot now'));
+    dlg.appendChild(h('div', { class: 'fp-foot' }, [
+      h('button', {
+        class: 'btn', text: 'Send anyway — overwrite the robot copy',
+        title: 'The robot copy is snapshotted to backups\\pre-upload first',
+        onclick: function () {
+          close();
+          var next = result.current === null ? { absent: true } : { content: result.current };
+          if (base) { base.content = result.current; base.state = 'ready'; base.promise = Promise.resolve(); }
+          sendToRobot(name, content, onDone, { baseline: next });
+        }
+      }),
+      h('span', { style: 'flex:1' }),
+      h('button', { class: 'btn primary', text: 'Keep my draft — don’t send', onclick: close })
+    ]));
+    dlg.addEventListener('click', function (e) { if (e.target === dlg) close(); });
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    document.body.appendChild(dlg);
+    dlg.showModal();
   }
 
   /* The check is informational and never interrupts or rebuilds an editor.
@@ -4762,12 +4840,14 @@
         return;
       }
       status.textContent = 'Uploading to ' + state.robot.ip + '…';
-      sendToRobot(parsed.name, src, function (result) {
-        // on failure keep the editor open so the fix is one keystroke away
-        if (result.ok) stopEditing();
-        else if (opts.side) state.editSides[opts.side] = true;
-        else state.editing = true;
-        render();
+      editBaselineFor(parsed.name).then(function (baseline) {
+        sendToRobot(parsed.name, src, function (result) {
+          // on failure keep the editor open so the fix is one keystroke away
+          if (result.ok) stopEditing();
+          else if (opts.side) state.editSides[opts.side] = true;
+          else state.editing = true;
+          render();
+        }, { baseline: baseline });
       });
     }
 

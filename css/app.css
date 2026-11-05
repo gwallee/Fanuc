@@ -1146,6 +1146,8 @@ tr:last-child td { border-bottom: none; }
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.32);
 }
 .fp-dlg::backdrop { background: rgba(0, 0, 0, 0.45); }
+.rc-dlg { width: min(1100px, 96vw); max-width: min(1100px, 96vw); }
+.rc-dlg .sbs-box { max-height: 60vh; overflow: auto; margin: 8px 0 12px; }
 .fp-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
 .fp-head h2 { font-size: 15px; margin: 0; flex: 1; }
 .fp-hint { margin: 0 0 8px; }

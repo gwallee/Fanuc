@@ -114,6 +114,42 @@ async function post(route, body) {
     check(r.snapshot && fs.readFileSync(r.snapshot, 'utf8') === mainOld, 'the previous version is on disk for a hand-restore');
     check(/could not be confirmed/i.test(r.error || ''), 'error says so plainly: ' + r.error);
 
+    console.log('\n-- change detection: the baseline must match the robot copy right before the STOR --');
+    r = await fetch(BASE + '/api/robot/program?ip=' + ROBOT + '&name=MAIN.LS').then((x) => x.json());
+    check(r.content === files['MAIN.LS'] && !r.absent, 'the baseline read returns the robot copy over FTP');
+    r = await fetch(BASE + '/api/robot/program?ip=' + ROBOT + '&name=NOSUCH.LS').then((x) => x.json());
+    check(r.absent === true && r.content === undefined, 'a program not on the robot reads as absent, not as an error');
+    const baseMain = files['MAIN.LS'];
+    const edited = '/PROG MAIN\n/MN\n   1:  R[1]=43 ;\n/END\n';
+    r = await post('/api/robot/upload', { ip: ROBOT, name: 'MAIN.LS', content: edited, baseline: { content: baseMain.replace(/\n/g, '\r\n') + '\r\n' } });
+    check(r.ok === true && files['MAIN.LS'] === edited, 'a matching baseline (line endings aside) lets the upload through');
+    files['MAIN.LS'] = '/PROG MAIN\n/MN\n   1:  R[1]=43 ;\n   2:  R[5]=1 ;\n/END\n';   // a pendant edit while the next draft is open
+    const draft = '/PROG MAIN\n/MN\n   1:  R[1]=44 ;\n/END\n';
+    r = await post('/api/robot/upload', { ip: ROBOT, name: 'MAIN.LS', content: draft, baseline: { content: edited } });
+    check(r.ok === false && r.changed === true && r.aborted === true, 'a changed robot copy stops the upload: ' + r.error);
+    check(files['MAIN.LS'].includes('R[5]=1'), 'nothing was stored over the pendant edit');
+    check(r.current === files['MAIN.LS'], 'the reply carries the robot copy for the diff');
+    check(r.snapshot === null, 'no snapshot is written for an upload that did not happen');
+    r = await post('/api/robot/upload', { ip: ROBOT, name: 'MAIN.LS', content: draft, baseline: { content: files['MAIN.LS'] } });
+    check(r.ok === true && files['MAIN.LS'] === draft, 'send anyway, with the current copy as the baseline, goes through');
+    r = await post('/api/robot/upload', { ip: ROBOT, name: 'MAIN.LS', content: edited, baseline: { absent: true } });
+    check(r.ok === false && r.changed === true && /appeared/.test(r.error), 'a program that appeared since editing began is a change');
+    check(files['MAIN.LS'] === draft, 'and the robot copy was left alone');
+    const fresh = '/PROG NOSUCH\n/MN\n   1:  R[1]=1 ;\n/END\n';
+    r = await post('/api/robot/upload', { ip: ROBOT, name: 'NOSUCH.LS', content: fresh, baseline: { content: 'x' } });
+    check(r.ok === false && r.changed === true && r.current === null && /no longer/.test(r.error), 'a program deleted since editing began is a change');
+    check(!('NOSUCH.LS' in files), 'and it was not created');
+    r = await post('/api/robot/upload', { ip: ROBOT, name: 'NOSUCH.LS', content: fresh, baseline: { absent: true } });
+    check(r.ok === true && files['NOSUCH.LS'] === fresh, 'absent baseline and still absent: a new program sends');
+    delete files['NOSUCH.LS'];
+    const malformed = await fetch(BASE + '/api/robot/upload', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip: ROBOT, name: 'MAIN.LS', content: edited, baseline: 'yes' })
+    });
+    check(malformed.status === 400 && files['MAIN.LS'] === draft, 'a malformed baseline is refused before touching the robot');
+    r = await post('/api/robot/upload', { ip: ROBOT, name: 'MAIN.LS', content: edited });
+    check(r.ok === true && files['MAIN.LS'] === edited, 'no baseline, no check — sends from outside the editor behave as before');
+
     console.log('\n-- delete on robot: snapshot, DELE, verified gone --');
     const tempSrc = '/PROG TEMP\n/MN\n   1:  R[9]=9 ;\n/END\n';
     files['TEMP.LS'] = tempSrc;

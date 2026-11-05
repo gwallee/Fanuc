@@ -17,7 +17,9 @@ TP; keep UI text terse, prefer code over prose, colors over bold.
   per-change in the session scratchpad, not committed.
 - The controller **deletes a program when LS→TP translation fails** on
   upload. The snapshot → STOR → verify → auto-restore flow in server.js is
-  what makes editing safe; never weaken it. Uploads must never retry.
+  what makes editing safe; never weaken it. Uploads must never retry. The
+  optional baseline check (editor's copy vs the snapshot read) sits between
+  snapshot and STOR and must stay there: a changed copy means nothing is sent.
 
 ## Map
 

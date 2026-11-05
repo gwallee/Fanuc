@@ -9,12 +9,9 @@ checkout has its own implementation and release script.
   someone edits it, show who holds the reservation, and require a valid
   reservation to upload. Allow a local draft or copy without a reservation,
   and make abandoned reservations expire. A shared bridge can coordinate its
-  own users; separate bridges would need a shared coordination service.
-- **Detect changes before uploading.** Compare the current robot program with
-  the version editing began from, preserve the draft if they differ, and show a
-  diff before proceeding. Reservations alone cannot detect pendant or other
-  tool edits, and a comparison cannot eliminate changes between the check and
-  upload.
+  own users; separate bridges would need a shared coordination service, or a
+  marker file on the controller (untested). Change detection (below) already
+  stops one user's send from overwriting another's.
 - **Verify the editor's in-use check on real controllers.** Test running and
   paused tasks, programs on their call stacks, pendant selection, background
   edit and unreadable reports across controller versions. `$TP_DEFPROG` is an
@@ -33,6 +30,11 @@ checkout has its own implementation and release script.
 
 ## Completed
 
+- **Detect changes before uploading.** The editor reads the robot's copy when
+  editing begins; the bridge compares it with the robot's copy right before the
+  STOR and sends nothing if they differ. A side-by-side diff shows what moved,
+  the draft stays, and "Send anyway" overwrites with the usual snapshot. The
+  remaining window is the one FTP command between the check and the STOR.
 - **Autocomplete program names in the editor.** `CALL` and `RUN` suggest names
   and comments from the active library, including offline use and conditional
   calls. Enter, Tab or a click accepts a name while preserving existing arguments.
