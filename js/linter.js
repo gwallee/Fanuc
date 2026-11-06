@@ -7,9 +7,14 @@
  * opts (optional): { passThroughCalls: {NAME: true} } — utility programs that
  *   do not move the robot; a CALL to one does not satisfy the
  *   handshake-without-motion rule.
+ *   { handSet: { registers: [n], labelPatterns: ['OVERRIDE', ...] } } —
+ *   registers the HMI or a person writes; register-never-written skips them.
  */
 (function (global) {
   'use strict';
+  if (typeof module !== 'undefined' && module.exports && !global.FanucAnalyzer) {
+    try { global.FanucAnalyzer = require('./analyzer.js'); } catch (e) { /* standalone use without the analyzer */ }
+  }
 
   function lint(programs, graph, xref, extern, opts) {
     var passThrough = (opts && opts.passThroughCalls) || {};
@@ -132,9 +137,20 @@
     });
 
     // --- registers read but never written anywhere ---
+    // An indirect write R[R[n]]= (a FOR loop clearing a block, say) credits
+    // the members it can reach; hand-set / HMI registers from opts.handSet
+    // ({ registers: [n], labelPatterns: [regex source] }) are expected to
+    // have no writer here.
+    var indirect = (global.FanucAnalyzer && global.FanucAnalyzer.indirectWrites) ? global.FanucAnalyzer.indirectWrites(programs, graph).R : null;
+    var handSet = (opts && opts.handSet) || {};
+    var handRegs = {};
+    (handSet.registers || []).forEach(function (n) { handRegs[n] = true; });
+    var handRes = (handSet.labelPatterns || []).map(function (p) { return new RegExp(p, 'i'); });
     Object.keys(xref.registers).forEach(function (n) {
       var e = xref.registers[n];
       var hasWrite = e.refs.some(function (r) { return r.write; });
+      if (!hasWrite && indirect && (indirect.all || indirect.indices[n])) hasWrite = true;
+      if (!hasWrite && (handRegs[n] || (e.label && handRes.some(function (re) { return re.test(e.label); })))) hasWrite = true;
       if (!hasWrite) {
         findings.push({
           severity: 'info',

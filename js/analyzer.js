@@ -16,6 +16,8 @@
       uframes: [], utools: [],
       waits: [],       // { line, cond }
       loops: [],       // { label, jumpLine, defLine } backward jumps
+      indirect: [],    // { type: 'F'|'DO'|'R'|..., reg, line, write } — F[R[n]], DO[R[n]], R[R[n]]
+      forLoops: [],    // { reg, from, to, line } — FOR R[n]=a TO b (constants only)
       comments: 0
     };
 
@@ -47,8 +49,19 @@
       var noBrackets = text.replace(/\[[^\]]*\]/g, '[]');
       var callRe = /\b(CALL|RUN)\s+([A-Z_][A-Z0-9_]*)/g;
       while ((j = callRe.exec(noBrackets)) !== null) {
-        a.calls.push({ target: j[2].toUpperCase(), line: line.num, kind: j[1] });
+        a.calls.push({ target: j[2].toUpperCase(), line: line.num, kind: j[1], args: callArgs(text, j[2]) });
       }
+
+      // Indirect references F[R[n]] / DO[R[n]] / R[R[n]]: the member written
+      // is only known at runtime (A_ZONE_CHECK sets F[R[200]], _INIT wipes
+      // DO[R[99]] in a FOR loop). Recorded apart so never-written rules can
+      // credit them instead of flagging every flag such a loop sets.
+      var indRe = /(^|[^A-Z])(DI|DO|RI|RO|GI|GO|UI|UO|F|M|R|PR)\[\s*R\[(\d+)(?::[^\]]*)?\]\s*\]/g;
+      while ((j = indRe.exec(text)) !== null) {
+        a.indirect.push({ type: j[2], reg: parseInt(j[3], 10), line: line.num, write: isWriteAt(text, j.index + j[0].length) });
+      }
+      var forM = text.match(/^FOR\s+R\[(\d+)(?::[^\]]*)?\]\s*=\s*(-?\d+)\s+(?:TO|DOWNTO)\s+(-?\d+)/i);
+      if (forM) a.forLoops.push({ reg: parseInt(forM[1], 10), from: parseInt(forM[2], 10), to: parseInt(forM[3], 10), line: line.num });
 
       // Registers R[n]  (avoid PR[n] / SR[n] / AR[n] / GO[..] etc. via char class before R)
       var regRe = /(^|[^A-Z])R\[(\d+)(?::([^\]]*))?\]/g;
@@ -94,6 +107,26 @@
     });
 
     return a;
+  }
+
+  /* Arguments of CALL NAME(a,b,c) as trimmed strings (top-level commas only;
+   * a mixed-logic IF (...),CALL X(1,2) still yields ['1','2']). */
+  function callArgs(text, name) {
+    var at = text.indexOf(name);
+    if (at === -1) return [];
+    var rest = text.slice(at + name.length);
+    var open = rest.match(/^\s*\(/);
+    if (!open) return [];
+    var depth = 0, cur = '', out = [];
+    for (var i = open[0].length - 1; i < rest.length; i++) {
+      var ch = rest[i];
+      if (ch === '(' || ch === '[') { depth++; if (depth === 1 && ch === '(') continue; }
+      else if (ch === ')' || ch === ']') { depth--; if (depth === 0) { out.push(cur.trim()); return out; } }
+      if (ch === ',' && depth === 1) { out.push(cur.trim()); cur = ''; continue; }
+      cur += ch;
+    }
+    if (cur.trim()) out.push(cur.trim());
+    return out;
   }
 
   function recordRef(map, n, label, line, isWrite) {
@@ -202,10 +235,73 @@
     });
   }
 
+  /* Which members an indirect write T[R[n]]= can reach, per type:
+   *   { F: { all, indices: {k: true}, refs: [{prog, line}] }, DO: ..., R: ... }
+   * The index register is resolved inside the writing program — a FOR loop
+   * over it gives a range, R[n]=AR[k] gives the constants callers pass as
+   * argument k, R[n]=<const> gives that constant. Anything else means the
+   * write could hit any member (all = true). */
+  function indirectWrites(programs, graph) {
+    var out = {};
+    Object.keys(programs).forEach(function (name) {
+      var a = programs[name].analysis;
+      a.indirect.forEach(function (ind) {
+        if (!ind.write) return;
+        var e = out[ind.type] || (out[ind.type] = { all: false, indices: {}, refs: [] });
+        e.refs.push({ prog: name, line: ind.line, reg: ind.reg });
+        var known = resolveRegister(programs, graph, name, ind.reg);
+        if (known === null) e.all = true;
+        else known.forEach(function (k) { e.indices[k] = true; });
+      });
+    });
+    return out;
+  }
+
+  function resolveRegister(programs, graph, name, reg) {
+    var a = programs[name].analysis;
+    var values = [], resolved = false;
+    a.forLoops.forEach(function (f) {
+      if (f.reg !== reg) return;
+      resolved = true;
+      var lo = Math.min(f.from, f.to), hi = Math.max(f.from, f.to);
+      if (hi - lo > 10000) return;
+      for (var k = lo; k <= hi; k++) values.push(k);
+    });
+    programs[name].parsed.lines.forEach(function (line) {
+      if (line.comment !== null) return;
+      var m = line.text.match(new RegExp('^R\\[' + reg + '(?::[^\\]]*)?\\]\\s*=\\s*(.+)$'));
+      if (!m) return;
+      var rhs = m[1].trim();
+      var c = rhs.match(/^\(?\s*(-?\d+)\s*\)?$/);
+      if (c) { resolved = true; values.push(parseInt(c[1], 10)); return; }
+      var ar = rhs.match(/^\(?\s*AR\[(\d+)\]\s*\)?$/);
+      if (ar) {
+        var k = parseInt(ar[1], 10) - 1;
+        var callers = (graph && graph.calledBy && graph.calledBy[name]) || [];
+        if (!callers.length) resolved = true;   // never called: the write never runs
+        callers.forEach(function (from) {
+          if (!programs[from]) return;
+          programs[from].analysis.calls.forEach(function (call) {
+            if (call.target !== name) return;
+            var arg = (call.args || [])[k];
+            var n = arg && arg.match(/^\(?\s*(-?\d+)\s*\)?$/);
+            if (n) { resolved = true; values.push(parseInt(n[1], 10)); }
+            else values.unknown = true;
+          });
+        });
+        return;
+      }
+      values.unknown = true;
+    });
+    if (!resolved || values.unknown) return null;
+    return values;
+  }
+
   var api = {
     analyzeProgram: analyzeProgram,
     buildCallGraph: buildCallGraph,
     buildGlobalXref: buildGlobalXref,
+    indirectWrites: indirectWrites,
     roots: roots
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

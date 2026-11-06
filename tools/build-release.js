@@ -24,7 +24,7 @@ const ZIP_HELPER = path.join(__dirname, 'release-zip.ps1');
 const APP_FILES = [
   'index.html', 'server.js', 'README.md', 'WISHLIST.md', 'Start FANUC Studio.bat',
   'Start FANUC Studio hidden.vbs', 'start.sh', 'manifest.webmanifest',
-  'sw.js', 'FANUC Studio.ico', 'css', 'js', 'lib', 'icons'
+  'sw.js', 'FANUC Studio.ico', 'dac-standard.json', 'css', 'js', 'lib', 'icons'
 ];
 
 function run(file, args, options) {

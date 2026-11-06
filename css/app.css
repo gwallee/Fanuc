@@ -1825,3 +1825,10 @@ textarea.editor.call-link { cursor: pointer; }
 /* "Start bridge" — shown wherever the app says it needs the bridge */
 .bridge-start { margin: 6px 0; }
 .bridge-start-msg { margin-top: 6px; font-size: 12px; color: var(--warn); }
+
+/* Checks tab: Program checks / DAC checks switch and the DAC rule-prefix filter */
+.checks-modes, .checks-prefixes { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.checks-prefixes { margin: 0 0 10px; }
+.checks-mode { font: inherit; font-size: 12px; padding: 2px 9px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
+.checks-mode:hover { color: var(--ink); border-color: var(--accent); }
+.checks-mode.active { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }

@@ -61,6 +61,13 @@
     xrefHideUnused: false, // Cross-reference: leave out items no program touches (saved)
     xrefFilter: '',
     checksProg: null,      // Checks tab: show only findings touching this program
+    checksMode: 'lint',    // Checks tab: 'lint' (program checks) | 'dac' (DAC template checks)
+    dacStandard: null,     // parsed dac-standard.json (fetched at start; null = not loaded)
+    dacStandardError: null,
+    dacFindings: [],       // DacCheck results for the current library
+    dacGeneration: null,   // template generation the library was recognized as
+    dacPrefix: '',         // Checks tab (DAC mode): rule-prefix filter '' | 'O' | 'P' | 'N' | 'S' | 'H'
+    scratch: {},           // {NAME: true} test / backup-edit programs kept out of graph, xref and checks (H2 lists them)
     noteOpen: {},          // {NAME:line -> bool} gutter notes the reader has toggled
     flowFocus: null,       // block idx isolated in the control-flow graph
     flowLayout: 'chart',   // control-flow canvas: 'column' | 'chart' (persisted)
@@ -255,11 +262,49 @@
     return { registers: regs || [], io: io || [], posregs: posregs || [], source: source };
   }
 
+  /* Leftover -BCKED / TEST / TST_ programs (names from dac-standard.json)
+   * stay in the library but out of the call graph, cross-reference and
+   * checks: they would otherwise mark every flag they touch as used and
+   * every standard program they call as called. H2 lists them. */
+  function activePrograms() {
+    state.scratch = {};
+    var DC = window.DacCheck;
+    if (!DC || !state.dacStandard) return state.programs;
+    var active = {};
+    Object.keys(state.programs).forEach(function (n) {
+      if (DC.isScratch(n, state.dacStandard)) state.scratch[n] = true; else active[n] = state.programs[n];
+    });
+    return active;
+  }
+
+  function lintOpts() {
+    var hs = state.dacStandard && state.dacStandard.handSet;
+    return {
+      passThroughCalls: state.flowIgnore,
+      handSet: hs ? { registers: hs.registers || [], labelPatterns: (hs.registerLabels || []).map(function (s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }) } : null
+    };
+  }
+
+  function runDacChecks() {
+    var DC = window.DacCheck;
+    state.dacFindings = [];
+    state.dacGeneration = null;
+    if (!DC || !state.dacStandard || !Object.keys(state.programs).length) return;
+    try {
+      state.dacFindings = DC.check(state.programs, state.graph, state.xref, state.extern, state.dacStandard);
+      state.dacGeneration = state.dacFindings.generation;
+    } catch (e) {
+      state.dacFindings = [{ severity: 'error', rule: 'X0', title: 'DAC checks failed', message: String(e && e.message || e), refs: [] }];
+    }
+  }
+
   function rebuildDerived() {
-    state.graph = A.buildCallGraph(state.programs);
-    state.xref = A.buildGlobalXref(state.programs);
+    var active = activePrograms();
+    state.graph = A.buildCallGraph(active);
+    state.xref = A.buildGlobalXref(active);
     state.extern = buildExtern();
-    state.findings = L.lint(state.programs, state.graph, state.xref, state.extern, { passThroughCalls: state.flowIgnore });
+    state.findings = L.lint(active, state.graph, state.xref, state.extern, lintOpts());
+    runDacChecks();
     // lines the controller's translator will refuse — the same grammar the
     // editor underlines, so Save + send can warn before the upload
     if (TPS) Object.keys(state.programs).forEach(function (name) {
@@ -6513,14 +6558,30 @@
       render();
     });
 
+    var dac = state.checksMode === 'dac';
+    var modeBtn = function (mode, label, title) {
+      return h('button', {
+        class: 'checks-mode' + (state.checksMode === mode ? ' active' : ''), text: label, title: title,
+        onclick: function () { state.checksMode = mode; render(); }
+      });
+    };
+    var modes = h('span', { class: 'checks-modes' }, [
+      modeBtn('lint', 'Program checks', 'Syntax, labels, calls, handshakes — what the controller or a reader trips over'),
+      modeBtn('dac', 'DAC checks' + (state.dacFindings.length ? ' (' + state.dacFindings.filter(function (f) { return f.severity !== 'info'; }).length + ')' : ''),
+        'DAC Robotics template rules from dac-standard.json: override, recovery, flags, standard programs, hygiene')
+    ]);
+
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
-      h('span', { class: 'title', text: 'Program checks' }),
+      h('span', { class: 'title', text: dac ? 'DAC checks' : 'Program checks' }),
+      modes,
       picker,
       only ? h('span', {
         class: 'chip read', text: 'showing only ' + only + ' ' + '✕',
         title: 'Show every program again',
         onclick: function () { state.checksProg = null; render(); }
-      }) : h('span', { class: 'muted', text: 'grouped by check — collapse a group, or Hide it to mute that check everywhere' })
+      }) : dac
+        ? h('span', { class: 'muted', text: state.dacGeneration ? 'recognized as template Gen ' + state.dacGeneration + (state.dacStandard && state.dacStandard.generations && state.dacStandard.generations.current ? ' (current: Gen ' + state.dacStandard.generations.current + ')' : '') : '' })
+        : h('span', { class: 'muted', text: 'grouped by check — collapse a group, or Hide it to mute that check everywhere' })
     ]));
 
     if (!Object.keys(state.programs).length) {
@@ -6528,7 +6589,30 @@
       return;
     }
 
-    var visible = visibleFindings();
+    if (dac && !state.dacStandard) {
+      pane.appendChild(h('p', { class: 'muted', text: state.dacStandardError
+        ? 'dac-standard.json did not load (' + state.dacStandardError + '). Open the app through the bridge (Start FANUC Studio) — a file:// page cannot read it.'
+        : 'Loading dac-standard.json…' }));
+      return;
+    }
+
+    if (dac) {
+      // rule-prefix filter: O override, P recovery/positions, N flags, S standard programs, H hygiene
+      var prefixes = [['', 'All'], ['O', 'O override'], ['P', 'P recovery'], ['N', 'N flags'], ['S', 'S programs'], ['H', 'H hygiene']];
+      var bar = h('div', { class: 'checks-prefixes' });
+      prefixes.forEach(function (p) {
+        var n = state.dacFindings.filter(function (f) { return !p[0] || f.rule[0] === p[0]; }).length;
+        bar.appendChild(h('button', {
+          class: 'checks-mode' + (state.dacPrefix === p[0] ? ' active' : ''), text: p[1] + ' (' + n + ')',
+          onclick: function () { state.dacPrefix = p[0]; render(); }
+        }));
+      });
+      pane.appendChild(bar);
+    }
+
+    var visible = dac
+      ? state.dacFindings.filter(function (f) { return (!state.dacPrefix || f.rule[0] === state.dacPrefix) && !state.hiddenRules[f.rule]; })
+      : visibleFindings();
     if (only) {
       visible = visible.filter(function (f) {
         return f.refs.some(function (r) { return r.prog === only; });
@@ -6537,7 +6621,8 @@
     var counts = { error: 0, warn: 0, info: 0 };
     visible.forEach(function (f) { counts[f.severity]++; });
     var cards = h('div', { class: 'cards' });
-    [['error', 'errors — will fault on the robot'], ['warn', 'warnings — review these'], ['info', 'notes']].forEach(function (c) {
+    (dac ? [['error', 'critical — template rule broken'], ['warn', 'warnings — review these'], ['info', 'notes']]
+      : [['error', 'errors — will fault on the robot'], ['warn', 'warnings — review these'], ['info', 'notes']]).forEach(function (c) {
       cards.appendChild(h('div', { class: 'card sev-' + c[0] }, [
         h('div', { class: 'k', text: counts[c[0]] }),
         h('div', { class: 'l', text: c[1] })
@@ -6552,7 +6637,7 @@
       hr.appendChild(document.createTextNode('Hidden checks: '));
       hidden.forEach(function (r) {
         hr.appendChild(h('span', {
-          class: 'chip read', text: (RULE_NAMES[r] || r) + ' ✕',
+          class: 'chip read', text: (RULE_NAMES[r] || (window.DacCheck && window.DacCheck.TITLES[r] ? r + ' · ' + window.DacCheck.TITLES[r] : r)) + ' ✕',
           title: 'Show this check again',
           onclick: function () { delete state.hiddenRules[r]; savePrefs(); render(); }
         }));
@@ -6564,6 +6649,7 @@
       pane.appendChild(h('p', {
         text: only ? 'Nothing flagged in ' + only + '.'
           : hidden.length ? 'Nothing to show — every remaining check is clean.'
+          : dac ? 'No DAC findings' + (state.dacPrefix ? ' under ' + state.dacPrefix : '') + ' — the library follows the template as dac-standard.json describes it.'
           : 'No issues found. Jumps all land on defined labels, every register and I/O point used has a label, and all called programs are present.'
       }));
       return;
@@ -6585,8 +6671,8 @@
       var box = h('div', { class: 'check-group' });
       var head = h('button', { class: 'cg-head' }, [
         h('span', { class: 'xi-caret', text: open ? '▾' : '▸' }),
-        h('span', { class: 'badge ' + (g.severity === 'error' ? 'warn' : g.severity === 'warn' ? 'mid' : 'ok'), text: SEV_LABEL[g.severity] }),
-        h('span', { class: 'cg-name', text: RULE_NAMES[g.rule] || g.rule }),
+        h('span', { class: 'badge ' + (g.severity === 'error' ? 'warn' : g.severity === 'warn' ? 'mid' : 'ok'), text: (dac && g.items[0].level) || SEV_LABEL[g.severity] }),
+        h('span', { class: 'cg-name', text: dac ? g.rule + ' · ' + (g.items[0].title || '') : (RULE_NAMES[g.rule] || g.rule) }),
         h('span', { class: 'muted', text: g.items.length + ' finding' + (g.items.length > 1 ? 's' : '') }),
         h('span', { style: 'flex:1' }),
         h('span', {
@@ -8740,7 +8826,26 @@
 
   /* ================= wiring ================= */
 
+  /* The DAC template standard is data (dac-standard.json beside index.html).
+   * Served by the bridge it loads over fetch; from file:// Chrome refuses the
+   * fetch and the DAC checks button explains instead. */
+  function loadDacStandard() {
+    if (!window.fetch) return;
+    fetch('dac-standard.json', { cache: 'no-cache' }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function (std) {
+      state.dacStandard = std;
+      state.dacStandardError = null;
+      if (Object.keys(state.programs).length) { rebuildDerived(); render(); }
+    }).catch(function (e) {
+      state.dacStandardError = String(e && e.message || e);
+      if (state.tab === 'checks') render();
+    });
+  }
+
   function init() {
+    loadDacStandard();
     document.getElementById('file-input').addEventListener('change', function (ev) {
       importFiles(ev.target.files);
       ev.target.value = '';

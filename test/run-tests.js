@@ -1052,6 +1052,8 @@ if (fs.existsSync(path.join(__dirname, '..', 'js', 'alarms', 'SRVO.js'))) {
   console.log('  --  js/alarms/ not installed; run `node tools/fetch-alarms.js` for lookup coverage');
 }
 
+require('./dac-tests.js').run(check);
+
 console.log('');
 if (failures) {
   console.error(failures + ' test(s) failed');

@@ -1,0 +1,182 @@
+{
+  "name": "DAC Robotics TP template",
+  "version": "2026-11-06",
+  "_about": "Read by js/daccheck.js. Every rule's behavior comes from here: edit this file, not the code. Program-name entries accept * as a wildcard (e.g. _RECOV_*). Labels are compared case-insensitively with punctuation and spacing ignored.",
+
+  "decisions": {
+    "_about": "The six open questions from the 2026-11-06 review, with the defaults chosen until Brian answers them.",
+    "q1_currentTemplate": "B26-001 Load / B72-004 CDI with the override program restored (an override write is required: O1/O2 fire on them)",
+    "q2_overrideStandard": "bglogic",
+    "q2_acceptCallInBothLoops": true,
+    "q3_initPosCallers": "_INIT and the end of _RECOVER, gated on At RefPos / At Home",
+    "q4_zoneFlags": "171-176 UT1 / 181-186 UT2; the old 181-185 block is reported as legacy Info",
+    "q5_undefinedLabels": "Critical in _RECOVER, _RECOV_*, __AUTO, __MANUAL, _SYS_CHECKS, _FIND_TASK, _CHK_TASK, _INIT*; Warning elsewhere",
+    "q6_versionHeaders": "info"
+  },
+
+  "generations": {
+    "default": 2,
+    "current": 3,
+    "detect": [
+      { "gen": 3, "anyProgram": ["_FIND_TASK", "_CHK_TASK", "_SET_SPD_VARS", "_INIT_SPEED_VARS", "_INIT_FLAGS", "_SET_RECOV_VARS"] },
+      { "gen": 1, "anyProgram": ["_MANUAL"], "noProgram": ["__MANUAL"] }
+    ]
+  },
+
+  "scratchPrograms": ["-BCKED*", "TEST", "TEST?*", "__TEST*", "TST_*", "_TST_*", "OLD_*", "STUFF*", "SIM_*"],
+  "bglogicPrograms": ["_BGLOGIC", "_BGL_*"],
+  "exitLabels": [999],
+
+  "requiredPrograms": [
+    { "name": "__MAIN" },
+    { "name": "__AUTO" },
+    { "name": "__MANUAL", "variants": ["_MANUAL"] },
+    { "name": "_INIT" },
+    { "name": "_INIT_ALM" },
+    { "name": "_INIT_POS" },
+    { "name": "_RECOVER" },
+    { "name": "_SYS_CHECKS" },
+    { "name": "_SAFE" },
+    { "name": "_ZERO" },
+    { "name": "_TOOL_MAINT", "variants": ["_TL_MAINT", "_REC_TMAINT"] },
+    { "name": "_BGLOGIC" }
+  ],
+  "optionalStandardPrograms": [
+    "_HOME", "_SET_SPD_VARS", "_INIT_EOAT", "_INIT_FLAGS", "_INIT_SPEED_VARS", "_SET_RECOV_VARS",
+    "_RECOV_REF_POS", "_RECOV_ZNCHK", "_RECOV_DCS", "_FIND_TASK", "_CHK_TASK", "_SAVE_RECIPE", "_TRANSIT"
+  ],
+  "rootPrograms": ["__MAIN", "_BGLOGIC", "_BGL_*"],
+
+  "override": {
+    "_about": "Where $MCR.$GENOVERRIDE / OVERRIDE= must be written. standard = bglogic (clamp every scan in a BGLogic program) or call (CALL the override program in both loops).",
+    "standard": "bglogic",
+    "acceptCallInBothLoops": true,
+    "programName": "_SPEED_OVR",
+    "programVariants": ["_SPEED_OVRD", "_SET_OVRD", "_SPEED_OVERRIDE"],
+    "registerLabels": ["OVERRIDE", "Speed Ovr", "Speed Ovr Value", "Speed Override", "Speed Ovrd", "HMI Speed", "Ovrd"],
+    "autoMainLoopLabel": 150,
+    "maxValue": 100
+  },
+
+  "initPos": {
+    "program": "_INIT_POS",
+    "callers": ["_INIT"],
+    "legacyCallers": ["_HOME"],
+    "recoverProgram": "_RECOVER",
+    "clearPrograms": ["_INIT_POS", "_INIT*", "_RECOV*"],
+    "gateFlags": [5],
+    "gateLabelPattern": "^At\\b|^In\\b"
+  },
+
+  "recoverTail": {
+    "_about": "Expected end of _RECOVER: LBL[990] -> (manual task 10 only) move to the transit/origin PR or CALL _HOME, optional WAIT At Home -> LBL[995] CALL _INIT_POS.",
+    "startLabels": [990, 995],
+    "homePrograms": ["_HOME"],
+    "homePosRegLabelPattern": "trans|origin|home",
+    "waitAtHome": false
+  },
+
+  "atOutputPattern": "^At\\b",
+
+  "undefinedLabels": {
+    "critical": ["_RECOVER", "_RECOV_*", "__AUTO", "__MANUAL", "_MANUAL", "_SYS_CHECKS", "_FIND_TASK", "_CHK_TASK", "_INIT*"],
+    "elsewhere": "warn",
+    "errorLabels": [404, 700]
+  },
+
+  "flags": {
+    "1":   { "meaning": "Part on Gripper", "labels": ["Part on Gripper", "Part in Grip", "Part on Grip", "Part On EOAT", "Part On Tool", "Part On TL", "Shaft Grip Pres", "Shaft Grip Pres Only", "Glue"] },
+    "5":   { "meaning": "At RefPos", "labels": ["At RefPos", "At Ref Pos"], "generations": [3] },
+    "8":   { "meaning": "Task Rdy", "labels": ["Task Rdy", "Task Ready"], "generations": [3] },
+    "9":   { "meaning": "Sim", "labels": ["Sim", "Simulation", "Simulation Mode"] },
+    "10":  { "meaning": "Execute Task", "labels": ["Execute Task"], "generations": [3] },
+    "13":  { "meaning": "Dry Run", "labels": ["Dry Run"], "generations": [2] },
+    "79":  { "meaning": "Recov Fail", "labels": ["Recov Fail", "Recov-Fail", "Recov Err", "Recover Error"] },
+    "101": { "meaning": "Sys Checks", "labels": ["Sys Checks", "Sys Check", "Sys Chks", "SysChks"] },
+    "104": { "meaning": "Sys Chks Ran", "labels": ["Sys Chks Ran", "SysChks Ran", "SysChks-Ran", "Sys Check-RTE Ran", "SysChk-RTE Ran", "Sys Checks Ran"] }
+  },
+
+  "handSet": {
+    "_about": "Flags and registers that are set by hand or by the HMI only; never-written findings skip them.",
+    "flags": [9, 12, 13],
+    "flagLabels": ["Sim", "Simulation", "Simulation Mode", "Dry Run", "Vis Debug", "Scan Pause"],
+    "registerLabels": ["OVERRIDE", "Speed Ovr", "Ovrd", "HMI", "Recipe", "Offs", "Offset", "Option", "Enbl", "Enable", "Select", "Sel", "Dia", "Qty", "Count", "Cnt", "Len", "Depth", "Spd", "Speed"],
+    "registers": []
+  },
+
+  "taskFlags": {
+    "_about": "Gen 3 per-station task flags: a decade per station, label = <Station> + one of these suffixes.",
+    "range": [15, 79],
+    "generations": [3],
+    "suffixes": ["PKPL Set", "Pk Set", "PL Set", "Set", "Pk Rdy", "PL Rdy", "Pre PL Rdy", "Chk Rdy", "Rdy", "AltGrip", "Reject", "Error", "Offs Set"]
+  },
+
+  "zoneFlags": {
+    "blocks": [
+      { "range": [171, 178], "tool": "UT1" },
+      { "range": [181, 188], "tool": "UT2" }
+    ],
+    "legacy": { "range": [181, 186], "generations": [1, 2] },
+    "labelPattern": "zn|zone|^at\\b|^in\\b|near|box|^grp\\d|^ut\\d|spare",
+    "scratch": [189, 197]
+  },
+
+  "manual": {
+    "program": "__MANUAL",
+    "tasks": { "10": "_RECOVER", "20": "_TOOL_MAINT", "30": "_SAFE", "40": "_ZERO" },
+    "autoModeExitCalls": ["_RECOVER"],
+    "legacyAutoModeExitCalls": ["_HOME"]
+  },
+
+  "auto": {
+    "program": "__AUTO",
+    "waitStartLabel": 100,
+    "startLabel": 101,
+    "mainLoopLabel": 150,
+    "cycleCompleteLabel": 800,
+    "exitLabel": 999,
+    "sysChecksFlag": 101,
+    "sysChecksProgram": "_SYS_CHECKS",
+    "initProgram": "_INIT",
+    "recoverProgram": "_RECOVER"
+  },
+
+  "fixedIO": {
+    "DI": {
+      "1": { "meaning": "Auto Mode", "labels": ["Auto Mode"] },
+      "2": { "meaning": "Start", "labels": ["Start"] },
+      "3": { "meaning": "Pause", "labels": ["Pause"] },
+      "4": { "meaning": "Request To Enter", "labels": ["Request To Enter", "RTE"] },
+      "5": { "meaning": "Run Task", "labels": ["Run Task"] },
+      "6": { "meaning": "End Of Run", "labels": ["End Of Run", "EOR"] }
+    },
+    "DO": {
+      "1": { "meaning": "Auto Mode Echo", "labels": ["Auto Mode Echo"] },
+      "2": { "meaning": "Robot Running", "labels": ["Robot Running", "Running"] },
+      "3": { "meaning": "Robot Paused", "labels": ["Robot Paused", "Paused", "Robot Pause"] },
+      "4": { "meaning": "Pwr Cycled", "labels": ["Pwr Cycled", "Power Cycled"], "optional": true },
+      "5": { "meaning": "Task Complete", "labels": ["Task Complete", "Task Done"] },
+      "6": { "meaning": "EOR Complete", "labels": ["EOR Complete", "EoR Complete", "EOR Done", "End Of Run Complete", "End Of Run Comp", "End Of Run Done", "EndRun Dn", "EoR Ack"] },
+      "7": { "meaning": "Cycle Reset", "labels": ["Cycle Reset"], "optional": true },
+      "33": { "meaning": "At Home", "labels": ["At Home"] },
+      "34": { "meaning": "At Tool Maint", "labels": ["At Tool Maint", "At TL Maint"] },
+      "35": { "meaning": "At Safe", "labels": ["At Safe"] },
+      "36": { "meaning": "At Zero", "labels": ["At Zero"] },
+      "37": { "meaning": "At Transit", "labels": ["At Transit", "Transit"] },
+      "60": { "meaning": "Robot Jogged", "labels": ["Robot Jogged"] },
+      "61": { "meaning": "IO Simulated", "labels": ["IO Simulated", "Input Simulated", "Output Simulated", "Signal Simulated", "Simulated"], "optional": true },
+      "62": { "meaning": "Recover Error", "labels": ["Recover Error", "Recover Err"] },
+      "63": { "meaning": "BGLogic Off", "labels": ["BGLogic Off", "BG Logic Off"] },
+      "64": { "meaning": "TP Prompt", "labels": ["TP Prompt"] },
+      "111": { "meaning": "Robot Moving", "labels": ["Robot Moving"] },
+      "112": { "meaning": "Power Cycled", "labels": ["Power Cycled", "Pwr Cycled"] },
+      "113": { "meaning": "Start", "labels": ["Start", "TP-Start", "Start Robot"] }
+    }
+  },
+
+  "versionHeader": {
+    "pattern": "Ver:\\s*([A-Z]-\\d+)\\s*,\\s*([0-9-]+)",
+    "expected": null,
+    "severity": "info"
+  }
+}
