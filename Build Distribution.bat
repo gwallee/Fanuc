@@ -23,7 +23,7 @@ echo.
 set "BUILD_RESULT=%ERRORLEVEL%"
 echo.
 if "%BUILD_RESULT%"=="0" (
-  echo Distribution ready: dist\FanucStudio-portable-win-x64.zip
+  echo Distribution ready in the dist folder.
 ) else (
   echo The distribution could not be built. See the error above.
 )

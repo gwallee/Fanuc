@@ -65,9 +65,14 @@ From a terminal, including on Linux/macOS:
 ```
 node tools/build-release.js
 node tools/build-release.js --offline
+node tools/build-release.js --folder
 ```
 
-`--offline` requires the cached runtime ZIP. Windows uses its built-in PowerShell
+`--offline` requires the cached runtime ZIP. `--folder` writes the ready-to-run
+`dist/FanucStudio` folder instead of a ZIP (for copying straight to a PC or USB
+stick); a previous folder is replaced unless it holds saved robots, settings or
+backups, which the tool refuses to touch. `Build Distribution.bat --folder` does
+the same from the double-click wrapper. Windows uses its built-in PowerShell
 and curl; Linux/macOS need curl, unzip and zip. Build failures leave the previous
 distribution intact. The tool packages this source folder without changing its
 build number; `js/version.js` identifies the packaged app build.

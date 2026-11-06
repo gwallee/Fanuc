@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /* Build a portable Windows x64 distribution, with no npm dependencies.
  * Windows: double-click "Build Distribution.bat".
- * Any platform: node tools/build-release.js [--offline]
+ * Any platform: node tools/build-release.js [--offline] [--folder]
+ * --folder leaves the unzipped dist/FanucStudio folder instead of a ZIP.
  * Windows uses built-in PowerShell; Linux/macOS use curl, unzip and zip.
  */
 'use strict';
@@ -20,6 +21,9 @@ const NODE_URL = `https://nodejs.org/dist/${NODE_VERSION}/${NODE_ZIP}`;
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
 const OUT = path.join(DIST, 'FanucStudio-portable-win-x64.zip');
+const FOLDER_OUT = path.join(DIST, 'FanucStudio');
+// Files a running copy creates; their presence means someone uses that folder.
+const USER_DATA = ['robots.json', 'settings.json', 'backups'];
 const ZIP_HELPER = path.join(__dirname, 'release-zip.ps1');
 const APP_FILES = [
   'index.html', 'server.js', 'README.md', 'WISHLIST.md', 'Start FANUC Studio.bat',
@@ -101,13 +105,14 @@ function addRuntime(archive, stage) {
 async function main() {
   const args = process.argv.slice(2);
   if (args.includes('--help') || args.includes('-h')) {
-    console.log('Usage: node tools/build-release.js [--offline]');
+    console.log('Usage: node tools/build-release.js [--offline] [--folder]');
     console.log('Builds dist/FanucStudio-portable-win-x64.zip with a bundled Node runtime.');
     console.log('--offline requires the verified runtime ZIP already cached in dist/.');
+    console.log('--folder writes the ready-to-run dist/FanucStudio folder instead of a ZIP.');
     return;
   }
   for (const arg of args) {
-    if (arg !== '--offline') throw new Error('Unknown option: ' + arg + ' (use --help)');
+    if (arg !== '--offline' && arg !== '--folder') throw new Error('Unknown option: ' + arg + ' (use --help)');
   }
   // Check inputs before downloading or changing any output.
   for (const name of APP_FILES) {
@@ -117,6 +122,13 @@ async function main() {
   const match = versionSource.match(/FANUC_STUDIO_BUILD\s*=\s*['"]([^'"]+)['"]/);
   if (!match) throw new Error('Cannot read the app build from js/version.js');
   const build = match[1];
+  const asFolder = args.includes('--folder');
+  if (asFolder && fs.existsSync(FOLDER_OUT)) {
+    const used = USER_DATA.filter((name) => fs.existsSync(path.join(FOLDER_OUT, name)));
+    if (used.length) {
+      throw new Error(FOLDER_OUT + ' holds ' + used.join(', ') + ' from a running copy.\nMove or delete that folder yourself, then build again.');
+    }
+  }
   fs.mkdirSync(DIST, { recursive: true });
   // Work only in a unique disposable folder. A failed build keeps the last ZIP,
   // and never deletes an extracted app that someone may have started using.
@@ -170,6 +182,14 @@ async function main() {
       'See README.md for more features and instructions.',
       ''
     ].join('\r\n'));
+    if (asFolder) {
+      // Only an untouched previous build is replaced (checked above).
+      fs.rmSync(FOLDER_OUT, { recursive: true, force: true });
+      fs.renameSync(stage, FOLDER_OUT);
+      console.log('\nBuilt ' + FOLDER_OUT);
+      console.log('Copy this folder anywhere, then double-click "Start FANUC Studio.bat".');
+      return;
+    }
     const zip = path.join(scratch, path.basename(OUT));
     if (process.platform === 'win32') {
       powershell('CreateDistribution', stage, zip);
