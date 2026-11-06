@@ -118,7 +118,13 @@
     /^TIME BEFORE .+$/, /^TIME AFTER .+$/, /^DISTANCE BEFORE .+$/, /^Track .+$/
   ];
   var MOTION_HEAD = new RegExp('^([JLCAS])\\s+(' + POS + ')(\\s*)(.*)$');
-  var SECOND_POS = new RegExp('^' + POS + '\\s+');
+  /* C and A moves name a via point, then the end point. The via point can
+   * carry its own offset options before the end point appears:
+   *   C P[1] Offset,PR[50] P[2] 30mm/sec CNT100 Offset,PR[50]
+   * so the end point is the first position that starts a token, not the
+   * token right after the via point. "Offset,PR[50]" has a comma before its
+   * PR, so it never passes for the end point. */
+  var SECOND_POS = new RegExp('^(.*?)(?:^|\\s)(' + POS + ')\\s+(.*)$');
   var OPTION_START = /\s+(?=(?:ACC|Offset|Tool_Offset|Wjnt|RTCP|BREAK|PTH|INC|COORD|MROT|CTV|PSPD|VOFFSET|AP_LD|RT_LD|EV|Ind\.EV|T[BA]\s|DB\s|Skip,|TIME\s|DISTANCE\s|Track\s))/;
 
   // split on blanks that are outside every [ ] and ( ), so a comment with a
@@ -144,8 +150,13 @@
     if (!m) return null;
     var kind = m[1], rest = m[4];
     if (!m[3] && rest) return { error: 'a space is needed between the position and the speed: ' + kind + ' ' + m[2] + ' ' + rest };
-    // C and A motions name a second point before the speed
-    if ((kind === 'C' || kind === 'A') && SECOND_POS.test(rest)) rest = rest.replace(SECOND_POS, '');
+    // C and A motions name a second point before the speed, with the via
+    // point's own options (Offset, Offset,PR[n], Tool_Offset…) in between
+    var via = [];
+    if (kind === 'C' || kind === 'A') {
+      var sp = rest.match(SECOND_POS);
+      if (sp) { via = sp[1].trim() ? sp[1].trim().split(OPTION_START) : []; rest = sp[3]; }
+    }
     var toks = splitTop(rest);
     var speed = toks.shift() || '', term = toks.shift() || '';
     if (/^CNT$/.test(term) && toks.length && /^R\[/.test(toks[0])) term += ' ' + toks.shift();
@@ -163,7 +174,7 @@
       if (/^CNT$/i.test(term)) return { error: 'CNT takes a value with no space: CNT50 or CNT R[1]' };
       return { error: '"' + term + '" is not a termination — FINE, CNT0…CNT100 or CR' };
     }
-    var unknown = parts.map(function (s) { return s.trim(); }).filter(function (o) {
+    var unknown = via.concat(parts).map(function (s) { return s.trim(); }).filter(function (o) {
       return o && !MOTION_OPTION.some(function (re) { return re.test(o); });
     });
     if (unknown.length) return { unknown: 'motion option "' + unknown[0] + '" is not one the dictionary or the grammar knows' };

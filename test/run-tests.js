@@ -879,6 +879,10 @@ check(err('WAIT 0.5sec') && ok('WAIT    .10(sec)') && ok('WAIT (DI[17:Conv Pk Rd
 check(err('CALL _TRANSIT(-90)') && ok('CALL _TRANSIT((-90))'), 'a negative call argument needs its own parentheses');
 check(err('SELECT R[1]=1,R[2]=0') && ok('SELECT R[1]=1,JMP LBL[1]') && ok('=20,JMP LBL[921]') && ok('ELSE,CALL _RECOVER'), 'SELECT rows take JMP or CALL only');
 check(unk('L P[1] 500mm/sec FINE Wobble'), 'an unknown motion option is "unknown", not an error');
+check(ok('C P[124] Offset,PR[50:OFFSET] P[125] 30mm/sec CNT100 PTH Offset,PR[50:OFFSET]') &&
+      ok('A P[1] Tool_Offset P[2] 30mm/sec FINE') && ok('C P[1] P[2] 30mm/sec CNT100') &&
+      unk('C P[1] Wobble P[2] 30mm/sec CNT100') && err('C P[1] Offset P[2] CNT100'),
+  'a C/A via point may carry its own Offset options before the end point');
 check(S.check('R[1]=R[2] XOR R[3]', SH).nearest.length > 0, 'an unknown form offers nearest known shapes');
 // family matching: scalar types are interchangeable, repeats collapse to two
 check(S.family('F[n]=((GI[n]>N OR GI[n]<N) AND (GI[n]>N OR GI[n]<N) AND (GI[n]>N OR GI[n]<N))') ===
