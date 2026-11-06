@@ -77,10 +77,11 @@ function run(check) {
   const good = lib(base);
   const fg = DC.check(good.programs, good.graph, good.xref, null, std);
   const ids = (f) => f.map((x) => x.rule).sort().join(' ');
-  check(fg.generation === 2 && !rules(fg, 'O1').length && !rules(fg, 'O2').length && !rules(fg, 'P1').length && !rules(fg, 'S1').length && !rules(fg, 'S3').length && !rules(fg, 'S4').length && !rules(fg, 'P4').length,
-    'a template-shaped library passes O1/O2/P1/S1/S3/S4/P4 (' + ids(fg) + ')');
+  check(fg.generation === 2 && !rules(fg, 'O1').length && !rules(fg, 'O2').length && !rules(fg, 'P1').length && !rules(fg, 'S1').length && !rules(fg, 'S3').length && !rules(fg, 'S4').length,
+    'a template-shaped library passes O1/O2/P1/S1/S3/S4 (' + ids(fg) + ')');
+  check(!fg.some((f) => ['P4', 'H1', 'N2', 'N4'].indexOf(f.rule) !== -1), 'undefined labels, unlabeled flags and stale labels are left to the Program checks (no P4/H1/N2/N4)');
   check(rules(fg, 'O3').length === 1 && rules(fg, 'O3')[0].severity === 'info', 'CALL in both loops is accepted with an Info under the BGLogic standard');
-  check(rules(fg, 'H2').length === 1 && /-BCKED8-/.test(rules(fg, 'H2')[0].message) && !rules(fg, 'H1').length && !fg.some((f) => f.refs.some((r) => r.prog === '-BCKED8-' && f.rule !== 'H2')),
+  check(rules(fg, 'H2').length === 1 && /-BCKED8-/.test(rules(fg, 'H2')[0].message) && !fg.some((f) => f.refs.some((r) => r.prog === '-BCKED8-' && f.rule !== 'H2')),
     'a -BCKED program is listed under H2 and excluded from every other rule');
   check(rules(fg, 'P5').length === 0, '_RECOVER tail with PR[Trans-Origin] move and _INIT_POS passes P5');
 
@@ -134,22 +135,13 @@ function run(check) {
   const forInit = Object.assign({}, base); forInit._INIT_POS = 'IF !DO[33:At Home],JMP LBL[999]\nFOR R[99:*temp]=33 TO 48\nDO[R[99]]=OFF\nENDFOR\nLBL[999]';
   check(!rules(DC.check(lib(forInit).programs, null, null, null, std), 'P3').length, 'P3 credits a FOR-loop wipe that covers the output');
 
-  const badLbl = Object.assign({}, base);
-  badLbl._RECOVER = base._RECOVER.replace('CALL _SAFE', 'IF R[9]=1,JMP LBL[252]\nCALL _SAFE');
-  badLbl._GRIP_OPEN = 'RO[1:Grip Open]=ON\nWAIT RI[1:Grip Opened]=ON TIMEOUT,LBL[700]';
-  const f8 = DC.check(lib(badLbl).programs, null, null, null, std);
-  check(rules(f8, 'P4').length === 1 && rules(f8, 'P4')[0].severity === 'error' && rules(f8, 'H1').length === 1 && rules(f8, 'H1')[0].severity === 'warn',
-    'undefined label: P4 Critical in _RECOVER, H1 Warning in a task program');
-
   const flags = Object.assign({}, base);
   flags._FIND_TASK = 'F[8:Task Rdy]=(OFF)';   // marks the library as Gen 3, where F[5] must be At RefPos
   flags._PK_PART = base._PK_PART + '\nF[5:Recovering]=(ON)\nF[101:Sys Chks]=(ON)\nIF (F[66]),JMP LBL[404]\nIF (F[9:Sim]),JMP LBL[404]\nIF (F[171:Nest Full]),JMP LBL[404]\nF[172:Zn2-Lathe]=(ON)';
   const f9 = DC.check(lib(flags).programs, null, null, { io: [{ type: 'F', index: 66, comment: '' }, { type: 'F', index: 900, comment: 'DCS Zone 1' }] }, std);
   check(rules(f9, 'N1').length === 1 && /F\[5\]/.test(rules(f9, 'N1')[0].message), 'N1: F[5] relabeled "Recovering" (Gen 3 library)');
-  check(rules(f9, 'N2').length === 1 && /F\[66\]/.test(rules(f9, 'N2')[0].message), 'N2: F[66] used with no label anywhere');
   check(!rules(f9, 'N3').some((x) => /F\[9/.test(x.message)) && rules(f9, 'N3').some((x) => /F\[66\]/.test(x.message)) && rules(f9, 'N3').some((x) => /F\[172/.test(x.message)),
     'N3: hand-set F[9] Sim skipped, F[66] never written and F[172] never read reported');
-  check(rules(f9, 'N4').length === 1 && /F\[900:DCS Zone 1\]/.test(rules(f9, 'N4')[0].message), 'N4: controller label F[900] with no program use');
   check(rules(f9, 'N6').length === 1 && /F\[171:Nest Full\]/.test(rules(f9, 'N6')[0].message), 'N6: a non-zone label inside the zone block');
 
   const missing = Object.assign({}, base); delete missing._ZERO; missing._TL_MAINT = base._TOOL_MAINT; delete missing._TOOL_MAINT;
@@ -171,29 +163,29 @@ function run(check) {
     return;
   }
   const EXPECT = [
-  ["637-520/Laser", 2, {"H1":4,"N2":1,"N6":2,"O3":2,"P1":1,"P2":1,"H2":1,"N3":2,"N4":1,"O5":1,"S3":1}],
-  ["637-520/Picking", 2, {"H1":4,"N2":2,"O3":1,"P1":1,"P2":1,"H2":1,"N3":2,"N4":1,"N6":1,"O5":1,"S3":1}],
-  ["827-008", 1, {"P1":1,"P4":1,"S1":4,"H1":3,"H4":17,"O3":1,"O4":3,"S3":3,"S4":1,"H2":1,"N3":2,"O5":1,"S5":1}],
-  ["827-012/Robot-1", 2, {"O2":1,"H1":7,"H4":2,"O3":2,"P1":1,"P3":1,"S2":1,"H2":1,"N4":1,"N6":1,"O5":1}],
-  ["827-012/Robot-2", 2, {"O2":1,"P1":2,"P4":1,"H4":1,"N2":1,"O3":2,"P2":1,"H2":1,"N4":1,"N6":1,"O5":1,"P5":1}],
-  ["827-012/Robot-3", 2, {"O2":1,"P1":2,"H1":2,"N1":1,"N2":1,"O3":2,"P3":1,"H2":1,"H4":3,"N3":3,"N4":1,"N6":1,"O5":1,"P5":1}],
-  ["827-039/bkup_rob1", 2, {"O2":1,"P1":1,"P4":1,"O3":2,"P2":1,"P3":1,"S2":1,"H2":1,"N3":10,"N4":1,"N6":1,"O5":1,"P5":1}],
-  ["827-039/bkup_rob2", 2, {"H1":1,"O3":1,"P1":1,"P2":1,"P3":1,"S2":1,"H2":1,"N3":2,"N6":1,"O5":1,"P5":1}],
-  ["827-039/bkup_rob3", 2, {"O2":1,"P1":2,"H1":1,"O3":2,"P2":1,"S2":1,"H2":1,"N4":1,"N6":1,"O5":1,"P5":1}],
-  ["827-039/bkup_rob4", 2, {"P1":1,"O3":1,"P2":1,"H2":1,"N4":1,"N6":1,"O5":1,"P5":1}],
-  ["934-103/Cleaning", 3, {"O2":1,"P1":1,"P4":2,"S1":1,"H1":4,"N2":3,"O3":2,"H2":1,"H3":1,"N3":8,"N4":1,"N5":1,"O5":1,"S5":1}],
-  ["934-103/GlueRobs/Rob1", 2, {"H1":1,"N1":2,"N2":13,"O3":1,"P1":1,"P2":1,"H2":1,"N3":10,"N4":1,"N6":1,"O5":1,"S3":1}],
-  ["934-103/GlueRobs/Rob2", 2, {"P1":1,"N2":6,"P2":1,"H2":1,"H3":1,"N3":6,"N4":1,"N6":1,"O3":1,"O4":1,"O5":1}],
-  ["934-103/GlueRobs/Rob3", 2, {"H1":1,"N1":2,"N2":8,"O3":1,"P1":1,"P2":1,"H2":1,"N3":5,"N4":1,"N6":1,"O5":1,"S3":1}],
-  ["934-103/GlueRobs/Rob4", 2, {"P1":1,"N2":5,"P2":1,"H2":1,"H3":1,"N3":6,"N4":1,"N6":1,"O3":1,"O4":1,"O5":1}],
-  ["934-103/GlueSide", 3, {"P4":1,"H1":7,"O3":1,"H2":1,"H3":1,"H4":3,"N3":14,"N4":1,"N5":1,"O5":1,"S5":1}],
-  ["934-103/MagnetizeSide", 3, {"H1":5,"O3":1,"P2":1,"S2":2,"H2":1,"H3":1,"H4":3,"N3":13,"N4":1,"N5":1,"O5":1,"S5":1}],
-  ["A73-007/LeakTest", 2, {"P1":1,"P4":1,"H1":2,"O3":2,"P2":1,"H2":1,"H3":1,"N3":1,"N4":1,"O5":1,"S3":1}],
-  ["A73-007/Tending", 3, {"H1":6,"N1":2,"H2":1,"H3":1,"N3":9,"N4":1,"N5":1,"O4":1}],
-  ["B26-001 Funnel/2025-06-05_2-Leaving", 3, {"O1":1,"P4":2,"H1":12,"H2":1,"H3":1,"N3":12,"N4":1,"N5":1,"O4":1}],
-  ["B26-001 Load", 3, {"O1":1,"P4":2,"H1":6,"P2":1,"S2":1,"H2":1,"H3":1,"N3":7,"N4":1,"N5":1}],
-  ["B26-001 Unload", 2, {"O3":1,"H2":1,"H3":1,"N3":8,"N4":1,"P5":1}],
-  ["B72-004 CDI", 3, {"O1":1,"P4":7,"H1":22,"H2":1,"H3":1,"N3":15,"N4":1,"N5":1}],
+  ["637-520/Laser", 2, {"N6":2,"O3":2,"P1":1,"P2":1,"H2":1,"N3":2,"O5":1,"S3":1}],
+  ["637-520/Picking", 2, {"O3":1,"P1":1,"P2":1,"H2":1,"N3":2,"N6":1,"O5":1,"S3":1}],
+  ["827-008", 1, {"P1":1,"S1":4,"H4":17,"O3":1,"O4":3,"S3":3,"S4":1,"H2":1,"N3":2,"O5":1,"S5":1}],
+  ["827-012/Robot-1", 2, {"O2":1,"H4":2,"O3":2,"P1":1,"P3":1,"S2":1,"H2":1,"N6":1,"O5":1}],
+  ["827-012/Robot-2", 2, {"O2":1,"P1":2,"H4":1,"O3":2,"P2":1,"H2":1,"N6":1,"O5":1,"P5":1}],
+  ["827-012/Robot-3", 2, {"O2":1,"P1":2,"N1":1,"O3":2,"P3":1,"H2":1,"H4":3,"N3":3,"N6":1,"O5":1,"P5":1}],
+  ["827-039/bkup_rob1", 2, {"O2":1,"P1":1,"O3":2,"P2":1,"P3":1,"S2":1,"H2":1,"N3":10,"N6":1,"O5":1,"P5":1}],
+  ["827-039/bkup_rob2", 2, {"O3":1,"P1":1,"P2":1,"P3":1,"S2":1,"H2":1,"N3":2,"N6":1,"O5":1,"P5":1}],
+  ["827-039/bkup_rob3", 2, {"O2":1,"P1":2,"O3":2,"P2":1,"S2":1,"H2":1,"N6":1,"O5":1,"P5":1}],
+  ["827-039/bkup_rob4", 2, {"P1":1,"O3":1,"P2":1,"H2":1,"N6":1,"O5":1,"P5":1}],
+  ["934-103/Cleaning", 3, {"O2":1,"P1":1,"S1":1,"O3":2,"H2":1,"H3":1,"N3":8,"N5":1,"O5":1,"S5":1}],
+  ["934-103/GlueRobs/Rob1", 2, {"N1":2,"O3":1,"P1":1,"P2":1,"H2":1,"N3":10,"N6":1,"O5":1,"S3":1}],
+  ["934-103/GlueRobs/Rob2", 2, {"P1":1,"P2":1,"H2":1,"H3":1,"N3":6,"N6":1,"O3":1,"O4":1,"O5":1}],
+  ["934-103/GlueRobs/Rob3", 2, {"N1":2,"O3":1,"P1":1,"P2":1,"H2":1,"N3":5,"N6":1,"O5":1,"S3":1}],
+  ["934-103/GlueRobs/Rob4", 2, {"P1":1,"P2":1,"H2":1,"H3":1,"N3":6,"N6":1,"O3":1,"O4":1,"O5":1}],
+  ["934-103/GlueSide", 3, {"O3":1,"H2":1,"H3":1,"H4":3,"N3":14,"N5":1,"O5":1,"S5":1}],
+  ["934-103/MagnetizeSide", 3, {"O3":1,"P2":1,"S2":2,"H2":1,"H3":1,"H4":3,"N3":13,"N5":1,"O5":1,"S5":1}],
+  ["A73-007/LeakTest", 2, {"P1":1,"O3":2,"P2":1,"H2":1,"H3":1,"N3":1,"O5":1,"S3":1}],
+  ["A73-007/Tending", 3, {"N1":2,"H2":1,"H3":1,"N3":9,"N5":1,"O4":1}],
+  ["B26-001 Funnel/2025-06-05_2-Leaving", 3, {"O1":1,"H2":1,"H3":1,"N3":12,"N5":1,"O4":1}],
+  ["B26-001 Load", 3, {"O1":1,"P2":1,"S2":1,"H2":1,"H3":1,"N3":7,"N5":1}],
+  ["B26-001 Unload", 2, {"O3":1,"H2":1,"H3":1,"N3":8,"P5":1}],
+  ["B72-004 CDI", 3, {"O1":1,"H2":1,"H3":1,"N3":15,"N5":1}],
   ];
   const dirs = DC.controllerDirs(BACKUPS);
   check(dirs.length === EXPECT.length, EXPECT.length + ' controller folders found (' + dirs.length + ')');
@@ -212,14 +204,14 @@ function run(check) {
     check(f.generation === gen && !diff.length, id + ': Gen ' + gen + ', ' + f.length + ' findings' + (diff.length ? ' — changed: ' + diff.join(', ') : '') + (f.generation !== gen ? ' — generation now ' + f.generation : ''));
   });
   // headline findings from the review
-  const cdi = results['B72-004 CDI'] || [], load = results['B26-001 Load'] || [], clean = results['934-103/Cleaning'] || [];
-  const rob1 = results['827-039/bkup_rob1'] || [], rob2 = results['827-039/bkup_rob2'] || [];
-  check(rules(cdi, 'O1').length === 1 && rules(load, 'O1').length === 1, 'Load and CDI → O1 (no override write)');
-  check(rules(clean, 'O2').length === 1 && rules(rob1, 'O2').length === 1, 'Cleaning and 827-039 rob1 → O2 (override program never called)');
-  check(rules(clean, 'P1').length === 1 && /missing/.test(rules(clean, 'P1')[0].message), 'Cleaning → P1 (_INIT_POS missing)');
-  check(rules(rob1, 'P4').some((x) => /_RECOVER jumps to LBL\[252\]/.test(x.message)), '827-039 rob1 → P4 (_RECOVER LBL[252])');
-  check(!rules(rob2, 'N3').some((x) => /F\[18[1-5]/.test(x.message)), '827-039 rob2 zone flags 181–185 are no longer "never written" (A_ZONE_CHECK F[R[200]] credited)');
-  check(rules(cdi, 'P4').length === 7 && rules(cdi, 'H1').length === 22, 'CDI undefined labels: 7 Critical in standard programs, 22 Warning elsewhere');
+  const r = (id) => results[id] || [];
+  check(rules(r('B72-004 CDI'), 'O1').length === 1 && rules(r('B26-001 Load'), 'O1').length === 1, 'Load and CDI → O1 (no override write)');
+  check(['934-103/Cleaning', '827-012/Robot-1', '827-012/Robot-2', '827-012/Robot-3', '827-039/bkup_rob1', '827-039/bkup_rob3'].every((id) => rules(r(id), 'O2').length === 1),
+    'Cleaning, 827-012 ×3, 827-039 rob1/rob3 → O2 (override program never called)');
+  check(['827-008', '934-103/Cleaning'].every((id) => rules(r(id), 'P1').some((x) => /missing/.test(x.message))), '827-008 and Cleaning → P1 (_INIT_POS missing)');
+  check(['827-012/Robot-2', '827-012/Robot-3', '827-039/bkup_rob3'].every((id) => rules(r(id), 'P1').some((x) => /_RECOVER never calls/.test(x.message))), '827-012 R2/R3 and 827-039 rob3 → P1 (not called from _RECOVER)');
+  check(!rules(r('827-039/bkup_rob2'), 'N3').some((x) => /F\[18[1-5]/.test(x.message)), '827-039 rob2 zone flags 181–185 are no longer "never written" (A_ZONE_CHECK F[R[200]] credited)');
+  check(!Object.keys(results).some((id) => results[id].some((f) => ['P4', 'H1', 'N2', 'N4'].indexOf(f.rule) !== -1)), 'no backup reports a dropped rule');
 }
 
 module.exports = { run };

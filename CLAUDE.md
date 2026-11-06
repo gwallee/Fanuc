@@ -40,7 +40,7 @@ TP; keep UI text terse, prefer code over prose, colors over bold.
   `js/alarms.js` + generated `js/alarms/<FACILITY>.js` (offline alarm text).
 - `js/daccheck.js` + `dac-standard.json` — DAC Robotics template checks (Checks tab →
   "DAC checks" button; CLI `node js/daccheck.js <backup folder> [-v|--json|--table]`).
-  Rules O/P/N/S/H from the 2026-11-06 robot program review; every number,
+  Rules O1-O5, P1-P3, P5, N1, N3, N5, N6, S1-S5, H2-H4 from the 2026-11-06 robot program review (label, call and unlabeled-I/O checks stay with the Program checks, never duplicated); every number,
   name and spelling comes from the JSON (edit it, not the code; `decisions`
   holds the six open questions). Scratch programs (`-BCKED*`, `TEST`, `TST_*`…)
   are kept out of the graph/xref/lint and listed under H2. Regression:

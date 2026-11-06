@@ -28,15 +28,16 @@
     O1: 'No speed override write', O2: 'Override program never called', O3: 'Override not set in both loops',
     O4: 'Override forced without restore on every exit', O5: 'Override zero-guard / register label',
     P1: '_INIT_POS missing or not called', P2: '_INIT_POS clears positions without a known-position gate',
-    P3: '"At …" output neither BGLogic-owned nor cleared', P4: 'Undefined label in a standard program',
-    P5: '_RECOVER tail shape',
-    N1: 'Fixed flag label', N2: 'Flag used without a label', N3: 'Dead flag', N4: 'Stale flag label on the controller',
-    N5: 'Task-flag suffix', N6: 'Zone-flag block',
+    P3: '"At …" output neither BGLogic-owned nor cleared', P5: '_RECOVER tail shape',
+    N1: 'Fixed flag label', N3: 'Dead flag', N5: 'Task-flag suffix', N6: 'Zone-flag block',
     S1: 'Required program missing', S2: 'Standard program never called', S3: '__MANUAL dispatch',
     S4: '__AUTO start shape', S5: 'Standard program name variant',
-    H1: 'Undefined error label', H2: 'Leftover test / backup-edit programs', H3: 'Version header',
-    H4: 'Fixed I/O label'
+    H2: 'Leftover test / backup-edit programs', H3: 'Version header', H4: 'Fixed I/O label'
   };
+  /* Not DAC rules (Brian, 2026-11-06): undefined / duplicate labels, calls to
+   * missing programs, unlabeled flags and stale controller labels are the
+   * existing Program checks (jump-to-missing-label, duplicate-label,
+   * call-missing-program, unlabeled-io, labeled-never-used-io). */
 
   /* ---------- helpers ---------- */
 
@@ -396,21 +397,6 @@
       ctx.add('Warning', 'P3', o.key + ' "' + o.label + '" is set by ' + fmtList(uniq(o.refs.map(function (r) { return r.prog; })), 4) + ' but is neither computed in BGLogic nor cleared in ' + fmtList(clearProgs) + ' — after a recovery it can stay on.', o.refs);
     });
 
-    // P4 / H1 — undefined labels
-    var ul = std.undefinedLabels || {};
-    Object.keys(ctx.programs).sort().forEach(function (p) {
-      var a = ctx.programs[p].analysis;
-      var critical = matchesAny(p, ul.critical);
-      Object.keys(a.labels).forEach(function (n) {
-        var lb = a.labels[n];
-        if (lb.defLine !== null || !lb.jumps.length) return;
-        var isErr = (ul.errorLabels || []).indexOf(parseInt(n, 10)) !== -1;
-        var msg = p + ' jumps to LBL[' + n + '] which is never defined' + (isErr ? ' (the template\'s error label — the error path faults with INTP-267 the first time it is needed)' : ' — INTP-267 at runtime') + '.';
-        if (critical) ctx.add('Critical', 'P4', msg, lb.jumps.map(function (l) { return { prog: p, line: l }; }));
-        else ctx.add(ul.elsewhere === 'info' ? 'Info' : 'Warning', 'H1', msg, lb.jumps.map(function (l) { return { prog: p, line: l }; }));
-      });
-    });
-
     // P5 — _RECOVER tail shape
     var rt = std.recoverTail || {};
     if (ctx.programs[rec] && initPos) {
@@ -459,13 +445,6 @@
         bad.filter(function (l) { return l.prog; }).map(function (l) { return { prog: l.prog, line: l.line }; }).slice(0, 12));
     });
 
-    // N2 — used without a label
-    flagsUsed.forEach(function (n) {
-      if (ctx.flagLabel(n)) return;
-      var e = xref.io['F[' + n + ']'];
-      ctx.add('Warning', 'N2', 'F[' + n + '] is used in logic but has no label in code' + (ctx.hasExternFlags ? ' or on the controller' : '') + '.', e.refs.map(function (r) { return { prog: r.prog, line: r.line }; }));
-    });
-
     // N3 — dead flags after crediting indirect writes and the hand-set list
     var hs = std.handSet || {};
     var indF = ctx.indirect.F;
@@ -490,15 +469,6 @@
       ctx.add('Info', 'N3', fmtF(n) + ' is written but never read.', e.refs.map(function (r) { return { prog: r.prog, line: r.line }; }));
     });
     if (indF && indF.all) ctx.add('Info', 'N3', 'An indirect flag write F[R[n]] could not be resolved (' + fmtList(uniq(indF.refs.map(function (r) { return r.prog + ':' + r.line; }))) + '), so every flag counts as possibly written.', indF.refs.map(function (r) { return { prog: r.prog, line: r.line }; }));
-
-    // N4 — labeled on the controller, unused
-    if (ctx.hasExternFlags) {
-      var stale = Object.keys(ctx.ctrl.F).map(Number).filter(function (n) {
-        var c = ctx.ctrl.F[n];
-        return !xref.io['F[' + n + ']'] && !/^[\*\-=_]/.test(c.trim());
-      }).sort(function (a, b) { return a - b; });
-      if (stale.length) ctx.add('Info', 'N4', stale.length + ' flag label' + (stale.length > 1 ? 's' : '') + ' on the controller ' + (stale.length > 1 ? 'have' : 'has') + ' no program use: ' + fmtList(stale.map(function (n) { return 'F[' + n + ':' + ctx.ctrl.F[n] + ']'; }), 20) + '.', []);
-    }
 
     // N5 — task-flag suffix vocabulary
     var tf = std.taskFlags || {};

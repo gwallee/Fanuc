@@ -10,7 +10,7 @@
     "q2_acceptCallInBothLoops": true,
     "q3_initPosCallers": "_INIT and the end of _RECOVER, gated on At RefPos / At Home",
     "q4_zoneFlags": "171-176 UT1 / 181-186 UT2; the old 181-185 block is reported as legacy Info",
-    "q5_undefinedLabels": "Critical in _RECOVER, _RECOV_*, __AUTO, __MANUAL, _SYS_CHECKS, _FIND_TASK, _CHK_TASK, _INIT*; Warning elsewhere",
+    "q5_undefinedLabels": "not a DAC rule - the existing jump-to-missing-label check covers it",
     "q6_versionHeaders": "info"
   },
 
@@ -77,12 +77,6 @@
   },
 
   "atOutputPattern": "^At\\b",
-
-  "undefinedLabels": {
-    "critical": ["_RECOVER", "_RECOV_*", "__AUTO", "__MANUAL", "_MANUAL", "_SYS_CHECKS", "_FIND_TASK", "_CHK_TASK", "_INIT*"],
-    "elsewhere": "warn",
-    "errorLabels": [404, 700]
-  },
 
   "flags": {
     "1":   { "meaning": "Part on Gripper", "labels": ["Part on Gripper", "Part in Grip", "Part on Grip", "Part On EOAT", "Part On Tool", "Part On TL", "Shaft Grip Pres", "Shaft Grip Pres Only", "Glue"] },
