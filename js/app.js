@@ -8092,9 +8092,9 @@
           return found ? found.value : '';
         }
         var grid = h('dl', { class: 'robot-info-grid' });
-        [['Robot model', data.model], ['Robot number', data.robotNumber],
-         ['Application', data.software], ['Software version', data.version || field('Software Edition No.')],
-         ['Software serial number', field('S/W Serial No.')], ['Controller ID', field('Controller ID')]]
+        [['Model', data.model], ['Robot no.', data.robotNumber],
+         ['Application', data.software], ['Software', data.version || field('Software Edition No.')],
+         ['S/W serial', field('S/W Serial No.')], ['Controller ID', field('Controller ID')]]
           .forEach(function (f) {
             grid.appendChild(h('div', {}, [h('dt', { text: f[0] }), h('dd', { text: f[1] || 'Not reported' })]));
           });
