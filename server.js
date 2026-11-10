@@ -28,8 +28,23 @@ const { unwrapMd } = require('./js/parser.js');
 const CS = require('./lib/comset.js');
 
 const ROOT = __dirname;
-const SNAPSHOT_DIR = path.join(ROOT, 'backups', 'pre-upload');
-const DELETE_SNAPSHOT_DIR = path.join(ROOT, 'backups', 'pre-delete');
+/* Started by the signed-release launcher (launcher/launcher.js, installed in
+ * %LOCALAPPDATA%\FanucStudio): ROOT is then a verified build folder, where
+ * one extra file makes the build unusable, so nothing may be written there.
+ * Backups and the upload/delete safety snapshots go to DATA_DIR instead —
+ * outside the install folder, so uninstalling or retiring never deletes a
+ * backup. An unmanaged copy (ZIP, git checkout) keeps everything as before. */
+const LAUNCHER = process.env.FANUCSTUDIO_LAUNCHER || '';
+const INSTALL_HOME = LAUNCHER ? path.dirname(path.resolve(LAUNCHER)) : '';
+const RELEASE = (() => { try { return LAUNCHER ? JSON.parse(process.env.FANUCSTUDIO_RELEASE || '{}') : null; } catch (e) { return null; } })();
+const UPDATE_SOURCE = LAUNCHER ? (process.env.FANUCSTUDIO_UPDATE_SOURCE || '') : '';
+const DATA_DIR = !LAUNCHER ? null : process.env.FANUCSTUDIO_DATA
+  ? path.resolve(process.env.FANUCSTUDIO_DATA) : path.join(os.homedir(), 'Documents', 'FanucStudio');
+const SNAPSHOT_DIR = path.join(DATA_DIR || path.join(ROOT, 'backups'), 'pre-upload');
+const DELETE_SNAPSHOT_DIR = path.join(DATA_DIR || path.join(ROOT, 'backups'), 'pre-delete');
+/* Set on the instance a launcher restart spawns: it waits for the old one to
+ * free the port instead of exiting with "already running". */
+const RESTARTED = process.env.FANUCSTUDIO_RESTART === '1';
 const PORT = parseInt(process.argv[2], 10) || 8642;
 const ROBOT_TIMEOUT_MS = 6000;
 /* Liveness check for a saved robot: short, because the answer people want is
@@ -41,14 +56,26 @@ const MAX_BODY = 5 * 1024 * 1024;
  * settings. Beside the bridge by default, which is what a shop-floor PC
  * wants. Overridable so a test can point a bridge at a scratch directory
  * instead: the robot list someone actually uses is not a thing a test run
- * should ever be able to write over. */
-const STATE_DIR = process.env.FANUC_STUDIO_STATE
-  ? path.resolve(process.env.FANUC_STUDIO_STATE) : ROOT;
+ * should ever be able to write over. FANUCSTUDIO_STATE is the name the
+ * launcher uses; FANUC_STUDIO_STATE is the older one, still honoured. */
+const STATE_ENV = process.env.FANUCSTUDIO_STATE || process.env.FANUC_STUDIO_STATE;
+const STATE_DIR = STATE_ENV ? path.resolve(STATE_ENV) : ROOT;
 const ROBOTS_FILE = path.join(STATE_DIR, 'robots.json');
 const SETTINGS_FILE = path.join(STATE_DIR, 'settings.json');
 const MAX_ROBOTS = 64;
-const DEFAULT_BACKUP_ROOT = path.join(STATE_DIR, 'backups');
+const DEFAULT_BACKUP_ROOT = path.join(DATA_DIR || STATE_DIR, 'backups');
 if (STATE_DIR !== ROOT) fs.mkdirSync(STATE_DIR, { recursive: true });
+/* The build this bridge started with (js/version.js beside it). */
+const BRIDGE_BUILD = (() => {
+  try { const m = /FANUC_STUDIO_BUILD\s*=\s*'([^']*)'/.exec(fs.readFileSync(path.join(ROOT, 'js', 'version.js'), 'utf8')); return m ? m[1] : null; }
+  catch (e) { return null; }
+})();
+/* A path inside the install folder is deleted with it: never a backup. */
+function insideInstall(p) {
+  if (!INSTALL_HOME) return false;
+  const a = path.resolve(String(p || '')).toLowerCase(), h = INSTALL_HOME.toLowerCase();
+  return a === h || a.startsWith(h + path.sep);
+}
 /* Backing up several robots, a powered-down controller is the normal case,
  * not an error — and each one would otherwise hold the whole sweep for the
  * FTP connect timeout. A plain TCP probe of the control port turns twenty
@@ -160,11 +187,147 @@ function scrapeFileNames(html) {
   return [...names].sort();
 }
 
+/* ---- signed install: updates, restart, uninstall, retire ----
+ * Only in a copy the launcher started. The bridge serves the LAN on purpose
+ * (phones), so everything here that reveals this PC or stops the bridge
+ * answers to a page on THIS PC only: a loopback socket, a same-origin page
+ * (Origin, if sent, is this bridge on localhost), and a JSON body, which a
+ * cross-site form cannot send without a CORS preflight this bridge never
+ * grants. */
+function localCaller(req) {
+  const a = String(req.socket.remoteAddress || '');
+  if (!(a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1')) return false;
+  const origin = req.headers.origin;
+  if (origin && origin !== 'http://localhost:' + PORT && origin !== 'http://127.0.0.1:' + PORT) return false;
+  const site = req.headers['sec-fetch-site'];
+  if (site && site !== 'same-origin' && site !== 'none') return false;
+  if (req.method === 'POST' && !/^application\/json\b/i.test(String(req.headers['content-type'] || ''))) return false;
+  return true;
+}
+function whoami() {
+  let user = '';
+  try { user = os.userInfo().username; } catch (e) { /* no user info */ }
+  return { pid: process.pid, user, host: os.hostname() };
+}
+
+/* Robot writes in flight (upload, delete, comment, register value, backups).
+ * A restart or uninstall exits this process: never in the middle of a STOR,
+ * where the controller may already have dropped the old program and the
+ * auto-restore would never run. */
+let robotWrites = 0;
+const ROBOT_WRITE = /^\/api\/robot\/(upload|delete|comment|regvalue|backup)$|^\/api\/robots\/backup-all$/;
+function trackRobotWrite(req, res, pathname) {
+  if (req.method !== 'POST' || !ROBOT_WRITE.test(pathname)) return;
+  robotWrites++;
+  let done = false;
+  const end = () => { if (!done) { done = true; robotWrites--; } };
+  res.on('finish', end);
+  res.on('close', end);
+}
+const BUSY_MSG = 'A robot transfer is still running; try again once it has finished.';
+
+/* Build number offered by the share's latest.json, read in the background
+ * at most once a minute. Only a hint for the page's "Build N is available";
+ * the launcher verifies the signature before installing anything. */
+const published = { build: null, at: 0, busy: false, every: parseInt(process.env.FANUCSTUDIO_UPDATE_POLL_MS, 10) || 60000 };
+function publishedBuild() {
+  if (UPDATE_SOURCE && !published.busy && Date.now() - published.at > published.every) {
+    published.busy = true;
+    fs.promises.readFile(path.join(UPDATE_SOURCE, 'latest.json'), 'utf8').then((t) => {
+      const b = JSON.parse(JSON.parse(t).payload).build;
+      published.build = Number.isInteger(b) ? b : null;
+    }).catch(() => { /* share unavailable: keep the last answer */ })
+      .then(() => checkRetired())
+      .finally(() => { published.busy = false; published.at = Date.now(); });
+  }
+  return RELEASE && published.build > (RELEASE.build || 0) ? published.build : null;
+}
+
+/* Remote removal: a retire.json on the share, signed with the release key
+ * (tools/publish-release.js --retire), naming this user or everyone. The
+ * page learns it through /api/ping (release.retired) and says why; then the
+ * launcher runs with --uninstall --retired, which checks the signature
+ * again, stops this bridge and removes the install. Backups stay. */
+const RETIRE_DELAY_MS = parseInt(process.env.FANUCSTUDIO_RETIRE_DELAY_MS, 10) || 45000;
+let RETIRED = null;
+/* also when no page is open (pings drive the check otherwise) */
+if (LAUNCHER && UPDATE_SOURCE) setInterval(() => publishedBuild(), Math.max(published.every, 1000)).unref();
+async function checkRetired() {
+  if (RETIRED || !LAUNCHER || !UPDATE_SOURCE) return;
+  let text;
+  try { text = await fs.promises.readFile(path.join(UPDATE_SOURCE, 'retire.json'), 'utf8'); } catch (e) { return; }
+  try {
+    const crypto = require('crypto');
+    const key = crypto.createPublicKey(fs.readFileSync(path.join(INSTALL_HOME, 'release-public-key.pem'), 'utf8'));
+    const env = JSON.parse(text);
+    if (!crypto.verify(null, Buffer.from(env.payload, 'utf8'), key, Buffer.from(env.signature, 'base64'))) return;
+    const r = JSON.parse(env.payload);
+    if (r.format !== 1 || r.app !== 'FanucStudio' || r.kind !== 'retire') return;
+    const u = whoami().user.toLowerCase(), h = os.hostname().toLowerCase();
+    if (Array.isArray(r.users) && r.users.length && !r.users.some((x) => { x = String(x).toLowerCase(); return x === u || x === u + '@' + h; })) return;
+    RETIRED = { message: r.message || '', at: Date.now() + RETIRE_DELAY_MS };
+    console.log('[bridge] retired by ' + UPDATE_SOURCE + '\\retire.json; uninstalling in ' + Math.round(RETIRE_DELAY_MS / 1000) + ' s');
+    setTimeout(function go() {
+      if (robotWrites > 0) { setTimeout(go, 1000); return; }   // let a transfer finish
+      spawnUninstall(true);
+    }, RETIRE_DELAY_MS);
+  } catch (e) { /* unreadable or unsigned: ignored, the launcher reports it */ }
+}
+function spawnUninstall(retired) {
+  const { spawn } = require('child_process');
+  const args = [LAUNCHER, '--uninstall', '--pid', String(process.pid)].concat(retired ? ['--retired'] : [], process.argv[2] ? ['--port', process.argv[2]] : []);
+  const child = spawn(process.execPath, args, { cwd: os.tmpdir(), detached: true, windowsHide: true, stdio: 'ignore', env: process.env });
+  child.unref();
+  console.log('[bridge] uninstalling (pid ' + child.pid + ')');
+  return child.pid;
+}
+
 async function handleApi(req, res, u) {
   const q = u.searchParams;
 
   if (u.pathname === '/api/ping') {
-    return json(res, 200, { ok: true, app: 'fanuc-tp-studio-bridge', version: 2 });
+    const out = { ok: true, app: 'fanuc-tp-studio-bridge', version: 2, build: BRIDGE_BUILD };
+    /* who and where only for this PC's own pages, not the LAN */
+    if (localCaller(req)) {
+      out.me = whoami();
+      out.stateDir = STATE_DIR;
+      out.release = RELEASE ? { build: RELEASE.build, verified: !!RELEASE.verified, source: RELEASE.source, commit: RELEASE.commit || null,
+        update: publishedBuild(), retired: RETIRED ? { message: RETIRED.message, inMs: Math.max(0, RETIRED.at - Date.now()) } : null } : null;
+    }
+    return json(res, 200, out);
+  }
+
+  /* Restart through the launcher, which verifies and installs a newer
+   * published build first. Signed installs only: an unmanaged bridge runs in
+   * the console window someone started, and is restarted there. The new
+   * process waits for this one to free the port; this one answers, then
+   * exits. */
+  if (u.pathname === '/api/bridge/restart' && req.method === 'POST') {
+    if (!localCaller(req)) return fail(res, 403, 'only a page on this PC can restart the bridge');
+    if (!LAUNCHER) return fail(res, 400, 'This copy was not installed with Install FanucStudio.bat; close its window and start it again.');
+    if (robotWrites > 0) return fail(res, 409, BUSY_MSG);
+    const { spawn } = require('child_process');
+    const child = spawn(process.execPath, [LAUNCHER, '--restart'].concat(process.argv[2] ? ['--port', process.argv[2]] : []), {
+      cwd: INSTALL_HOME, detached: true, windowsHide: true, stdio: 'ignore',
+      env: Object.assign({}, process.env, { FANUCSTUDIO_RESTART: '1' })
+    });
+    child.unref();
+    console.log('[bridge] restarting (new pid ' + child.pid + ')');
+    res.on('finish', () => setTimeout(() => process.exit(0), 200));
+    return json(res, 200, { ok: true, pid: child.pid });
+  }
+
+  /* Uninstall this PC's signed install: the launcher stops this bridge,
+   * removes the shortcuts, the fanucstudio:// link and the install folder.
+   * Backups live outside it and are never touched. */
+  if (u.pathname === '/api/bridge/uninstall' && req.method === 'POST') {
+    if (!localCaller(req)) return fail(res, 403, 'only a page on this PC can uninstall FanucStudio');
+    if (!LAUNCHER) return fail(res, 400, 'This copy was not installed with Install FanucStudio.bat; delete its folder to remove it.');
+    if (robotWrites > 0) return fail(res, 409, BUSY_MSG);
+    /* the launcher refuses these too; saying so here keeps the page honest */
+    const inside = [homeRoot()].concat(readRobots().map((r) => r.folder).filter(Boolean)).filter((d) => insideInstall(d));
+    if (inside.length) return fail(res, 409, 'Backup folders inside the install folder would be deleted: ' + inside.join(', ') + '. Move them first.');
+    return json(res, 200, { ok: true, pid: spawnUninstall(false) });
   }
 
   if (u.pathname === '/api/robots' && req.method === 'GET') {
@@ -950,6 +1113,7 @@ function dirWritable(dir) {
 }
 
 function ensureDir(dir) {
+  if (insideInstall(dir)) return dir + ' is inside the FanucStudio install folder (' + INSTALL_HOME + '), which an update or uninstall may delete; pick a folder outside it';
   try { fs.mkdirSync(dir, { recursive: true }); }
   catch (e) { return 'cannot create ' + dir + ': ' + e.message; }
   return dirWritable(dir);
@@ -1337,13 +1501,20 @@ function serveStatic(res, pathname) {
 const httpServer = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://localhost');
   if (u.pathname.startsWith('/api/')) {
+    trackRobotWrite(req, res, u.pathname);
     handleApi(req, res, u).catch((e) => fail(res, 500, e.message));
   } else {
     serveStatic(res, u.pathname);
   }
 });
 
+const listenStarted = Date.now();
 httpServer.on('error', (e) => {
+  /* a launcher restart: the old bridge exits right after answering */
+  if (e.code === 'EADDRINUSE' && RESTARTED && Date.now() - listenStarted < 15000) {
+    setTimeout(() => httpServer.listen(PORT), 250);
+    return;
+  }
   if (e.code === 'EADDRINUSE') {
     console.log('The bridge is already running (port ' + PORT + ' is in use).');
     console.log('Just open http://localhost:' + PORT + ' in your browser.');

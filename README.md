@@ -77,6 +77,46 @@ and curl; Linux/macOS need curl, unzip and zip. Build failures leave the previou
 distribution intact. The tool packages this source folder without changing its
 build number; `js/version.js` identifies the packaged app build.
 
+## Install / update / uninstall (signed, from the share)
+
+The ZIP above stays the way to run an unmanaged copy. For shop PCs there is
+also a per-user install that updates itself from the S: share and runs only
+builds signed with Brian's release key.
+
+- **Install:** run `S:\zz_Resources\FanucStudio\Install FanucStudio.bat` (no
+  admin). It installs into `%LOCALAPPDATA%\FanucStudio`, adds a FanucStudio
+  shortcut (desktop + Start menu) and the `fanucstudio://` link behind
+  **Start bridge**, and opens the app on `http://localhost:8642`.
+- **Update:** every start checks the share. A newer signed build is copied,
+  every file hash-checked, then run; a running copy shows *Build N is
+  available* at the bottom of the sidebar with **Restart bridge**. An edited or
+  extra file in the install is repaired from the share or refused. A build
+  older than one already accepted is never installed.
+- **Uninstall:** **Uninstall FanucStudio…** at the bottom of the sidebar, or
+  `Uninstall FanucStudio.bat` on the share. Removes the app, the saved robot
+  list, settings, shortcuts and the link. **Backups are never deleted:** an
+  installed copy keeps robot backups and the pre-upload / pre-delete
+  snapshots in `Documents\FanucStudio`, refuses a backup folder inside the
+  install, and the uninstaller stops if one is configured there anyway.
+
+Publishing (Brian's PC):
+
+```
+node tools/release-keygen.js          # once: key in %USERPROFILE%\.fanucstudio, public key into launcher/ (commit it)
+node tools/publish-release.js         # bump js/version.js, commit, push first
+node tools/publish-release.js --retire --message "why" [--users a,b@PC]   # remote removal
+node tools/publish-release.js --unretire
+node --test tools/test-release.js     # throwaway key, temp share + home, no registry
+```
+
+Publish refuses uncommitted changes or a commit not on the upstream branch,
+signs the manifest (sha256 + size of every file, the git commit), writes
+`releases\<build>\`, then `releases\latest.json` last, and tags `build-<N>`.
+A published build number is immutable and `latest.json` never moves back.
+`node.exe` is not copied again when CellStudio's share already holds the
+identical file (`releases\runtime\<ver>\node.exe`); the manifest then points
+there and the launcher checks its size and sha256 before using it.
+
 ## Wishlist status
 
 See [WISHLIST.md](WISHLIST.md) for open requests and completed work, reviewed
@@ -234,8 +274,8 @@ test/backup-tests.js   backups:            node test/backup-tests.js
 test/mock-ftp.js       the mock controller both integration tests drive
 ```
 
-`FANUC_STUDIO_STATE` moves `robots.json` / `settings.json` / the default
-`backups/` somewhere other than beside the bridge. `test/backup-tests.js`
+`FANUCSTUDIO_STATE` (or the older `FANUC_STUDIO_STATE`) moves `robots.json` /
+`settings.json` / the default `backups/` somewhere other than beside the bridge. `test/backup-tests.js`
 uses it so a test run cannot write over the robot list someone is using.
 
 ## File format notes

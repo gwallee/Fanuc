@@ -881,6 +881,7 @@
     fetch('/api/ping').then(function (r) { return r.json(); })
       .then(function (b) {
         state.server = !!(b && b.ok);
+        noteRelease(b);
         renderConnect();
         if (state.server) {
           loadKnownRobots();
@@ -906,6 +907,128 @@
         }
       })
       .catch(function () { state.server = false; renderConnect(); });
+  }
+
+  /* ================= signed install =================
+   * A copy installed with Install FanucStudio.bat runs verified builds from
+   * the share. The bridge says so in /api/ping (release: only to pages on
+   * this PC); the sidebar foot then shows the build and commit, a newer
+   * published build with Restart bridge, and Uninstall. Unmanaged copies
+   * (ZIP, git) show nothing here. */
+  var release = { info: null, me: null, watch: null, restarting: false, uninstalling: false, gone: false };
+
+  function noteRelease(b) {
+    if (!b || !b.ok) return;
+    release.me = b.me || null;
+    release.info = b.release || null;
+    paintRelease();
+    if (release.info && !release.watch) {
+      /* the share is re-read by the bridge at most once a minute */
+      release.watch = setInterval(function () {
+        if (release.gone || release.restarting) return;
+        fetch('/api/ping', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (p) {
+          if (!p || !p.ok || !p.release) return;
+          var had = release.info && release.info.update;
+          if (release.me && p.me && p.me.pid !== release.me.pid) return;   // another bridge: reload decides
+          release.info = p.release;
+          paintRelease();
+          if (p.release.update && p.release.update !== had) toast('FanucStudio build ' + p.release.update + ' is available — Restart bridge (sidebar) to update.', 10000);
+        }).catch(function () { /* bridge down: the connect state says so on reload */ });
+      }, 60000);
+    }
+  }
+
+  function unsavedEdits() {
+    return Object.keys(state.editDrafts || {}).length;
+  }
+
+  function paintRelease() {
+    var foot = document.getElementById('release-foot');
+    if (!foot) return;
+    var r = release.info;
+    foot.textContent = '';
+    foot.hidden = !(state.server && r && r.verified) || release.gone;
+    if (foot.hidden) return;
+    foot.appendChild(h('div', { class: 'release-build', title: 'Installed from ' + (r.source || 'the share') + '; every file verified against the signed release',
+      text: 'signed build ' + r.build + (r.commit ? ' (' + r.commit.slice(0, 7) + ')' : '') }));
+    if (r.update) {
+      foot.appendChild(h('div', { class: 'release-update', text: 'Build ' + r.update + ' is available.' }));
+      var rb = h('button', { class: 'btn primary', text: release.restarting ? 'Restarting…' : 'Restart bridge',
+        title: 'Restart the bridge on this PC; the launcher verifies and installs build ' + r.update + ', then the page reloads', onclick: restartBridge });
+      rb.disabled = release.restarting;
+      foot.appendChild(rb);
+    }
+    var ub = h('button', { class: 'btn subtle release-uninstall', text: release.uninstalling ? 'Uninstalling…' : 'Uninstall FanucStudio…',
+      title: 'Remove FanucStudio from this PC (app, robot list, settings, shortcuts). Robot backups are never touched.', onclick: uninstallApp });
+    ub.disabled = release.uninstalling || release.restarting;
+    foot.appendChild(ub);
+    if (r.retired) showRetired(r.retired);
+  }
+
+  function restartBridge() {
+    if (release.restarting) return;
+    var n = unsavedEdits();
+    if (n && !confirm(n + ' program' + (n > 1 ? 's have' : ' has') + ' unsaved edits. Restarting the bridge reloads the page and discards them.\n\nRestart anyway?')) return;
+    release.restarting = true;
+    paintRelease();
+    var oldPid = release.me && release.me.pid, tries = 0;
+    postJSON('/api/bridge/restart', {}).then(function () {
+      (function poll() {
+        fetch('/api/ping', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (b) {
+          if (!b || !b.ok || (b.me && b.me.pid === oldPid)) throw new Error('old bridge');
+          location.reload();
+        }).catch(function () {
+          if (++tries < 60) { setTimeout(poll, 500); return; }
+          release.restarting = false;
+          paintRelease();
+          toast('The bridge did not come back. Start FanucStudio from its shortcut; state\\bridge.log in %LOCALAPPDATA%\\FanucStudio says why.', 15000);
+        });
+      }());
+    }).catch(function (e) {
+      release.restarting = false;
+      paintRelease();
+      toast('Could not restart the bridge: ' + e.message, 8000);
+    });
+  }
+
+  function goodbye(title, text) {
+    /* the installed app window would otherwise keep showing the cached shell */
+    try { if (navigator.serviceWorker) navigator.serviceWorker.getRegistrations().then(function (rs) { rs.forEach(function (r) { r.unregister(); }); }); } catch (e) { /* ignore */ }
+    try { if (window.caches) caches.keys().then(function (ks) { ks.forEach(function (k) { caches.delete(k); }); }); } catch (e) { /* ignore */ }
+    var old = document.querySelector('.goodbye'); if (old) old.remove();
+    document.body.appendChild(h('div', { class: 'goodbye', role: 'alertdialog' }, [h('div', { class: 'goodbye-box' }, [h('h2', { text: title }), h('p', { text: text })])]));
+  }
+
+  function uninstallApp() {
+    if (release.uninstalling) return;
+    if (!confirm('Remove FanucStudio from this PC?\n\nThis stops the bridge and deletes the app, the saved robot list and settings (%LOCALAPPDATA%\\FanucStudio), the desktop and Start menu shortcuts and the fanucstudio:// link.\n\nRobot backups and upload snapshots are never touched. To use FanucStudio again, run Install FanucStudio.bat on the share.')) return;
+    var n = unsavedEdits();
+    if (n && !confirm(n + ' program' + (n > 1 ? 's have' : ' has') + ' unsaved edits, which will be lost.\n\nUninstall anyway?')) return;
+    release.uninstalling = true;
+    paintRelease();
+    postJSON('/api/bridge/uninstall', {}).then(function () {
+      release.gone = true;
+      state.server = false;
+      paintRelease();
+      goodbye('FanucStudio was removed from this PC', 'Robot backups were not touched. You can close this window. To install again, run Install FanucStudio.bat on the share.');
+    }).catch(function (e) {
+      release.uninstalling = false;
+      paintRelease();
+      toast('Could not uninstall: ' + e.message, 10000);
+    });
+  }
+
+  /* The share's retire.json names this user: the bridge removes the install
+   * shortly. Say why while there is still time to finish an edit by hand. */
+  function showRetired(r) {
+    if (release.gone) return;
+    release.gone = true;
+    var n = unsavedEdits();
+    goodbye('FanucStudio is being retired', (r.message ? r.message + '\n\n' : '') +
+      'It will be removed from this PC ' + ((r.inMs || 0) >= 2000 ? 'in about ' + Math.round(r.inMs / 1000) + ' seconds' : 'shortly') + '. Robot backups are not touched.' +
+      (n ? '\n\n' + n + ' program' + (n > 1 ? 's have' : ' has') + ' unsaved edits — this notice closes in a few seconds so you can copy them.' : ''));
+    if (n) setTimeout(function () { var g = document.querySelector('.goodbye'); if (g) g.remove(); }, 6000);
+    paintRelease();
   }
 
   function ftpQS() {

@@ -54,6 +54,25 @@ TP; keep UI text terse, prefer code over prose, colors over bold.
   `tools/release-zip.ps1` zip helper). APP_FILES is a whitelist — a new
   top-level file must be added there or it is not shipped. Output is
   `dist/` (gitignored); rebuild after every build bump before sharing.
+- Signed self-updating install (build 142, ported from CellStudio 123/130):
+  `launcher/` (launcher.js, `Start FanucStudio.bat`, `Start FanucStudio
+  hidden.vbs`, `Open FanucStudio.vbs`, release-public-key.pem from
+  `tools/release-keygen.js`) installs per user in `%LOCALAPPDATA%\FanucStudio`
+  (`FANUCSTUDIO_HOME`): `bin\node.exe`, `app\<build>\` (verified, newest two),
+  `state\` (robots.json, settings.json, logs). `tools/publish-release.js`
+  → `S:\zz_Resources\FanucStudio\releases\` (key `%USERPROFILE%\.fanucstudio`,
+  git gate + `build-<N>` tag, `--retire`/`--unretire`, `--no-git` for tests);
+  node.exe is referenced from CellStudio's share (`--shared-runtime`) when
+  identical. server.js under the launcher (env `FANUCSTUDIO_LAUNCHER` /
+  `_RELEASE` / `_UPDATE_SOURCE`): ping adds build, and for loopback pages only
+  `me`, `stateDir`, `release {build, verified, source, commit, update,
+  retired}`; `POST /api/bridge/restart|uninstall` (loopback + same-origin +
+  JSON only, 409 while a robot write is in flight). **Nothing may be written
+  into ROOT of an installed copy** (an extra file voids the build), and
+  **backups are never deleted**: backups + pre-upload/pre-delete snapshots go
+  to `Documents\FanucStudio` (`FANUCSTUDIO_DATA`), backup folders inside the
+  install are refused, and uninstall stops if one is configured. Page: sidebar
+  foot (`#release-foot`). Test: `node --test tools/test-release.js`.
 - `FanucStudio-dev/` is a separate older checkout (gitignored); the stray
   pneumatic/manifold files at the root belong to another project.
 - PWA: manifest.webmanifest, sw.js (network-first, never caches /api/),
