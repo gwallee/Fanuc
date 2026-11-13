@@ -73,8 +73,6 @@ TP; keep UI text terse, prefer code over prose, colors over bold.
   to `Documents\FanucStudio` (`FANUCSTUDIO_DATA`), backup folders inside the
   install are refused, and uninstall stops if one is configured. Page: sidebar
   foot (`#release-foot`). Test: `node --test tools/test-release.js`.
-- `FanucStudio-dev/` is a separate older checkout (gitignored); the stray
-  pneumatic/manifold files at the root belong to another project.
 - PWA: manifest.webmanifest, sw.js (network-first, never caches /api/),
   icons via `node tools/build-icons.js`.
 
