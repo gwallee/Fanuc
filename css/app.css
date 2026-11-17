@@ -926,6 +926,12 @@ tr:last-child td { border-bottom: none; }
  * block's caption and summary stand in so no block reads as empty */
 .flow-canvas.filtered .fc-line.off { display: none; }
 .flow-canvas.filtered .flow-card.bare .fc-body { display: none; }
+/* expanded calls: a called program's lines under the CALL that runs them,
+ * one indent per call level */
+.fc-sub { margin-left: 3.6em; padding-left: 6px; border-left: 1px dashed var(--gutter); }
+.fc-line.sub { cursor: default; }
+.fc-line.sub .fc-ln { color: var(--faint); }
+.fc-line.note .fc-src { color: var(--faint); font-style: italic; }
 .flow-bar label:has(input:disabled) { opacity: 0.5; }
 /* with a filter on, the headings tier lists the lines that survive it — they
  * are few, and they are the reason the filter was picked */

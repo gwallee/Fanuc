@@ -630,6 +630,44 @@ check(VA.parseTpDefaultProgram("$TP_DEFPROG : STRING[37] = ' main '") === 'MAIN'
       VA.parseTpDefaultProgram('bad report') === null,
   'pendant selection distinguishes empty from an unreadable listing');
 
+console.log('\n-- flow: expanded calls --');
+{
+  const mk = (name, body) => {
+    const src = '/PROG ' + name + '\n/MN\n' + body.map((t, i) => '   ' + (i + 1) + ':  ' + t + ' ;').join('\n') + '\n/END\n';
+    const parsed = P.parseLS(src, name + '.LS');
+    return { parsed: parsed };
+  };
+  const lib = {
+    W: mk('W', ['CALL A', '', 'CALL A', 'RUN BG', 'CALL UTIL', 'CALL GONE', 'DO[1:CALL A]=ON']),
+    A: mk('A', ['J P[1] 100% FINE', '!approach', 'CALL B']),
+    B: mk('B', ['L P[2] 500mm/sec FINE', 'CALL A']),
+    BG: mk('BG', ['J P[9] 100% FINE']),
+    UTIL: mk('UTIL', ['R[1]=0'])
+  };
+  check(FL.callTarget(lib.W.parsed.lines[0]) === 'A', 'callTarget reads CALL A');
+  check(FL.callTarget(lib.W.parsed.lines[3]) === null, 'callTarget does not follow RUN');
+  check(FL.callTarget(lib.W.parsed.lines[6]) === null, 'callTarget ignores CALL inside a bracketed name');
+
+  const a = FL.expandCall(lib, 'A', { stack: ['W'] });
+  check(a.prog === 'A' && a.note === null && a.lines.length === 3, 'A expands to its three non-blank lines (comment kept)');
+  const b = a.lines[2].call;
+  check(b && b.prog === 'B' && b.lines.length === 2, 'A\'s CALL B expands one level down');
+  check(b.lines[1].call && b.lines[1].call.note === 'recursion', 'B calling A back stops at recursion');
+  check(FL.expandCall(lib, 'GONE', { stack: ['W'] }).note === 'missing', 'a program missing from the library is noted');
+  const self = FL.expandCall(lib, 'W', { stack: ['W'] });
+  check(self.note === 'recursion' && !self.lines.length, 'a program calling itself directly is caught at once');
+
+  const ig = FL.expandCall({ X: mk('X', ['CALL UTIL']), UTIL: lib.UTIL }, 'X', { ignore: { UTIL: true } });
+  check(ig.lines[0].call === null, 'an ignored program is not entered');
+  const deep = FL.expandCall(lib, 'A', { stack: ['W'], maxDepth: 1 });
+  check(deep.lines[2].call && deep.lines[2].call.note === 'depth', 'maxDepth stops the walk with a depth note');
+  const budget = { left: 4 };
+  const t1 = FL.expandCall(lib, 'A', { stack: ['W'], budget: budget });
+  const t2 = FL.expandCall(lib, 'A', { stack: ['W'], budget: budget });
+  check(budget.left === 0 && t2.note === 'truncated' && t2.lines.length === 0,
+    'a shared budget truncates later expansions (' + t1.lines.length + ' then ' + t2.lines.length + ')');
+}
+
 console.log('\n-- flow blocks: blanks, captions, inbound --');
 /* The shape that made the Flow view hard to read: a JMP, then a blank run,
  * then a header comment captioning the label that follows it. */

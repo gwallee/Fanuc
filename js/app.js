@@ -75,6 +75,7 @@
     flowDetail: 'auto',    // 'auto' | 'full' | 'compact' | 'map' (persisted)
     flowShow: 'all',       // which lines the blocks list: a CFG_SHOW key (persisted)
     flowStructure: false,  // a filtered view also lists labels and jumps (persisted)
+    flowExpand: false,     // list each CALLed program's lines under its CALL (persisted)
     flowLine: null,        // line number pinned in the control-flow graph
     flowMini: true,        // show the overview strip (persisted)
     flowHideNav: false,    // hide the library while the Flow tab is open (persisted)
@@ -201,6 +202,7 @@
       if (p.flowDetail === 'auto' || CFG_TIER_MAX[p.flowDetail]) state.flowDetail = p.flowDetail;
       if (CFG_SHOW[p.flowShow]) state.flowShow = p.flowShow;
       if (typeof p.flowStructure === 'boolean') state.flowStructure = p.flowStructure;
+      if (typeof p.flowExpand === 'boolean') state.flowExpand = p.flowExpand;
       if (typeof p.flowMini === 'boolean') state.flowMini = p.flowMini;
       if (typeof p.flowHideNav === 'boolean') state.flowHideNav = p.flowHideNav;
       if (typeof p.hideNav === 'boolean') state.hideNav = p.hideNav;
@@ -220,7 +222,7 @@
         ignoreIoState: state.ignoreIoState, ignoreLineNums: state.ignoreLineNums,
         syncSplit: state.syncSplit,
         flowLayout: state.flowLayout, flowGaps: state.flowGaps, flowDetail: state.flowDetail,
-        flowShow: state.flowShow, flowStructure: state.flowStructure,
+        flowShow: state.flowShow, flowStructure: state.flowStructure, flowExpand: state.flowExpand,
         flowMini: state.flowMini, flowHideNav: state.flowHideNav, hideNav: state.hideNav,
         xrefFolded: state.xrefFolded, xrefHideUnused: state.xrefHideUnused,
         lastRobot: state.lastRobot || null, backupPick: state.backupPick,
@@ -5559,6 +5561,21 @@
     structLbl.appendChild(cfg.structBox);
     structLbl.appendChild(document.createTextNode(' structure'));
     g2.appendChild(structLbl);
+    var expLbl = h('label', { title: 'List each called program’s lines under its CALL, and their calls under theirs — so a wrapper that is nothing but CALLs shows the moves, registers or I/O it actually runs. Double-click a listed line to open that program there.' });
+    cfg.expandBox = h('input', { type: 'checkbox' });
+    cfg.expandBox.checked = !!state.flowExpand;
+    cfg.expandBox.addEventListener('change', function () {
+      state.flowExpand = cfg.expandBox.checked;
+      savePrefs();
+      var a = cfgAnchor();
+      cfgBuildCards();          // the expansions are rows of their own
+      cfgPaintFocus();
+      cfgRebuild(a);
+      cfgPaintHint();
+    });
+    expLbl.appendChild(cfg.expandBox);
+    expLbl.appendChild(document.createTextNode(' expand calls'));
+    g2.appendChild(expLbl);
     g2.appendChild(sel('Layout',
       'Column keeps one stack with the jumps arcing through the gutter. Chart spreads branches sideways and routes every jump at right angles in its own lane. (C)',
       state.flowLayout, [['column', 'column'], ['chart', 'chart']],
@@ -5614,6 +5631,7 @@
     cfg.col.innerHTML = '';
     cfg.cards = [];
     cfg.rows = [];
+    cfg.budget = { left: CFG_EXPAND_MAX };   // shared by every expansion in the program
     if (!flow.blocks.length) {
       cfg.col.appendChild(h('p', { class: 'muted', text: 'No executable lines in ' + p.parsed.name + '.' }));
       return;
@@ -5669,8 +5687,17 @@
           h('span', { class: 'fc-ln', text: String(l.num) }),
           h('span', { class: 'fc-src', text: (l.motion ? l.motion + ' ' : '') + l.text })
         ]);
-        cfg.rows.push({ el: row, card: card, idx: b.idx, num: l.num, kinds: cfgKinds(l), refs: cfgRefs(l) });
+        var rowObj = { el: row, card: card, idx: b.idx, num: l.num, kinds: cfgKinds(l), refs: cfgRefs(l) };
+        cfg.rows.push(rowObj);
         body.appendChild(row);
+        if (state.flowExpand) {
+          var callee = FL.callTarget(l);
+          if (callee && !state.flowIgnore[callee]) {
+            cfgSubRows(body, FL.expandCall(state.programs, callee, {
+              ignore: state.flowIgnore, stack: [p.parsed.name], maxDepth: CFG_EXPAND_DEPTH, budget: cfg.budget
+            }), rowObj, card, b.idx);
+          }
+        }
       });
       card.appendChild(body);
 
@@ -5708,6 +5735,55 @@
   }
 
   function cfgSpeaks(l) { return l.comment !== null || String(l.text).trim() !== ''; }
+
+  /* ---- expanded calls ----
+   *
+   * A called program's lines, listed under the CALL that runs them and
+   * indented a level per call. They are rows like any other as far as the
+   * Show filter goes, and a CALL row stays listed whenever anything under it
+   * does — so "moves" on a wrapper that is nothing but CALLs shows each CALL
+   * with the motion it runs. They are not pinnable: the pin is a line of THIS
+   * program, and line 4 of a callee is not line 4 here. Double-click opens
+   * the callee at that line. */
+  var CFG_EXPAND_DEPTH = 6;      // call levels listed below the open program
+  var CFG_EXPAND_MAX = 4000;     // lines listed across every expansion
+
+  var CFG_EXPAND_NOTE = {
+    missing: function (n) { return '⚠ ' + n + ' is not in the library'; },
+    recursion: function (n) { return '↻ ' + n + ' is already running above — not expanded again'; },
+    depth: function (n) { return '… ' + n + ' is more than ' + CFG_EXPAND_DEPTH + ' calls deep — not expanded'; },
+    truncated: function () { return '… stopped listing after ' + CFG_EXPAND_MAX + ' lines'; }
+  };
+
+  function cfgSubRows(into, tree, parentRow, card, idx) {
+    var box = h('div', { class: 'fc-sub' });
+    function note() {
+      var el = h('div', { class: 'fc-line sub note' }, [
+        h('span', { class: 'fc-ln', text: '' }),
+        h('span', { class: 'fc-src', text: CFG_EXPAND_NOTE[tree.note](tree.prog) })
+      ]);
+      cfg.rows.push({ el: el, card: card, idx: idx, num: null, sub: true, note: true, kinds: ['note'], refs: [], parent: parentRow });
+      box.appendChild(el);
+    }
+    if (tree.note && tree.note !== 'truncated') note();
+    tree.lines.forEach(function (n) {
+      var l = n.line;
+      var el = h('div', {
+        class: 'fc-line sub' + (l.comment !== null ? ' cmt' : ''),
+        'data-subprog': tree.prog, 'data-subln': String(l.num),
+        title: tree.prog + ' line ' + l.num + ' — double-click to open it in the code'
+      }, [
+        h('span', { class: 'fc-ln', text: String(l.num) }),
+        h('span', { class: 'fc-src', text: (l.motion ? l.motion + ' ' : '') + l.text })
+      ]);
+      var r = { el: el, card: card, idx: idx, num: null, sub: true, kinds: cfgKinds(l), refs: [], parent: parentRow };
+      cfg.rows.push(r);
+      box.appendChild(el);
+      if (n.call) cfgSubRows(box, n.call, r, card, idx);
+    });
+    if (tree.note === 'truncated') note();
+    into.appendChild(box);
+  }
 
   /* ---- what a line is about: the Show filter, and a pinned line's kin ---- */
 
@@ -5748,11 +5824,17 @@
     var want = cfgShowKind();
     cfg.canvas.classList.toggle('filtered', want !== null);
     var lit = cfg.cards.map(function () { return 0; });
-    cfg.rows.forEach(function (r) {
-      var on = r.num === state.flowLine || cfgShowKeeps(r.kinds);
+    cfg.rows.forEach(function (r) { r.kidOn = false; });
+    // children follow their parent in cfg.rows, so walking backwards settles
+    // every expanded line before the CALL that runs it
+    for (var i = cfg.rows.length - 1; i >= 0; i--) {
+      var r = cfg.rows[i];
+      var on = (!r.sub && r.num === state.flowLine) || r.note || r.kidOn || cfgShowKeeps(r.kinds);
+      r.on = on;
       r.el.classList.toggle('off', !on);
       if (on) lit[r.idx]++;
-    });
+      if (on && r.parent) r.parent.kidOn = true;
+    }
     // a block with nothing left to list drops its empty body padding too
     cfg.cards.forEach(function (c, i) { c.classList.toggle('bare', want !== null && !lit[i]); });
   }
@@ -5807,7 +5889,7 @@
 
   function cfgPaintLine() {
     var sel = null, refs = {}, kin = 0;
-    cfg.rows.forEach(function (r) { if (r.num === state.flowLine) sel = r; });
+    cfg.rows.forEach(function (r) { if (!r.sub && r.num === state.flowLine) sel = r; });
     if (sel) sel.refs.forEach(function (k) { refs[k] = true; });
     cfg.cards.forEach(function (c) { c.classList.remove('picked'); });
     cfg.rows.forEach(function (r) {
@@ -5832,7 +5914,7 @@
    * already in it. The coarser tiers do not draw the row, so aim at its block. */
   function cfgRevealLine(num) {
     var r = null;
-    cfg.rows.forEach(function (x) { if (x.num === num) r = x; });
+    cfg.rows.forEach(function (x) { if (!x.sub && x.num === num) r = x; });
     if (!r || !cfg.geom[r.idx]) return;
     var vr = cfg.vp.getBoundingClientRect();
     var tr = (cfgTier === 'full' ? r.el : r.card).getBoundingClientRect();
@@ -6527,6 +6609,7 @@
           card: hit,
           ln: cfgAttrAt(ev.target, 'data-ln', canvas),
           code: !!cfgUpTo(ev.target, 'fc-goto', canvas),
+          sub: cfgAttrAt(ev.target, 'data-subprog', canvas),
           chip: !!cfgUpTo(ev.target, 'fc-in-chip', canvas),
           prog: cfgAttrAt(ev.target, 'data-prog', canvas),
           x: ev.clientX, y: ev.clientY
@@ -6568,6 +6651,7 @@
       if (pr.prog) { state.selected = pr.prog; render(); }
       else if (pr.ln !== null && pr.code) gotoLine(cfg.p.parsed.name, parseInt(pr.ln, 10));
       else if (pr.ln !== null) cfgSetLine(parseInt(pr.ln, 10), pr.chip);
+      else if (pr.sub !== null) { /* an expanded line: double-click opens it */ }
       else cfgSetFocus(pr.card);
     });
 
@@ -6575,6 +6659,12 @@
      * clicks have toggled the pin off again by the time this fires, so put it
      * back: the line should still be lit when the Flow tab comes round again. */
     vp.addEventListener('dblclick', function (ev) {
+      var sp = cfgAttrAt(ev.target, 'data-subprog', canvas);
+      if (sp !== null) {
+        ev.preventDefault();
+        if (state.programs[sp]) gotoLine(sp, parseInt(cfgAttrAt(ev.target, 'data-subln', canvas), 10));
+        return;
+      }
       var ln = cfgAttrAt(ev.target, 'data-ln', canvas);
       if (ln === null || !cfgUpTo(ev.target, 'fc-line', canvas)) return;
       ev.preventDefault();
@@ -6649,10 +6739,21 @@
     /* The filter says what it did, so a pick is never silent — at the bars
      * tier, or with a detail chosen by hand, the fold is not visible. */
     if (cfgShowKind() !== null) {
-      var shown = cfg.rows.filter(function (r) { return !r.el.classList.contains('off'); }).length;
-      cfg.hint.appendChild(h('span', { class: 'flow-show-note',
-        text: 'Showing ' + CFG_SHOW[state.flowShow].label + ' — ' + shown + ' of ' + cfgPlural(cfg.rows.length, 'line') +
-          (cfgTier === 'map' ? '; zoom in to read them' : '') + '. ' }));
+      var mine = cfg.rows.filter(function (r) { return !r.sub; });
+      var shown = mine.filter(function (r) { return r.on; }).length;
+      var fromCalls = cfg.rows.filter(function (r) { return r.sub && !r.note && r.on; }).length;
+      var txt = 'Showing ' + CFG_SHOW[state.flowShow].label + ' — ' + shown + ' of ' + cfgPlural(mine.length, 'line');
+      if (fromCalls) txt += ' + ' + fromCalls + ' from called programs';
+      if (!state.flowExpand && cfgShowKind() !== 'call') {
+        var called = {};
+        cfg.flow.blocks.forEach(function (b) {
+          b.calls.forEach(function (n) { if (!state.flowIgnore[n] && state.programs[n]) called[n] = true; });
+        });
+        var nCalled = Object.keys(called).length;
+        if (nCalled) txt += '; tick expand calls to look inside the ' + cfgPlural(nCalled, 'called program');
+      }
+      if (cfgTier === 'map') txt += '; zoom in to read them';
+      cfg.hint.appendChild(h('span', { class: 'flow-show-note', text: txt + '. ' }));
     }
     if (focus === null && !sel) {
       cfg.hint.appendChild(document.createTextNode(

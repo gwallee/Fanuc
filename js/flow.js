@@ -9,6 +9,9 @@
  *
  * callOrder(programs, graph, root) -> [{ seq, depth, name, line, note }]
  * Static call sequence: programs listed in the order their CALLs appear.
+ *
+ * expandCall(programs, name, opts) -> { prog, note, lines: [{ line, call }] }
+ * The lines a CALL runs, for listing a called program inline under its CALL.
  */
 (function (global) {
   'use strict';
@@ -172,6 +175,55 @@
     return rows;
   }
 
+  /* The program a line CALLs, or null. RUN is not a call: it starts a
+   * separate task, so its lines do not run here. A name inside brackets
+   * (DI[1:CALL HOME]) is not an instruction. */
+  function callTarget(line) {
+    if (!line || line.comment !== null) return null;
+    var m = String(line.text).replace(/\[[^\]]*\]/g, '[]').match(/\bCALL\s+([A-Z_][A-Z0-9_]*)/i);
+    return m ? m[1].toUpperCase() : null;
+  }
+
+  /* What a CALL runs, line by line, with the callee's own CALLs expanded in
+   * turn. The tree stops — with a note saying why — at a program that is not
+   * in the library ('missing'), at one already running further up the stack
+   * ('recursion'), below opts.maxDepth levels ('depth'), and once
+   * opts.budget.left lines have been listed across every expansion that
+   * shares the budget ('truncated'). Programs in opts.ignore are not entered.
+   * opts.stack names the programs already running, so a program that calls
+   * itself through a helper is caught at the first repeat.
+   *
+   * Blank lines are dropped; comments are kept, as the graph keeps them. */
+  function expandCall(programs, name, opts) {
+    opts = opts || {};
+    var ignore = opts.ignore || {};
+    var maxDepth = opts.maxDepth || 6;
+    var budget = opts.budget || { left: 5000 };
+
+    function walk(prog, stack) {
+      var p = programs[prog];
+      if (!p) return { prog: prog, note: 'missing', lines: [] };
+      if (stack.indexOf(prog) !== -1) return { prog: prog, note: 'recursion', lines: [] };
+      if (stack.length - (opts.stack ? opts.stack.length : 0) >= maxDepth) {
+        return { prog: prog, note: 'depth', lines: [] };
+      }
+      var out = { prog: prog, note: null, lines: [] };
+      var lines = (p.parsed || p).lines || [];
+      for (var i = 0; i < lines.length; i++) {
+        var l = lines[i];
+        if (l.comment === null && !String(l.text).trim()) continue;
+        if (budget.left <= 0) { out.note = 'truncated'; break; }
+        budget.left--;
+        var node = { line: l, call: null };
+        var c = callTarget(l);
+        if (c && !ignore[c]) node.call = walk(c, stack.concat(prog));
+        out.lines.push(node);
+      }
+      return out;
+    }
+    return walk(name, (opts.stack || []).slice());
+  }
+
   /* Collapse support for the call-order tree.
    * rows: output of callOrder. collapsed: {seq: true}.
    * Marks each row hasChildren and returns only visible rows. */
@@ -200,7 +252,10 @@
     return map;
   }
 
-  var api = { buildFlow: buildFlow, callOrder: callOrder, visibleRows: visibleRows, collapseToDepth: collapseToDepth };
+  var api = {
+    buildFlow: buildFlow, callOrder: callOrder, visibleRows: visibleRows, collapseToDepth: collapseToDepth,
+    callTarget: callTarget, expandCall: expandCall
+  };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucFlow = api;
 })(typeof window !== 'undefined' ? window : globalThis);
