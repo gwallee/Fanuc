@@ -73,6 +73,8 @@
     flowLayout: 'chart',   // control-flow canvas: 'column' | 'chart' (persisted)
     flowGaps: 'normal',    // 'tight' | 'normal' | 'wide' (persisted)
     flowDetail: 'auto',    // 'auto' | 'full' | 'compact' | 'map' (persisted)
+    flowShow: 'all',       // which lines the blocks list: a CFG_SHOW key (persisted)
+    flowLine: null,        // line number pinned in the control-flow graph
     flowMini: true,        // show the overview strip (persisted)
     flowHideNav: false,    // hide the library while the Flow tab is open (persisted)
     hideNav: false,        // hide the library on every tab — the ☰ button in the header (persisted)
@@ -196,6 +198,7 @@
       if (p.flowLayout === 'column' || p.flowLayout === 'chart') state.flowLayout = p.flowLayout;
       if (CFG_GAPS[p.flowGaps]) state.flowGaps = p.flowGaps;
       if (p.flowDetail === 'auto' || CFG_TIER_MAX[p.flowDetail]) state.flowDetail = p.flowDetail;
+      if (CFG_SHOW[p.flowShow]) state.flowShow = p.flowShow;
       if (typeof p.flowMini === 'boolean') state.flowMini = p.flowMini;
       if (typeof p.flowHideNav === 'boolean') state.flowHideNav = p.flowHideNav;
       if (typeof p.hideNav === 'boolean') state.hideNav = p.hideNav;
@@ -215,6 +218,7 @@
         ignoreIoState: state.ignoreIoState, ignoreLineNums: state.ignoreLineNums,
         syncSplit: state.syncSplit,
         flowLayout: state.flowLayout, flowGaps: state.flowGaps, flowDetail: state.flowDetail,
+        flowShow: state.flowShow,
         flowMini: state.flowMini, flowHideNav: state.flowHideNav, hideNav: state.hideNav,
         xrefFolded: state.xrefFolded, xrefHideUnused: state.xrefHideUnused,
         lastRobot: state.lastRobot || null, backupPick: state.backupPick,
@@ -5419,6 +5423,19 @@
     wide:   { y: { full: 44, compact: 34, map: 16 }, pitch: 48, colGap: 120 }
   };
 
+  /* What the blocks list. The structure — labels, jumps, IF/ELSE/ENDIF,
+   * SELECT cases, END — is always drawn, since a flow with its branches cut
+   * out is not a flow; the filter decides which of the straight-line
+   * instructions between them get the room. Order is the V key's cycle. */
+  var CFG_SHOW_ORDER = ['all', 'calls', 'moves', 'regs', 'io'];
+  var CFG_SHOW = {
+    all:   { label: 'every line', kind: null },
+    calls: { label: 'calls', kind: 'call' },
+    moves: { label: 'moves', kind: 'move' },
+    regs:  { label: 'registers', kind: 'reg' },
+    io:    { label: 'I/O', kind: 'io' }
+  };
+
   var cfgView = { k: 1, x: 0, y: 0 };
   var cfgProg = null;      // program the view belongs to
   var cfgTier = 'full';    // resolved tier (state.flowDetail may be 'auto')
@@ -5429,11 +5446,12 @@
   function cfgGaps() { return CFG_GAPS[state.flowGaps] || CFG_GAPS.normal; }
   function cfgPitch() { return cfgGaps().pitch; }
   function cfgChartMode() { return state.flowLayout === 'chart'; }
+  function cfgShowKind() { return (CFG_SHOW[state.flowShow] || CFG_SHOW.all).kind; }
 
   function renderCfg(pane, p) {
     var flow = FL.buildFlow(p.parsed);
     var fresh = cfgProg !== p.parsed.name;
-    if (fresh) { state.flowFocus = null; cfgProg = p.parsed.name; }
+    if (fresh) { state.flowFocus = null; state.flowLine = null; cfgProg = p.parsed.name; }
     if (state.flowFocus !== null && state.flowFocus >= flow.blocks.length) state.flowFocus = null;
 
     var bar = h('div', { class: 'flow-bar' });
@@ -5453,8 +5471,8 @@
     vp.appendChild(canvas);
 
     cfg = {
-      p: p, flow: flow, cards: [], geom: [], drawn: [], chart: null,
-      lineBlock: {}, hoverEdge: null,
+      p: p, flow: flow, cards: [], rows: [], geom: [], drawn: [], chart: null,
+      lineBlock: {}, labelLine: {}, hoverEdge: null, sel: null,
       vp: vp, canvas: canvas, svg: svg, col: col, mini: mini, minisvg: minisvg, hint: hint
     };
 
@@ -5512,6 +5530,11 @@
       onclick: function () { cfgZoomTo(1); } }));
 
     var g2 = grp();
+    cfg.showSel = sel('Show',
+      'Which lines the blocks list. Labels, jumps, IF/ELSE and END are always drawn — that is the structure — and the rest narrows to what you are tracing: the programs called, the motion, the registers, or the I/O. (V)',
+      state.flowShow, CFG_SHOW_ORDER.map(function (k) { return [k, CFG_SHOW[k].label]; }),
+      cfgSetShow);
+    g2.appendChild(cfg.showSel);
     g2.appendChild(sel('Layout',
       'Column keeps one stack with the jumps arcing through the gutter. Chart spreads branches sideways and routes every jump at right angles in its own lane. (C)',
       state.flowLayout, [['column', 'column'], ['chart', 'chart']],
@@ -5566,6 +5589,7 @@
     var p = cfg.p, flow = cfg.flow;
     cfg.col.innerHTML = '';
     cfg.cards = [];
+    cfg.rows = [];
     if (!flow.blocks.length) {
       cfg.col.appendChild(h('p', { class: 'muted', text: 'No executable lines in ' + p.parsed.name + '.' }));
       return;
@@ -5604,7 +5628,7 @@
             text: (e.kind === 'fall' ? '↓ ' : '↷ ') + atLine,
             title: (e.kind === 'fall' ? 'falls through from line ' + atLine
               : (e.kind === 'cond' ? 'conditional jump from line ' : 'jump from line ') + atLine) +
-              (src ? ' · ' + src.title : '') + ' — click to open it in the code'
+              (src ? ' · ' + src.title : '') + ' — click to pin that line and go to it'
           }));
         });
         card.appendChild(inRow);
@@ -5616,11 +5640,12 @@
         var row = h('div', {
           class: 'fc-line' + (l.comment !== null ? ' cmt' : ''),
           'data-ln': String(l.num),
-          title: 'Line ' + l.num + ' — click to open it in the code'
+          title: 'Line ' + l.num + ' — click to pin it, double-click to open it in the code'
         }, [
           h('span', { class: 'fc-ln', text: String(l.num) }),
           h('span', { class: 'fc-src', text: (l.motion ? l.motion + ' ' : '') + l.text })
         ]);
+        cfg.rows.push({ el: row, card: card, idx: b.idx, num: l.num, kinds: cfgKinds(l), refs: cfgRefs(l) });
         body.appendChild(row);
       });
       card.appendChild(body);
@@ -5654,9 +5679,135 @@
       cfg.cards.push(card);
       cfg.col.appendChild(card);
     });
+    cfgApplyShow();
+    cfgPaintLine();
   }
 
   function cfgSpeaks(l) { return l.comment !== null || String(l.text).trim() !== ''; }
+
+  /* ---- what a line is about: the Show filter, and a pinned line's kin ---- */
+
+  var CFG_IO_RE = /\b(?:DI|DO|RI|RO|GI|GO|AI|AO|SI|SO|UI|UO|WI|WO|F|M|TB)\[/;
+  var CFG_REG_RE = /\b(?:R|PR|SR|AR)\[/;
+  var CFG_SETUP_RE = /^(?:UFRAME_NUM|UTOOL_NUM|OFFSET CONDITION|TOOL_OFFSET CONDITION|OVERRIDE|PAYLOAD)\b/;
+  var CFG_FLOW_RE = /^(?:LBL\[|END$|ABORT$|IF\b.*\bTHEN$|ELSE\b|ENDIF\b|SELECT\b|=\s*\d|FOR\b|ENDFOR\b)|\b(?:JMP|TIMEOUT\s*,|Skip\s*,)\s*LBL\[/;
+
+  function cfgKinds(l) {
+    if (l.comment !== null) return ['cmt'];
+    var t = String(l.text).trim();
+    var bare = t.replace(/\[[^\]]*\]/g, '[]');   // a DI[1:RUN MODE] name is not an instruction
+    var k = [];
+    if (CFG_FLOW_RE.test(bare)) k.push('flow');
+    if (/\b(?:CALL|RUN)\s+[A-Z_]/.test(bare)) k.push('call');
+    if (l.motion || CFG_SETUP_RE.test(t)) k.push('move');
+    if (CFG_REG_RE.test(t)) k.push('reg');
+    if (CFG_IO_RE.test(t)) k.push('io');
+    return k;
+  }
+
+  /* Everything a line touches by name: R[5], DO[3], LBL[10], P[2], and the
+   * program it calls. Two lines sharing one are kin. */
+  function cfgRefs(l) {
+    if (l.comment !== null) return [];
+    var t = String(l.text), out = [], m;
+    var re = /\b([A-Z]{1,6})\[\s*(\d+)/g;
+    while ((m = re.exec(t)) !== null) out.push(m[1] + '[' + parseInt(m[2], 10) + ']');
+    m = t.replace(/\[[^\]]*\]/g, '[]').match(/\b(?:CALL|RUN)\s+([A-Z_][A-Z0-9_]*)/);
+    if (m) out.push('CALL ' + m[1]);
+    return out;
+  }
+
+  /* The Show filter folds the lines away rather than rebuilding the cards,
+   * so pinning, isolation and the geometry anchor all survive a switch. A
+   * pinned line is never folded: it is the one you are reading. */
+  function cfgApplyShow() {
+    var want = cfgShowKind();
+    cfg.canvas.classList.toggle('filtered', want !== null);
+    cfg.rows.forEach(function (r) {
+      var on = want === null || r.num === state.flowLine ||
+        r.kinds.indexOf(want) !== -1 || r.kinds.indexOf('flow') !== -1;
+      r.el.classList.toggle('off', !on);
+    });
+  }
+
+  function cfgSetShow(v) {
+    if (!CFG_SHOW[v]) return;
+    state.flowShow = v;
+    savePrefs();
+    if (!cfg) return;
+    var s = cfg.showSel && cfg.showSel.querySelector('select');
+    if (s && s.value !== v) s.value = v;
+    var a = cfgAnchor();
+    cfgApplyShow();
+    cfgRebuild(a);
+    cfgPaintHint();
+  }
+
+  /* ---- the pinned line ----
+   *
+   * Click a line and it stays lit: the arrows it takes stay drawn solid with
+   * the blocks they reach outlined, and every other line that touches what
+   * it touches — the same register, I/O point, label or program — is marked.
+   * One click answers both "where does this go" and "what else uses this",
+   * and it survives panning, zooming and a change of detail, where a hover
+   * was gone the moment the pointer moved. */
+  function cfgSetLine(num, keep) {
+    if (!cfg) return;
+    state.flowLine = (num === null || (!keep && num === state.flowLine)) ? null : num;
+    cfgPaintLine();
+    if (cfgShowKind() !== null) {         // the pin may fold or unfold a line
+      var a = cfgAnchor();
+      cfgApplyShow();
+      cfgRebuild(a);
+    } else {
+      cfgEmphasise();
+      cfgDrawMini();
+    }
+    cfgPaintHint();
+    if (keep && state.flowLine !== null) cfgRevealLine(state.flowLine);
+  }
+
+  function cfgPaintLine() {
+    var sel = null, refs = {}, kin = 0;
+    cfg.rows.forEach(function (r) { if (r.num === state.flowLine) sel = r; });
+    if (sel) sel.refs.forEach(function (k) { refs[k] = true; });
+    cfg.cards.forEach(function (c) { c.classList.remove('picked'); });
+    cfg.rows.forEach(function (r) {
+      var isKin = !!sel && r !== sel && r.refs.some(function (k) { return refs[k]; });
+      if (isKin) kin++;
+      r.el.classList.toggle('sel', r === sel);
+      r.el.classList.toggle('kin', isKin);
+    });
+    if (sel) sel.card.classList.add('picked');
+    cfg.sel = sel;
+    cfg.kin = kin;
+  }
+
+  /* Does this arrow belong to the pinned line — leave from it, or arrive at
+   * the label it defines? */
+  function cfgOnLine(e, num) {
+    if (e.kind === 'fall') return false;
+    return e.fromLine === num || (e.to !== null && cfg.labelLine[e.to] === num);
+  }
+
+  /* Bring the pinned line into the viewport at the current zoom, unless it is
+   * already in it. The coarser tiers do not draw the row, so aim at its block. */
+  function cfgRevealLine(num) {
+    var r = null;
+    cfg.rows.forEach(function (x) { if (x.num === num) r = x; });
+    if (!r || !cfg.geom[r.idx]) return;
+    var vr = cfg.vp.getBoundingClientRect();
+    var tr = (cfgTier === 'full' ? r.el : r.card).getBoundingClientRect();
+    if (tr.top >= vr.top && tr.bottom <= vr.bottom && tr.left >= vr.left && tr.right <= vr.right) return;
+    var cr = cfg.canvas.getBoundingClientRect();
+    var wy = (tr.top + tr.height / 2 - cr.top) / cfgView.k;
+    cfgView.y = cfg.vp.clientHeight / 2 - wy * cfgView.k;
+    if (cfgChartMode()) {
+      var wx = (tr.left - cr.left) / cfgView.k + Math.min(tr.width / cfgView.k, 320) / 2;
+      cfgView.x = cfg.vp.clientWidth / 2 - wx * cfgView.k;
+    }
+    cfgApplyView();
+  }
 
   /* A heading is something the programmer already wrote: TP code is full of
    * !***Appr Conveyor*** banner comments sitting above the label they
@@ -5712,8 +5863,12 @@
 
   function cfgIndexLines() {
     cfg.lineBlock = {};
+    cfg.labelLine = {};
     cfg.flow.blocks.forEach(function (b) {
-      b.lines.forEach(function (l) { cfg.lineBlock[l.num] = b.idx; });
+      b.lines.forEach(function (l) {
+        cfg.lineBlock[l.num] = b.idx;
+        if (b.labelNum !== undefined && cfg.labelLine[b.idx] === undefined && /^LBL\[/.test(l.text)) cfg.labelLine[b.idx] = l.num;
+      });
     });
   }
 
@@ -5730,7 +5885,8 @@
 
   function cfgApplyTier(t) {
     cfgTier = t;
-    cfg.canvas.className = 'flow-canvas tier-' + t + (state.flowFocus === null ? '' : ' isolated');
+    cfg.canvas.className = 'flow-canvas tier-' + t + (state.flowFocus === null ? '' : ' isolated') +
+      (cfgShowKind() === null ? '' : ' filtered');
     cfg.cards.forEach(function (card, i) {
       var b = cfg.flow.blocks[i];
       // 3.2px of height per real line, so a long block still reads as long
@@ -5997,12 +6153,17 @@
   function cfgEmphasise() {
     var inv = 1 / Math.max(0.35, cfgView.k);
     var hot = cfg.hoverEdge !== null && cfg.drawn[cfg.hoverEdge] ? cfg.drawn[cfg.hoverEdge].e : null;
+    /* A pinned jump line (or label) owns its arrows the way a hovered arrow
+     * does, only it stays. A pinned line with no arrows changes nothing here. */
+    var pin = state.flowLine;
+    var pins = cfg.drawn.map(function (d) { return pin !== null && cfgOnLine(d.e, pin); });
+    var anyPin = pins.some(function (x) { return x; });
 
     cfg.cards.forEach(function (c) { c.classList.remove('hot'); });
 
     cfg.drawn.forEach(function (d, i) {
-      var lit = hot ? i === cfg.hoverEdge : (state.flowFocus === null || cfgOnFocus(d.e));
-      var strong = hot ? lit : (lit && state.flowFocus !== null);
+      var lit = hot ? i === cfg.hoverEdge : anyPin ? pins[i] : (state.flowFocus === null || cfgOnFocus(d.e));
+      var strong = hot ? lit : (lit && (anyPin || state.flowFocus !== null));
       // the fade on everything else carries the emphasis — the lit arrow only
       // needs a nudge, not to go fat
       d.path.setAttribute('stroke-width', ((strong ? 1.7 : 1.3) * inv).toFixed(2));
@@ -6014,6 +6175,14 @@
     if (hot) {
       if (cfg.cards[hot.from]) cfg.cards[hot.from].classList.add('hot');
       if (cfg.cards[hot.to]) cfg.cards[hot.to].classList.add('hot');
+    } else if (anyPin) {
+      var home = cfg.lineBlock[pin];
+      cfg.drawn.forEach(function (d, i) {
+        if (!pins[i]) return;
+        [d.e.from, d.e.to].forEach(function (b) {
+          if (b !== home && cfg.cards[b]) cfg.cards[b].classList.add('hot');
+        });
+      });
     }
   }
 
@@ -6317,6 +6486,8 @@
         press = {
           card: hit,
           ln: cfgAttrAt(ev.target, 'data-ln', canvas),
+          code: !!cfgUpTo(ev.target, 'fc-goto', canvas),
+          chip: !!cfgUpTo(ev.target, 'fc-in-chip', canvas),
           prog: cfgAttrAt(ev.target, 'data-prog', canvas),
           x: ev.clientX, y: ev.clientY
         };
@@ -6353,10 +6524,22 @@
       if (!press) return;
       var pr = press;
       press = null;
-      // most specific first: a → chip, then a line or the ↗, then the block
+      // most specific first: a → chip, the ↗, a from-chip, a line, then the block
       if (pr.prog) { state.selected = pr.prog; render(); }
-      else if (pr.ln !== null) gotoLine(cfg.p.parsed.name, parseInt(pr.ln, 10));
+      else if (pr.ln !== null && pr.code) gotoLine(cfg.p.parsed.name, parseInt(pr.ln, 10));
+      else if (pr.ln !== null) cfgSetLine(parseInt(pr.ln, 10), pr.chip);
       else cfgSetFocus(pr.card);
+    });
+
+    /* The code opens on a double click now that a single one pins. The two
+     * clicks have toggled the pin off again by the time this fires, so put it
+     * back: the line should still be lit when the Flow tab comes round again. */
+    vp.addEventListener('dblclick', function (ev) {
+      var ln = cfgAttrAt(ev.target, 'data-ln', canvas);
+      if (ln === null || !cfgUpTo(ev.target, 'fc-line', canvas)) return;
+      ev.preventDefault();
+      state.flowLine = parseInt(ln, 10);
+      gotoLine(cfg.p.parsed.name, state.flowLine);
     });
 
     vp.addEventListener('pointercancel', function () {
@@ -6422,14 +6605,30 @@
   function cfgPaintHint() {
     if (!cfg) return;
     cfg.hint.innerHTML = '';
-    var focus = state.flowFocus;
-    cfg.hint.appendChild(document.createTextNode(focus === null
-      ? 'Wheel zooms, dragging the background pans (or middle-drag anywhere), shift+wheel scrolls. Amber arrows go up — a loop; blue go down — a skip; dashed is conditional. Hover an arrow to trace it, click a block to isolate its jumps, ↗ or a line to open the code.'
-      : 'Isolated ' + cfg.flow.blocks[focus].title + ' — only the arrows into and out of it are drawn, and the blocks they connect stay lit. '));
+    var focus = state.flowFocus, sel = cfg.sel;
+    if (focus === null && !sel) {
+      cfg.hint.appendChild(document.createTextNode(
+        'Wheel zooms, dragging the background pans (or middle-drag anywhere), shift+wheel scrolls. Amber arrows go up — a loop; blue go down — a skip; dashed is conditional. Hover an arrow to trace it, click a block to isolate its jumps, click a line to pin it, ↗ or double-click a line to open the code.'));
+      return;
+    }
     if (focus !== null) {
+      cfg.hint.appendChild(document.createTextNode('Isolated ' + cfg.flow.blocks[focus].title +
+        ' — only the arrows into and out of it are drawn, and the blocks they connect stay lit. '));
       cfg.hint.appendChild(h('button', {
         class: 'btn subtle', text: 'Show all',
         onclick: function () { cfgSetFocus(null); }
+      }));
+    }
+    if (sel) {
+      var arrows = cfg.flow.edges.filter(function (e) { return cfgOnLine(e, sel.num); }).length;
+      var txt = (focus !== null ? ' · ' : '') + 'Pinned line ' + sel.num;
+      if (arrows) txt += ' — its ' + cfgPlural(arrows, 'arrow') + (arrows === 1 ? ' stays' : ' stay') + ' lit';
+      if (cfg.kin) txt += (arrows ? ', ' : ' — ') + cfgPlural(cfg.kin, 'other line') + ' share ' + sel.refs.join(' ');
+      txt += '. ';
+      cfg.hint.appendChild(document.createTextNode(txt));
+      cfg.hint.appendChild(h('button', {
+        class: 'btn subtle', text: 'Unpin',
+        onclick: function () { cfgSetLine(null); }
       }));
     }
   }
@@ -6445,8 +6644,16 @@
     var cap = cfgCaption(b);
     cfgTip.appendChild(h('div', { class: 't', text: b.title + (cap ? '  ' + cap : '') }));
     cfgTip.appendChild(h('div', { class: 'r', text: 'lines ' + b.startNum + '–' + b.endNum + ' · ' + cfgSummary(b) }));
+    var want = cfgShowKind(), tipLines = b.lines.filter(cfgSpeaks);
+    if (want !== null) {
+      var kept = tipLines.filter(function (l) {
+        var k = cfgKinds(l);
+        return k.indexOf(want) !== -1 || k.indexOf('flow') !== -1;
+      });
+      if (kept.length) tipLines = kept;
+    }
     cfgTip.appendChild(h('pre', {
-      text: b.lines.filter(cfgSpeaks).slice(0, 8).map(function (l) {
+      text: tipLines.slice(0, 8).map(function (l) {
         return l.num + '  ' + (l.motion ? l.motion + ' ' : '') + l.text;
       }).join('\n')
     }));
@@ -6491,6 +6698,10 @@
       r.setAttribute('fill', b.kind.indexOf('stop') !== -1 ? 'var(--write)'
         : b.kind === 'label' ? 'var(--accent)' : 'var(--gutter)');
       r.setAttribute('opacity', b.kind === 'normal' ? '0.45' : '0.85');
+      if (state.flowLine !== null && cfg.lineBlock[state.flowLine] === i) {
+        r.setAttribute('fill', 'var(--lbl)');
+        r.setAttribute('opacity', '1');
+      }
       g.appendChild(r);
 
       /* Landmarks get a name at true screen size — this is the part that stays
@@ -6579,7 +6790,14 @@
       render();
       return true;
     }
-    if (ev.key === 'Escape' && state.flowFocus !== null) { cfgSetFocus(null); return true; }
+    if (ev.key === 'v' || ev.key === 'V') {
+      cfgSetShow(CFG_SHOW_ORDER[(CFG_SHOW_ORDER.indexOf(state.flowShow) + 1) % CFG_SHOW_ORDER.length]);
+      return true;
+    }
+    if (ev.key === 'Escape') {
+      if (state.flowFocus !== null) { cfgSetFocus(null); return true; }
+      if (state.flowLine !== null) { cfgSetLine(null); return true; }
+    }
     return false;
   }
 

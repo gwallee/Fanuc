@@ -880,6 +880,10 @@ tr:last-child td { border-bottom: none; }
  * it wins, and it has to beat the dimming too. */
 .flow-card.hot { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-bg); }
 .flow-canvas.isolated .flow-card.dimmed.hot { opacity: 1; filter: none; }
+/* the block holding the pinned line — the mark that survives the coarser
+ * tiers, where the line itself is not drawn */
+.flow-card.picked { border-color: var(--lbl); }
+.flow-canvas.isolated .flow-card.dimmed.picked { opacity: 1; filter: none; }
 
 .fc-head { display: flex; align-items: baseline; gap: 8px; padding: 5px 10px 2px; }
 .fc-spacer { flex: 1; }
@@ -912,6 +916,19 @@ tr:last-child td { border-bottom: none; }
 }
 .fc-line:hover { background: var(--sel-bg); }
 .fc-line.cmt { color: var(--cmt); }
+/* pinned line, and its kin: the lines touching the same register, I/O point,
+ * label or program */
+.fc-line.sel { background: var(--sel-bg); box-shadow: inset 3px 0 0 var(--lbl); }
+.fc-line.kin .fc-ln { color: var(--lbl); }
+.fc-line.kin .fc-src { text-decoration: underline dotted var(--lbl); text-underline-offset: 3px; }
+/* Show filter: the lines that are not what you are tracing fold away, and the
+ * block's caption and summary stand in so no block reads as empty */
+.flow-canvas.filtered .fc-line.off { display: none; }
+.flow-canvas.filtered.tier-full .fc-cap { display: block; padding: 2px 10px 0; font-size: 12px; color: var(--muted); }
+.flow-canvas.filtered.tier-full .fc-sum {
+  display: block; padding: 0 10px 5px; font-size: 11px; color: var(--faint);
+  font-family: "IBM Plex Mono", monospace;
+}
 .fc-ln {
   flex: 0 0 3em;
   text-align: right;
