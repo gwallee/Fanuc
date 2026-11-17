@@ -81,6 +81,8 @@
     flowHideNav: false,    // hide the library while the Flow tab is open (persisted)
     hideNav: false,        // hide the library on every tab — the ☰ button in the header (persisted)
     codeSize: 13,          // code font size in px (persisted)
+    liveEvery: 5000,       // Live tab poll interval in ms, 0 = paused (persisted)
+    live: null,            // Live tab: last PRGSTATE/ERRALL read + cached listings
     ignoreIoState: true,   // Compare: skip the controller's inline I/O state (persisted)
     ignoreLineNums: true,  // Compare: skip the leading /MN line number (persisted)
     robotCheck: null,      // last "check robot for changes" run — manual, never polled
@@ -208,6 +210,7 @@
       if (typeof p.hideNav === 'boolean') state.hideNav = p.hideNav;
       if (p.xrefFolded && typeof p.xrefFolded === 'object') state.xrefFolded = p.xrefFolded;
       if (typeof p.xrefHideUnused === 'boolean') state.xrefHideUnused = p.xrefHideUnused;
+      if ([5000, 15000, 60000, 0].indexOf(p.liveEvery) !== -1) state.liveEvery = p.liveEvery;
     } catch (e) { /* defaults */ }
     try {
       // the password never touches disk — it lives for this tab only
@@ -224,7 +227,7 @@
         flowLayout: state.flowLayout, flowGaps: state.flowGaps, flowDetail: state.flowDetail,
         flowShow: state.flowShow, flowStructure: state.flowStructure, flowExpand: state.flowExpand,
         flowMini: state.flowMini, flowHideNav: state.flowHideNav, hideNav: state.hideNav,
-        xrefFolded: state.xrefFolded, xrefHideUnused: state.xrefHideUnused,
+        xrefFolded: state.xrefFolded, xrefHideUnused: state.xrefHideUnused, liveEvery: state.liveEvery,
         lastRobot: state.lastRobot || null, backupPick: state.backupPick,
         theme: state.theme, splitPct: state.splitPct,
         showAllProgs: state.showAllProgs, showData: state.showData, dataSeg: state.dataSeg
@@ -902,7 +905,20 @@
            * a robot all leave it alone — so after a spell of offline work it
            * names a controller nobody has opened in weeks, and reconnecting
            * pre-selects a robot the user is not working on. */
-          if (state.lastRobot && state.lastRobot.ip && !state.robot.ip &&
+          /* A link from another page (the ABOT dashboard) can name the robot:
+           * /?robot=10.103.193.113. It wins over the remembered robot, and
+           * the parameter is dropped from the address so a refresh later
+           * goes back to the normal behaviour. Only a plain IPv4 address or
+           * host name is accepted. */
+          var wanted = '';
+          try { wanted = new URLSearchParams(location.search).get('robot') || ''; } catch (e) { /* none */ }
+          if (/^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$/.test(wanted) && !state.robot.ip) {
+            try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) { /* optional */ }
+            var saved = (state.knownRobots || []).filter(function (r) { return r.ip === wanted; })[0];
+            state.robot.ftpUser = (saved && saved.ftpUser) || '';
+            state.robot.ftpPass = '';
+            connectRobot(wanted);
+          } else if (state.lastRobot && state.lastRobot.ip && !state.robot.ip &&
               state.lastRobot.ip === state.library) {
             state.robot.ftpUser = state.lastRobot.ftpUser || '';
             state.robot.ftpPass = state.sessionFtpPass || '';
@@ -3102,6 +3118,7 @@
    * is the one tab that works with an empty library. */
   var TABS = [
     ['robot', 'Robot'],
+    ['live', 'Live'],
     ['code', 'Code'],
     ['summary', 'Summary'],
     ['flow', 'Flow'],
@@ -3181,6 +3198,7 @@
       case 'xref': renderXref(pane); break;
       case 'search': renderSearch(pane); break;
       case 'robot': renderRobot(pane); break;
+      case 'live': renderLive(pane); break;
     }
   }
 
@@ -8650,6 +8668,282 @@
     }
   }
 
+  /* ================= Live tab =================
+   * Watch a robot while it runs: where every task is (PRGSTATE.DG), the
+   * program lines around each cursor (<prog>.LS), and the alarms still
+   * active (ERRALL.LS). Read only. Polled only while this tab is showing
+   * and the page is visible, and a poll repaints #live-body alone — the rest
+   * of the app is not rebuilt every few seconds. Ported from the ABOT
+   * dashboard's /debug robot panel. */
+  var LIVE_EVERY = [[5000, 'every 5 s'], [15000, 'every 15 s'], [60000, 'every minute'], [0, 'paused']];
+  var LIVE_LISTING_TTL = 120000;   // a listing changes only when someone edits it
+  var LIVE_CONTEXT = 12;           // program lines either side of the cursor
+  var liveTimer = 0;
+
+  function liveState() {
+    if (!state.live) state.live = { data: null, busy: false, listings: {}, open: {}, deadOpen: false };
+    return state.live;
+  }
+
+  function liveSchedule() {
+    clearInterval(liveTimer);
+    liveTimer = state.liveEvery ? setInterval(function () {
+      if (state.tab === 'live' && !document.hidden) liveRead();
+    }, state.liveEvery) : 0;
+  }
+
+  function liveFile(ip, name) {
+    return api('/api/robot/file?ip=' + encodeURIComponent(ip) + '&name=' + encodeURIComponent(name) + ftpQS());
+  }
+
+  function liveRead() {
+    var L = liveState(), ip = state.robot.ip;
+    if (!state.server || !ip || L.busy) return;
+    L.busy = true;
+    var t0 = Date.now();
+    Promise.all([
+      liveFile(ip, 'PRGSTATE.DG'),
+      liveFile(ip, 'ERRALL.LS').catch(function (e) { return { error: e.message }; })
+    ]).then(function (r) {
+      if (ip !== state.robot.ip) return;
+      var ps = VA.parsePrgState(r[0].content);
+      L.data = { ip: ip, at: Date.now(), ms: Date.now() - t0, via: r[0].via, ps: ps,
+        errs: r[1].error ? { error: r[1].error } : VA.parseErrall(r[1].content) };
+      var want = {};
+      ps.tasks.forEach(function (t) {
+        var at = VA.taskPosition(t);
+        if (at.live && at.type !== 'PC' && /^[A-Za-z0-9_-]{1,36}$/.test(at.program || '')) want[at.program.toUpperCase()] = 1;
+      });
+      return Promise.all(Object.keys(want).map(function (n) { return liveListing(ip, n); }));
+    }).catch(function (e) {
+      if (ip !== state.robot.ip) return;
+      var prev = L.data && (L.data.error ? L.data.prev : L.data);
+      L.data = { ip: ip, at: Date.now(), error: e.message, prev: prev && prev.ip === ip ? prev : null };
+    }).then(function () {
+      L.busy = false;
+      var body = document.getElementById('live-body');
+      if (body && state.tab === 'live') paintLive(body);
+    });
+  }
+
+  function liveListing(ip, name) {
+    var L = liveState(), key = ip + '|' + name, got = L.listings[key];
+    if (got && Date.now() - got.at < (got.error ? 30000 : LIVE_LISTING_TTL)) return Promise.resolve();
+    return liveFile(ip, name + '.LS').then(function (b) {
+      var lines = P.parseLS(b.content, name + '.LS').lines;
+      L.listings[key] = lines.length ? { at: Date.now(), lines: lines }
+        : { at: Date.now(), error: 'no TP listing (a KAREL program has none)' };
+    }).catch(function (e) {
+      L.listings[key] = { at: Date.now(), error: e.message };
+    });
+  }
+
+  /* Open a program at a line in the Code tab — the library copy if there is
+   * one, otherwise imported from this robot first. */
+  function liveOpen(name, line) {
+    if (state.programs[name]) { gotoLine(name, line); return; }
+    if (!confirmCrossSource([name + '.LS'])) return;
+    importFromRobot(name + '.LS').then(function (n) { if (n) gotoLine(n, line); });
+  }
+
+  function renderLive(pane) {
+    var L = liveState();
+    var bar = h('div', { class: 'code-toolbar' });
+    bar.appendChild(h('span', { class: 'title', text: 'Live' + (state.robot.ip ? ' · ' + state.robot.ip : '') }));
+    var sel = h('select', { 'aria-label': 'Refresh interval', title: 'Read only while this tab is showing' });
+    LIVE_EVERY.forEach(function (o) { sel.appendChild(h('option', { value: String(o[0]), text: o[1] })); });
+    sel.value = String(state.liveEvery);
+    sel.addEventListener('change', function () {
+      state.liveEvery = +sel.value;
+      savePrefs();
+      liveSchedule();
+      if (state.liveEvery) liveRead();
+    });
+    bar.appendChild(sel);
+    bar.appendChild(h('button', { class: 'btn subtle', text: 'Refresh', onclick: liveRead }));
+    pane.appendChild(bar);
+    if (!state.server || !state.robot.ip) {
+      pane.appendChild(h('p', { class: 'muted', text: state.server
+        ? 'Connect to a robot on the Robot tab first.'
+        : 'Live view needs the bridge server — see the Robot tab.' }));
+      return;
+    }
+    var body = h('div', { id: 'live-body', class: 'live' });
+    pane.appendChild(body);
+    paintLive(body);
+    var d = L.data;
+    if (!d || d.ip !== state.robot.ip || (state.liveEvery && Date.now() - d.at >= state.liveEvery)) {
+      setTimeout(liveRead, 0);
+    }
+  }
+
+  function liveClockOff(date) {
+    var m = /(\d{2})-([A-Z]{3})-(\d{2})/.exec(date || '');
+    return !!m && Math.abs(2000 + +m[3] - new Date().getFullYear()) > 1;
+  }
+
+  function paintLive(body) {
+    var L = liveState(), ip = state.robot.ip;
+    var keepScroll = {};
+    body.querySelectorAll('.live-listing[data-key]').forEach(function (el) { keepScroll[el.getAttribute('data-key')] = el.scrollLeft; });
+    body.innerHTML = '';
+    var d = L.data && L.data.ip === ip ? L.data : null;
+    if (!d) { body.appendChild(h('p', { class: 'muted', text: 'Reading ' + ip + '…' })); return; }
+    if (d.error) {
+      body.appendChild(h('div', { class: 'live-notice', text: 'Could not read ' + ip + ' at ' +
+        new Date(d.at).toLocaleTimeString() + ': ' + d.error + (d.prev ? ' — showing the last good read.' : '') }));
+      if (!d.prev) return;
+      d = d.prev;
+      body.classList.add('stale');
+    } else body.classList.remove('stale');
+
+    var hd = d.ps.header || {};
+    var meta = h('div', { class: 'live-meta muted' });
+    meta.appendChild(document.createTextNode([hd.fNumber, [hd.version, hd.sysVersion].filter(Boolean).join(' '),
+      'via ' + d.via, d.ms + ' ms', new Date(d.at).toLocaleTimeString()].filter(Boolean).join(' · ')));
+    if (liveClockOff(hd.date)) {
+      meta.appendChild(document.createTextNode(' '));
+      meta.appendChild(h('span', { class: 'badge warn', text: 'robot clock not set', title: 'The controller clock reads ' + hd.date + ', so alarm times are not real dates' }));
+    }
+    body.appendChild(meta);
+
+    // ---- active alarms ----
+    var errs = Array.isArray(d.errs) ? d.errs : null;
+    var seen = {}, act = [];
+    (errs || []).forEach(function (e) {
+      if (!e.active) return;
+      var k = (e.code || '') + '|' + e.text;
+      if (seen[k]) seen[k].count++; else { seen[k] = { e: e, count: 1 }; act.push(seen[k]); }
+    });
+    body.appendChild(h('h3', { text: 'Active alarms' + (act.length ? ' (' + act.length + ')' : '') }));
+    if (!errs) body.appendChild(h('p', { class: 'muted', text: 'Could not read ERRALL.LS: ' + (d.errs && d.errs.error) }));
+    else if (!act.length) body.appendChild(h('p', { class: 'muted', text: 'None.' }));
+    else {
+      var al = h('div', { class: 'live-alarms' });
+      act.forEach(function (a) {
+        var e = a.e, row = h('div', { class: 'live-alarm' });
+        if (alarmKnown(e.code)) {
+          row.appendChild(h('button', { class: 'alarm-code' + (L.open[e.code] ? ' open' : ''), text: e.code,
+            title: 'Cause and remedy for ' + e.code,
+            onclick: function () { L.open[e.code] = !L.open[e.code]; paintLive(body); } }));
+        } else row.appendChild(h('code', { text: e.code || '—' }));
+        row.appendChild(h('span', { text: e.text + (a.count > 1 ? ' ×' + a.count : '') }));
+        if (e.severity) row.appendChild(h('span', { class: 'badge ' + (/SERVO|ABORT|STOP/.test(e.severity) ? 'warn' : 'mid'), text: e.severity }));
+        row.appendChild(h('span', { class: 'muted', text: e.time }));
+        al.appendChild(row);
+        if (e.code && L.open[e.code]) {
+          var det = h('div', { class: 'live-alarm-detail' });
+          al.appendChild(det);
+          alarmFill(det, alarmDict().parse(e.code).code);
+        }
+      });
+      body.appendChild(al);
+    }
+
+    // ---- tasks ----
+    var tasks = d.ps.tasks.map(function (t) { var at = VA.taskPosition(t); at.t = t; return at; });
+    var live = tasks.filter(function (x) { return x.live; });
+    var dead = tasks.filter(function (x) { return !x.live; });
+    body.appendChild(h('h3', { text: 'Tasks' }));
+    if (!live.length) body.appendChild(h('p', { class: 'muted', text: 'No task is running, paused or held.' }));
+    live.forEach(function (x) { body.appendChild(liveTaskCard(x, ip, keepScroll)); });
+    if (dead.length) {
+      var states = dead.map(function (x) { return x.t.state.toLowerCase(); }).filter(function (v, i, a) { return a.indexOf(v) === i; });
+      var more = h('details', { class: 'live-dead' });
+      if (L.deadOpen) more.setAttribute('open', '');
+      more.addEventListener('toggle', function () { L.deadOpen = more.open; });
+      more.appendChild(h('summary', { class: 'muted', text: dead.length + ' task' + (dead.length > 1 ? 's' : '') + ' not running (' + states.join(', ') + ')' }));
+      dead.forEach(function (x) {
+        more.appendChild(h('div', { class: 'mono muted', text: x.t.n + '  ' + x.t.name + ' — ' + x.t.state +
+          (x.line ? ' (last at line ' + x.line + ' of ' + x.program + ')' : '') }));
+      });
+      body.appendChild(more);
+    }
+
+    // ---- recent errors ----
+    if (errs && errs.length) {
+      body.appendChild(h('h3', { text: 'Recent errors' }));
+      var tbl = h('table', { class: 'xref-table live-errs' });
+      errs.slice(0, 10).forEach(function (e) {
+        tbl.appendChild(h('tr', { class: e.active ? 'act' : '' }, [
+          h('td', { class: 'n', text: e.time }),
+          h('td', { class: 'n', text: e.code || '—' }),
+          h('td', { text: e.text })
+        ]));
+      });
+      body.appendChild(tbl);
+      body.appendChild(h('p', { class: 'muted', text: 'Full history with cause and remedy: Robot tab → Error history.' }));
+    }
+  }
+
+  function liveTaskCard(x, ip, keepScroll) {
+    var t = x.t;
+    var box = h('div', { class: 'live-task' });
+    var head = h('div', { class: 'live-task-head' });
+    head.appendChild(h('b', { class: 'mono', text: t.name }));
+    head.appendChild(h('span', { class: 'badge ' + (t.state === 'RUNNING' ? 'run' : 'pause'), text: t.state }));
+    head.appendChild(h('span', { class: 'mono', text: 'line ' + x.line + ' of ' + x.program }));
+    if (x.type !== 'PC' && x.program) {
+      head.appendChild(h('button', { class: 'btn subtle', text: 'Open ↗', title: 'Open ' + x.program + ' at line ' + x.line + ' in the Code tab',
+        onclick: function () { liveOpen(x.program.toUpperCase(), x.line); } }));
+    }
+    box.appendChild(head);
+
+    if (x.callers.length) {
+      var st = h('div', { class: 'live-stack' });
+      st.appendChild(document.createTextNode('Called from: '));
+      x.callers.forEach(function (f, i) {
+        if (i) st.appendChild(document.createTextNode(' ← '));
+        var label = (f.program || f.routine) + (f.line ? ':' + f.line : '');
+        if (f.type === 'PC' || !f.program) st.appendChild(h('code', { text: label }));
+        else st.appendChild(h('button', { class: 'live-frame', text: label, title: 'Open ' + f.program + ' at line ' + f.line,
+          onclick: function () { liveOpen(f.program.toUpperCase(), f.line); } }));
+      });
+      box.appendChild(st);
+    }
+
+    if (x.type === 'PC') {
+      box.appendChild(h('div', { class: 'muted live-note', text: 'KAREL program — no TP listing to show.' }));
+      return box;
+    }
+    var name = (x.program || '').toUpperCase();
+    var key = ip + '|' + name, Lst = liveState().listings[key];
+    if (!Lst) { box.appendChild(h('div', { class: 'muted live-note', text: 'Reading ' + name + '.LS…' })); return box; }
+    if (Lst.error) { box.appendChild(h('div', { class: 'muted live-note', text: name + '.LS: ' + Lst.error })); return box; }
+
+    var lines = Lst.lines;
+    var idx = 0;
+    while (idx < lines.length - 1 && lines[idx].num < x.line) idx++;
+    var win = lines.slice(Math.max(0, idx - LIVE_CONTEXT), idx + LIVE_CONTEXT + 1);
+    var pre = h('div', { class: 'live-listing', 'data-key': key });
+    win.forEach(function (ln) {
+      var row = h('div', { class: 'll' + (ln.num === x.line ? ' cur' : ''), title: 'Open at line ' + ln.num });
+      row.appendChild(h('span', { class: 'ln', text: ln.num + ':' }));
+      row.appendChild(h('span', { class: 'src', html: highlight(ln) || ' ' }));
+      row.addEventListener('click', function () { liveOpen(name, ln.num); });
+      pre.appendChild(row);
+    });
+    box.appendChild(pre);
+
+    var lib = state.programs[name];
+    var flat = function (ls) { return D.stripIoState(ls.map(function (l) { return l.text; }).join('\n')); };
+    var differs = lib && flat(lib.parsed.lines) !== flat(lines);   // pendant I/O state is not an edit
+    var note = h('div', { class: 'muted live-note' });
+    note.appendChild(document.createTextNode(name + '.LS from the robot · ' + (lines.length ? lines[lines.length - 1].num : 0) +
+      ' lines · re-read every 2 min · click a line to open it'));
+    if (differs) {
+      note.appendChild(document.createTextNode(' '));
+      note.appendChild(h('span', { class: 'badge warn', text: 'library copy differs', title: 'The library copy of ' + name + ' is not what the robot is running — line numbers in the Code tab may not match' }));
+    }
+    box.appendChild(note);
+    requestAnimationFrame(function () {
+      var cur = pre.querySelector('.cur');
+      if (cur) pre.scrollTop = Math.max(0, cur.offsetTop - pre.clientHeight / 2 + cur.offsetHeight / 2);
+      if (keepScroll[key]) pre.scrollLeft = keepScroll[key];
+    });
+    return box;
+  }
+
   function renderRobot(pane) {
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Robot connection' }),
@@ -9542,6 +9836,10 @@
     rebuildDerived();
     render();
     detectServer();
+    liveSchedule();
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden && state.tab === 'live' && state.liveEvery) liveRead();
+    });
 
     // installable app: register the service worker when served by the bridge
     if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {

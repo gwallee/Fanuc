@@ -348,6 +348,23 @@
     return out;
   }
 
+  /* Where a task's cursor is, for the Live tab. The deepest routine frame is
+   * the current one (the dump lists it first, but its depth is what says so)
+   * and its Program is the file that line belongs to. The header's "of X"
+   * names the task's top program, which after a TP CALL is NOT where the
+   * line is — "PAUSED @ 42 in _PL_RACK of __AUTO" is line 42 of _PL_RACK. */
+  function taskPosition(t) {
+    var frames = (t.stack || []).slice().sort(function (a, b) { return b.depth - a.depth; });
+    var cur = frames[0] || null;
+    return {
+      live: t.state === 'RUNNING' || t.state === 'PAUSED' || t.state === 'HELD',
+      program: (cur && cur.program) || t.routine || t.program || null,
+      line: cur && cur.line !== null ? cur.line : t.line,
+      type: cur ? cur.type : null,
+      callers: frames.slice(1)
+    };
+  }
+
   /* A missing or unrecognised value is unknown, not an empty selection. */
   function parseTpDefaultProgram(text) {
     var m = String(text || '').match(/^\s*(?:\[\*SYSTEM\*\])?\$TP_DEFPROG\b[^\r\n=]*=\s*'([^'\r\n]*)'/im);
@@ -367,7 +384,7 @@
       held: Object.prototype.hasOwnProperty.call(parsed.locked, key), protection: program.protection };
   }
 
-  var api = { parseVersion: parseVersion, parseNumreg: parseNumreg, parseStrreg: parseStrreg, rawLines: rawLines, parseIOComments: parseIOComments, parseIOState: parseIOState, parsePosreg: parsePosreg, posregValueStr: posregValueStr, parseErrall: parseErrall, parsePrgState: parsePrgState, parseTpDefaultProgram: parseTpDefaultProgram, assessProgramState: assessProgramState };
+  var api = { parseVersion: parseVersion, parseNumreg: parseNumreg, parseStrreg: parseStrreg, rawLines: rawLines, parseIOComments: parseIOComments, parseIOState: parseIOState, parsePosreg: parsePosreg, posregValueStr: posregValueStr, parseErrall: parseErrall, parsePrgState: parsePrgState, parseTpDefaultProgram: parseTpDefaultProgram, assessProgramState: assessProgramState, taskPosition: taskPosition };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucVA = api;
 })(typeof window !== 'undefined' ? window : globalThis);

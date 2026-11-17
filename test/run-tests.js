@@ -613,6 +613,16 @@ check(pp.programs[0].task === 'yes' && pp.programs[1].protection === 'ON',
   'Task: yes and Protection: ON read');
 check(!Object.prototype.hasOwnProperty.call(pp.locked, '_IDLE_PROG'),
   'an idle, write-protected program is not reported as held by a task');
+const pausedAt = VA.taskPosition(pp.tasks[0]);
+check(pausedAt.live && pausedAt.program === '_PL_RACK' && pausedAt.line === 42 && pausedAt.type === 'TP',
+  'Live cursor is the deepest frame: line 42 of _PL_RACK, not of the task program __AUTO');
+check(pausedAt.callers.length === 1 && pausedAt.callers[0].program === '__AUTO' && pausedAt.callers[0].line === 118,
+  'Live call stack lists the caller __AUTO:118');
+const cellioAt = VA.taskPosition(atcellio);
+check(cellioAt.live && cellioAt.type === 'PC' && cellioAt.line === 477 && cellioAt.callers[0].line === 603,
+  'Live cursor on the real KAREL task: line 477, type PC, caller at 603');
+const deadAt = VA.taskPosition(psr.tasks.find(t => t.state === 'ABORTED'));
+check(!deadAt.live && deadAt.line !== null, 'an ABORTED task is not live but keeps its last line');
 const heldAssessment = VA.assessProgramState(pausedDump, '_pl_rack');
 check(heldAssessment && heldAssessment.held && heldAssessment.task.state === 'PAUSED',
   'edit check finds a paused task holding the target');
