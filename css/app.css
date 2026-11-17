@@ -925,6 +925,8 @@ tr:last-child td { border-bottom: none; }
 /* Show filter: the lines that are not what you are tracing fold away, and the
  * block's caption and summary stand in so no block reads as empty */
 .flow-canvas.filtered .fc-line.off { display: none; }
+.flow-canvas.filtered .flow-card.bare .fc-body { display: none; }
+.flow-bar label:has(input:disabled) { opacity: 0.5; }
 /* with a filter on, the headings tier lists the lines that survive it — they
  * are few, and they are the reason the filter was picked */
 .flow-canvas.filtered.tier-compact .fc-body { display: block; }

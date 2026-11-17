@@ -74,6 +74,7 @@
     flowGaps: 'normal',    // 'tight' | 'normal' | 'wide' (persisted)
     flowDetail: 'auto',    // 'auto' | 'full' | 'compact' | 'map' (persisted)
     flowShow: 'all',       // which lines the blocks list: a CFG_SHOW key (persisted)
+    flowStructure: false,  // a filtered view also lists labels and jumps (persisted)
     flowLine: null,        // line number pinned in the control-flow graph
     flowMini: true,        // show the overview strip (persisted)
     flowHideNav: false,    // hide the library while the Flow tab is open (persisted)
@@ -199,6 +200,7 @@
       if (CFG_GAPS[p.flowGaps]) state.flowGaps = p.flowGaps;
       if (p.flowDetail === 'auto' || CFG_TIER_MAX[p.flowDetail]) state.flowDetail = p.flowDetail;
       if (CFG_SHOW[p.flowShow]) state.flowShow = p.flowShow;
+      if (typeof p.flowStructure === 'boolean') state.flowStructure = p.flowStructure;
       if (typeof p.flowMini === 'boolean') state.flowMini = p.flowMini;
       if (typeof p.flowHideNav === 'boolean') state.flowHideNav = p.flowHideNav;
       if (typeof p.hideNav === 'boolean') state.hideNav = p.hideNav;
@@ -218,7 +220,7 @@
         ignoreIoState: state.ignoreIoState, ignoreLineNums: state.ignoreLineNums,
         syncSplit: state.syncSplit,
         flowLayout: state.flowLayout, flowGaps: state.flowGaps, flowDetail: state.flowDetail,
-        flowShow: state.flowShow,
+        flowShow: state.flowShow, flowStructure: state.flowStructure,
         flowMini: state.flowMini, flowHideNav: state.flowHideNav, hideNav: state.hideNav,
         xrefFolded: state.xrefFolded, xrefHideUnused: state.xrefHideUnused,
         lastRobot: state.lastRobot || null, backupPick: state.backupPick,
@@ -5423,10 +5425,12 @@
     wide:   { y: { full: 44, compact: 34, map: 16 }, pitch: 48, colGap: 120 }
   };
 
-  /* What the blocks list. The structure — labels, jumps, IF/ELSE/ENDIF,
-   * SELECT cases, END — is always drawn, since a flow with its branches cut
-   * out is not a flow; the filter decides which of the straight-line
-   * instructions between them get the room. Order is the V key's cycle. */
+  /* What the blocks list. A filter lists only what was picked: the block
+   * title already names its LBL and the arrows are drawn between blocks
+   * whether or not the jump line is listed, so the labels and IF…JMPs were
+   * mostly repeating the picture — on a rack program they outnumbered the
+   * moves two to one. The structure checkbox brings them back for reading
+   * the branch conditions. Order is the V key's cycle. */
   var CFG_SHOW_ORDER = ['all', 'calls', 'moves', 'regs', 'io'];
   var CFG_SHOW = {
     all:   { label: 'every line', kind: null },
@@ -5447,6 +5451,12 @@
   function cfgPitch() { return cfgGaps().pitch; }
   function cfgChartMode() { return state.flowLayout === 'chart'; }
   function cfgShowKind() { return (CFG_SHOW[state.flowShow] || CFG_SHOW.all).kind; }
+  /* does a line with these kinds survive the current filter? */
+  function cfgShowKeeps(kinds) {
+    var want = cfgShowKind();
+    return want === null || kinds.indexOf(want) !== -1 ||
+      (state.flowStructure && kinds.indexOf('flow') !== -1);
+  }
 
   function renderCfg(pane, p) {
     var flow = FL.buildFlow(p.parsed);
@@ -5531,10 +5541,24 @@
 
     var g2 = grp();
     cfg.showSel = sel('Show',
-      'Which lines the blocks list. Labels, jumps, IF/ELSE and END are always drawn — that is the structure — and the rest narrows to what you are tracing: the programs called, the motion, the registers, or the I/O. (V)',
+      'Which lines the blocks list: every line, or only the programs called, the motion (with the frame, tool and offset lines that govern it), the registers, or the I/O. The arrows and block titles stay either way. (V)',
       state.flowShow, CFG_SHOW_ORDER.map(function (k) { return [k, CFG_SHOW[k].label]; }),
       cfgSetShow);
     g2.appendChild(cfg.showSel);
+    var structLbl = h('label', { title: 'With a filter on, also list the labels, jumps, IF/ELSE/ENDIF, SELECT cases and END — to read the branch conditions alongside what you are tracing' });
+    cfg.structBox = h('input', { type: 'checkbox' });
+    cfg.structBox.checked = !!state.flowStructure;
+    cfg.structBox.disabled = cfgShowKind() === null;
+    cfg.structBox.addEventListener('change', function () {
+      state.flowStructure = cfg.structBox.checked;
+      savePrefs();
+      cfgApplyShow();
+      cfgRebuild(cfgAnchor());
+      cfgPaintHint();
+    });
+    structLbl.appendChild(cfg.structBox);
+    structLbl.appendChild(document.createTextNode(' structure'));
+    g2.appendChild(structLbl);
     g2.appendChild(sel('Layout',
       'Column keeps one stack with the jumps arcing through the gutter. Chart spreads branches sideways and routes every jump at right angles in its own lane. (C)',
       state.flowLayout, [['column', 'column'], ['chart', 'chart']],
@@ -5723,11 +5747,14 @@
   function cfgApplyShow() {
     var want = cfgShowKind();
     cfg.canvas.classList.toggle('filtered', want !== null);
+    var lit = cfg.cards.map(function () { return 0; });
     cfg.rows.forEach(function (r) {
-      var on = want === null || r.num === state.flowLine ||
-        r.kinds.indexOf(want) !== -1 || r.kinds.indexOf('flow') !== -1;
+      var on = r.num === state.flowLine || cfgShowKeeps(r.kinds);
       r.el.classList.toggle('off', !on);
+      if (on) lit[r.idx]++;
     });
+    // a block with nothing left to list drops its empty body padding too
+    cfg.cards.forEach(function (c, i) { c.classList.toggle('bare', want !== null && !lit[i]); });
   }
 
   function cfgSetShow(v) {
@@ -5737,6 +5764,7 @@
     if (!cfg) return;
     var s = cfg.showSel && cfg.showSel.querySelector('select');
     if (s && s.value !== v) s.value = v;
+    if (cfg.structBox) cfg.structBox.disabled = cfgShowKind() === null;
     cfgApplyShow();
     /* A filter is a request to read lines, and the bars tier draws none. With
      * auto detail, come in to the headings tier, which lists the filtered
@@ -6666,10 +6694,7 @@
     cfgTip.appendChild(h('div', { class: 'r', text: 'lines ' + b.startNum + '–' + b.endNum + ' · ' + cfgSummary(b) }));
     var want = cfgShowKind(), tipLines = b.lines.filter(cfgSpeaks);
     if (want !== null) {
-      var kept = tipLines.filter(function (l) {
-        var k = cfgKinds(l);
-        return k.indexOf(want) !== -1 || k.indexOf('flow') !== -1;
-      });
+      var kept = tipLines.filter(function (l) { return cfgShowKeeps(cfgKinds(l)); });
       if (kept.length) tipLines = kept;
     }
     cfgTip.appendChild(h('pre', {
