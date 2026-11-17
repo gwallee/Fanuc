@@ -834,6 +834,7 @@ tr:last-child td { border-bottom: none; }
 }
 .flow-hint { color: var(--faint); font-size: 12px; margin: 0 0 6px; max-width: 110ch; }
 .flow-hint .btn { margin-left: 4px; }
+.flow-show-note { color: var(--lbl); }
 
 .flow-stage {
   display: flex; margin-top: 2px;
@@ -924,6 +925,9 @@ tr:last-child td { border-bottom: none; }
 /* Show filter: the lines that are not what you are tracing fold away, and the
  * block's caption and summary stand in so no block reads as empty */
 .flow-canvas.filtered .fc-line.off { display: none; }
+/* with a filter on, the headings tier lists the lines that survive it — they
+ * are few, and they are the reason the filter was picked */
+.flow-canvas.filtered.tier-compact .fc-body { display: block; }
 .flow-canvas.filtered.tier-full .fc-cap { display: block; padding: 2px 10px 0; font-size: 12px; color: var(--muted); }
 .flow-canvas.filtered.tier-full .fc-sum {
   display: block; padding: 0 10px 5px; font-size: 11px; color: var(--faint);

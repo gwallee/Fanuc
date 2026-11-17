@@ -5737,9 +5737,19 @@
     if (!cfg) return;
     var s = cfg.showSel && cfg.showSel.querySelector('select');
     if (s && s.value !== v) s.value = v;
-    var a = cfgAnchor();
     cfgApplyShow();
-    cfgRebuild(a);
+    /* A filter is a request to read lines, and the bars tier draws none. With
+     * auto detail, come in to the headings tier, which lists the filtered
+     * lines — otherwise the pick changes nothing on screen. A detail chosen
+     * by hand is left alone. */
+    if (cfgShowKind() !== null && cfgTier === 'map' && state.flowDetail === 'auto') {
+      // Fit can hold the zoom at the bars ceiling itself, where a zoom to it
+      // is a no-op: then the tier is switched in place instead
+      if (cfgView.k < CFG_TIER_MAX.map) cfgZoomTo(CFG_TIER_MAX.map);
+      else { var an = cfgAnchor(); cfgApplyTier('compact'); cfgRebuild(an); }
+    } else {
+      cfgRebuild(cfgAnchor());
+    }
     cfgPaintHint();
   }
 
@@ -5884,7 +5894,9 @@
   }
 
   function cfgApplyTier(t) {
+    var changed = t !== cfgTier;
     cfgTier = t;
+    if (changed && cfgShowKind() !== null) cfgPaintHint();
     cfg.canvas.className = 'flow-canvas tier-' + t + (state.flowFocus === null ? '' : ' isolated') +
       (cfgShowKind() === null ? '' : ' filtered');
     cfg.cards.forEach(function (card, i) {
@@ -6606,6 +6618,14 @@
     if (!cfg) return;
     cfg.hint.innerHTML = '';
     var focus = state.flowFocus, sel = cfg.sel;
+    /* The filter says what it did, so a pick is never silent — at the bars
+     * tier, or with a detail chosen by hand, the fold is not visible. */
+    if (cfgShowKind() !== null) {
+      var shown = cfg.rows.filter(function (r) { return !r.el.classList.contains('off'); }).length;
+      cfg.hint.appendChild(h('span', { class: 'flow-show-note',
+        text: 'Showing ' + CFG_SHOW[state.flowShow].label + ' — ' + shown + ' of ' + cfgPlural(cfg.rows.length, 'line') +
+          (cfgTier === 'map' ? '; zoom in to read them' : '') + '. ' }));
+    }
     if (focus === null && !sel) {
       cfg.hint.appendChild(document.createTextNode(
         'Wheel zooms, dragging the background pans (or middle-drag anywhere), shift+wheel scrolls. Amber arrows go up — a loop; blue go down — a skip; dashed is conditional. Hover an arrow to trace it, click a block to isolate its jumps, click a line to pin it, ↗ or double-click a line to open the code.'));
