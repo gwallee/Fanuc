@@ -9190,8 +9190,10 @@
       (prs || []).forEach(function (r) {
         // a controller holds hundreds of untaught PRs; an unnamed one is
         // noise until someone claims it, and "Show empty" is how they do
-        if (!state.showEmptyPR && r.rep === 'uninitialized' && !r.comment) return;
+        var empty = r.rep === 'uninitialized' && !r.comment;
+        if (!state.showEmptyPR && empty) return;
         out.rows.push({
+          empty: empty,
           key: 'PR[' + r.index + ']', type: 'PR', index: r.index, row: r,
           label: 'PR[' + r.index + ']' + (r.group > 1 ? ' GP' + r.group : ''),
           value: VA.posregValueStr(r), vcls: r.rep === 'uninitialized' ? 'muted' : 'tok-num',
@@ -9294,7 +9296,7 @@
       var emptyCb = h('input', { type: 'checkbox' });
       emptyCb.checked = !!state.showEmptyPR;
       emptyCb.addEventListener('change', function () { state.showEmptyPR = emptyCb.checked; render(); });
-      bar.appendChild(h('label', { title: 'List untaught PRs that have no name yet, so one can be claimed before it is taught' },
+      bar.appendChild(h('label', { title: 'List untaught PRs that have no name yet, so one can be claimed before it is taught. They stay listed with "Used in programs only" ticked — a free PR is unused by definition.' },
         [emptyCb, document.createTextNode(' Show empty PRs')]));
     }
     pane.appendChild(bar);
@@ -9333,7 +9335,15 @@
       var q = fIn.value.trim().toLowerCase();
       wrap.innerHTML = '';
       var hits = d.rows.filter(function (r) {
-        if (state.dataUsedOnly && !r.refs.length) return false;
+        /* "Show empty PRs" ADDS rows; "Used in programs only" takes them
+         * away. Applied in that order the second undid the first, because an
+         * untaught PR is unused almost by definition — so the box you tick
+         * to find a free PR to claim showed you nothing, and there was no
+         * way to tell from the screen why. An empty PR you have asked to see
+         * is therefore exempt from the used filter: with both ticked the
+         * table reads "what my programs touch, plus what is free to take",
+         * which is the question you are actually asking when claiming one. */
+        if (state.dataUsedOnly && !r.refs.length && !r.empty) return false;
         return !q || r.hay.indexOf(q) !== -1;
       });
       var tbl = h('table', { class: 'xref-table data-table seg-' + seg });
