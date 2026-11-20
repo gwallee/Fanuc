@@ -1735,6 +1735,13 @@ h3.sec-toggle:hover { color: var(--accent); }
 .doc-tab.active { background: var(--bg); color: var(--ink); border-color: var(--accent); font-weight: 600; }
 .doc-tab.docked { border-style: dashed; }
 .doc-tab:hover { color: var(--ink); }
+/* A program open in the editor says so on its tab, and says it louder once
+ * the text differs from what is saved — the dot is the "you have not sent
+ * this yet" mark. After .active and :hover so the state survives both. */
+.doc-tab.editing, .doc-tab.editing:hover { color: var(--warn); border-color: var(--warn); }
+.doc-tab.editing.active { background: var(--warn-bg); }
+.doc-tab.dirty, .doc-tab.dirty:hover { font-weight: 600; }
+.doc-tab.dirty .doc-label::before { content: "\25CF"; margin-right: 5px; font-size: 9px; vertical-align: 1px; }
 .doc-x { padding: 0 2px; border-radius: 3px; color: var(--muted); }
 .doc-x:hover { background: var(--warn-bg); color: var(--warn); }
 .ds-toggle { display: inline-flex; align-items: center; padding: 2px 6px; margin-bottom: 2px; color: var(--muted); }

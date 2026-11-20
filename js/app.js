@@ -3432,8 +3432,7 @@
   function safeCloseDoc(id) {
     var pn = paneOf(id);
     var nm = docProg(id);
-    var dirtyThis = nm && state.editDrafts[nm] !== undefined &&
-      state.programs[nm] && state.editDrafts[nm] !== state.programs[nm].source;
+    var dirtyThis = !!nm && progDirty(nm);
     if (dirtyThis && !confirm('Close ' + docLabel(id) + '? Unsaved changes will be lost.')) return;
     if (state.editing && id === state.active.left) state.editing = false;
     if (pn && state.active[pn] === id) state.editSides[pn] = false;
@@ -3510,6 +3509,58 @@
 
   function isEditing(id) {
     return docIsProg(id) && state.editDrafts[docProg(id)] !== undefined;
+  }
+
+  /* A textarea hands back LF whatever was put into it, so a listing stored
+   * with CRLF — which is most of them, straight off a controller — would
+   * read as edited the moment it was opened. The question being asked is
+   * "did the typist change anything", and they cannot type a line ending
+   * the textarea would keep, so both sides are compared in LF. */
+  function sameEditText(a, b) {
+    return String(a).replace(/\r\n?/g, '\n') === String(b).replace(/\r\n?/g, '\n');
+  }
+
+  /* One program's unsaved state. The draft is written on every keystroke, so
+   * this is current without asking the textarea. */
+  function progDirty(name) {
+    var p = state.programs[name];
+    return !!p && state.editDrafts[name] !== undefined && !sameEditText(state.editDrafts[name], p.source);
+  }
+
+  /* The "Save & Upload" button for the editor the caret is in. Walking up
+   * from the focused textarea finds the nearest enclosing one, which is the
+   * right half of a split; with no editor focused it answers only when the
+   * page holds exactly one, since guessing which robot to write to is not a
+   * thing a shortcut should do. Null when there is nothing to send, which is
+   * also the answer when no robot is connected — the button is not built. */
+  function saveSendButton() {
+    function find(root) {
+      return Array.prototype.filter.call(root.querySelectorAll('button'), function (b) {
+        return b.textContent.trim() === 'Save & Upload' && !b.disabled;
+      });
+    }
+    var ae = document.activeElement;
+    if (ae && ae.tagName === 'TEXTAREA') {
+      for (var n = ae.parentElement; n; n = n.parentElement) {
+        var hit = find(n);
+        if (hit.length) return hit[0];
+      }
+      return null;
+    }
+    var all = find(document);
+    return all.length === 1 ? all[0] : null;
+  }
+
+  /* The strip is built by render(), and typing deliberately never calls
+   * render() — it would take the caret with it. So a tab's own colour is
+   * nudged in place instead, from the editor's input handler. */
+  function paintDocTabs() {
+    var tabs = document.querySelectorAll('.doc-tab[data-doc]');
+    Array.prototype.forEach.call(tabs, function (el) {
+      var id = el.getAttribute('data-doc');
+      el.classList.toggle('editing', isEditing(id));
+      el.classList.toggle('dirty', docIsProg(id) && progDirty(docProg(id)));
+    });
   }
 
   /* Enter edit mode on a program. The draft starts as the saved source, so
@@ -3693,9 +3744,13 @@
   function renderDocTabs(pane, extra) {
     var strip = h('div', { class: 'doc-tabs', title: 'Drag a tab off this strip to move it to the other side' });
     state.docs[pane].forEach(function (id) {
+      var dirty = docIsProg(id) && progDirty(docProg(id));
       var tab = h('span', {
-        class: 'doc-tab' + (id === state.active[pane] ? ' active' : ''),
-        title: 'Click to show · drag off the strip to move it to the other side · middle-click to close',
+        class: 'doc-tab' + (id === state.active[pane] ? ' active' : '') +
+               (isEditing(id) ? ' editing' : '') + (dirty ? ' dirty' : ''),
+        'data-doc': id,
+        title: (dirty ? 'Unsaved changes · ' : isEditing(id) ? 'Open in the editor · ' : '') +
+               'Click to show · drag off the strip to move it to the other side · middle-click to close',
         draggable: 'true'
       }, [
         h('span', { class: 'doc-label', text: docLabel(id) }),
@@ -4139,8 +4194,7 @@
             h('button', {
               class: 'btn subtle', text: 'Cancel',
               onclick: function () {
-                if (state.editDrafts[name] !== undefined && state.editDrafts[name] !== p.source &&
-                    !confirm('Discard your changes to ' + name + '?')) return;
+                if (progDirty(name) && !confirm('Discard your changes to ' + name + '?')) return;
                 state.editSides[side[0]] = false;
                 delete state.editDrafts[name];
                 render();
@@ -4313,11 +4367,9 @@
 
   function editorDirty() {
     liveEditors = liveEditors.filter(function (e) { return e.ta.isConnected; });
-    if (liveEditors.some(function (e) { return e.ta.value !== e.source; })) return true;
+    if (liveEditors.some(function (e) { return !sameEditText(e.ta.value, e.source); })) return true;
     // editors may not be on screen (another tab is) — drafts still count
-    return Object.keys(state.editDrafts).some(function (n) {
-      return state.programs[n] && state.editDrafts[n] !== state.programs[n].source;
-    });
+    return Object.keys(state.editDrafts).some(progDirty);
   }
 
   /* A program was renamed by editing its /PROG header — every open doc
@@ -4333,6 +4385,58 @@
   /* The editor itself — textarea, highlight overlay, save/send logic — shared
    * by the full-page editor and a split half. opts.side ('left'|'right') means
    * it lives in that half of a side-by-side view. */
+  /* ---- the dictionary this robot actually speaks ----
+   * The shipped tpshapes.js answers "have my robots used this form" out of
+   * the corpus it was MINED from, which is not this shop's robot — so a
+   * perfectly ordinary line like OVERRIDE=100% read as novel just because
+   * no backup in the build happened to contain one. The library on screen is
+   * folded in on top: a form the robot's own programs use is not novel,
+   * whatever my backups hold. It only ever ADDS forms, so this can turn a
+   * dotted line off and never on, and it cannot touch grammar errors.
+   *
+   * The program being edited is left out — otherwise every line in it would
+   * vouch for itself and the check would have nothing to say about the one
+   * program you are looking at. (Its own saved copy is what gets excluded;
+   * a line you just typed was never in the library anyway.)
+   *
+   * Cached, because checkSource runs on every repaint and mining a 77
+   * program library per keystroke is not free. The key carries each
+   * program's name and length, so a save re-mines and a keystroke does not. */
+  var dictCache = { key: null, dict: null };
+
+  function robotDict(exclude) {
+    if (!TPS) return TP_DICT;
+    var names = Object.keys(state.programs).sort();
+    var key = exclude + '|';
+    for (var i = 0; i < names.length; i++) {
+      key += names[i] + ':' + String(state.programs[names[i]].source || '').length + ';';
+    }
+    if (dictCache.key === key) return dictCache.dict;
+
+    var shapes = {};
+    if (TP_DICT && TP_DICT.shapes) {
+      Object.keys(TP_DICT.shapes).forEach(function (k) { shapes[k] = TP_DICT.shapes[k]; });
+    }
+    var mined = 0;
+    names.forEach(function (name) {
+      if (name === exclude) return;
+      var parsed = state.programs[name].parsed;
+      if (!parsed || !parsed.lines) return;
+      parsed.lines.forEach(function (line) {
+        if (line.comment !== null) return;
+        var t = (line.motion ? line.motion + ' ' : '') + line.text;
+        var k = TPS.normalize(t);
+        if (!k) return;
+        // a fresh array either way: TP_DICT's own rows are shared and must
+        // not grow counts from a library that gets swapped out under them
+        shapes[k] = shapes[k] ? [shapes[k][0] + 1, shapes[k][1]] : [1, t];
+        mined++;
+      });
+    });
+    dictCache = { key: key, dict: { built: 'library', programs: names.length, lines: mined, shapes: shapes } };
+    return dictCache.dict;
+  }
+
   function buildEditorCore(p, opts) {
     opts = opts || {};
     var oldName = p.parsed.name;
@@ -4368,7 +4472,7 @@
 
     function paint() {
       var rows = ta.value.split('\n');
-      issues = TPS ? TPS.checkSource(ta.value, TP_DICT) : [];
+      issues = TPS ? TPS.checkSource(ta.value, robotDict(oldName)) : [];
       byRow = {};
       issues.forEach(function (iss) {
         iss.rows.forEach(function (r) { if (!byRow[r] || iss.level === 'error') byRow[r] = iss; });
@@ -4972,6 +5076,7 @@
     ta.addEventListener('input', function () {
       if (!applyingCol) exitCol();     // native typing, undo, IME — the rect no longer fits the text
       state.editDrafts[oldName] = ta.value;
+      paintDocTabs();                  // the tab colours the moment it differs
       acUpdate();
       if (repaintQueued) return;
       repaintQueued = true;
@@ -9000,6 +9105,9 @@
   var DATA_SEGS = [['r', 'R', 'NUMREG.VA'], ['pr', 'PR', 'POSREG.VA'],
                    ['sr', 'SR', 'STRREG.VA'], ['io', 'I/O', 'IOSTATE.DG']];
   var DATA_CAP = 1000;
+  // how many "used at" chips a row shows before it keeps an expander — high
+  // enough that an ordinary register shows every place it is touched
+  var DATA_REFS = 60;
 
   function dataSeg() {
     var seg = state.dataTab;
@@ -9197,17 +9305,21 @@
         h('th', { text: 'Used at' })
       ]));
       hits.slice(0, DATA_CAP).forEach(function (r) {
-        var open = !!state.dataOpen[r.key];
         var used = h('td');
-        /* Six chips is a glance; a register written from forty places is a
-         * question, and the row answers it in place rather than sending
-         * anyone to another tab. */
-        var shown = open ? r.refs : r.refs.slice(0, 6);
+        /* Every place, in full. The column runs to the edge of the pane and
+         * the chips wrap, so the row costs a line or two of height and
+         * answers "where is this used" without a click. Only a register
+         * touched from more places than anyone reads at once keeps the
+         * expander, so one R[1] cannot push the rest of the table off
+         * screen. */
+        var open = !!state.dataOpen[r.key];
+        var long = r.refs.length > DATA_REFS;
+        var shown = (long && !open) ? r.refs.slice(0, DATA_REFS) : r.refs;
         shown.forEach(function (ref) { used.appendChild(chip(ref, ref.write ? 'write' : 'read')); });
-        if (r.refs.length > 6) {
+        if (long) {
           used.appendChild(h('button', {
-            class: 'chip more', text: open ? 'less' : '+' + (r.refs.length - 6),
-            title: open ? 'Show the first 6 only' : 'Show all ' + r.refs.length + ' places',
+            class: 'chip more', text: open ? 'less' : '+' + (r.refs.length - DATA_REFS),
+            title: open ? 'Show the first ' + DATA_REFS + ' only' : 'Show all ' + r.refs.length + ' places',
             onclick: function () {
               if (open) delete state.dataOpen[r.key]; else state.dataOpen[r.key] = true;
               draw();
@@ -9736,6 +9848,17 @@
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === '.' && state.tab === 'code') {
         e.preventDefault();
         toggleDataSide();
+        return;
+      }
+      /* Ctrl+Shift+F: Save & Upload the program you are editing. It CLICKS
+       * the button rather than calling the upload itself, so the hotkey and
+       * the button are the same path — snapshot, baseline, STOR, verify,
+       * auto-restore — and nothing here can grow its own shortcut around
+       * them. With a split open it takes the button belonging to the editor
+       * that has focus, by walking up from the caret. */
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F')) {
+        var btn = saveSendButton();
+        if (btn) { e.preventDefault(); btn.click(); }
         return;
       }
       if (cfgKey(e)) { e.preventDefault(); return; }
