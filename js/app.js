@@ -3527,25 +3527,36 @@
     return !!p && state.editDrafts[name] !== undefined && !sameEditText(state.editDrafts[name], p.source);
   }
 
-  /* The "Save & Upload" button for the editor the caret is in. Walking up
-   * from the focused textarea finds the nearest enclosing one, which is the
-   * right half of a split; with no editor focused it answers only when the
-   * page holds exactly one, since guessing which robot to write to is not a
-   * thing a shortcut should do. Null when there is nothing to send, which is
-   * also the answer when no robot is connected — the button is not built. */
-  function saveSendButton() {
+  /* The toolbar button named `label` for the half the user is working in:
+   * the one holding the caret, else the only one on the page, else the left
+   * half — the primary side, and the only one a single view has. Null when
+   * there is none to press, which is the honest answer when the program is
+   * already open for editing (no Edit) or no robot is connected (no Save &
+   * Upload). Shortcuts go through this so they press the SAME button a
+   * click would, rather than growing their own path around it. */
+  function paneButton(label) {
     function find(root) {
       return Array.prototype.filter.call(root.querySelectorAll('button'), function (b) {
-        return b.textContent.trim() === 'Save & Upload' && !b.disabled;
+        return b.textContent.trim() === label && !b.disabled;
       });
     }
     var ae = document.activeElement;
-    if (ae && ae.tagName === 'TEXTAREA') {
-      for (var n = ae.parentElement; n; n = n.parentElement) {
-        var hit = find(n);
-        if (hit.length) return hit[0];
-      }
-      return null;
+    var host = ae && ae.closest ? ae.closest('.code-pane') : null;
+    if (host) {
+      var mine = find(host);
+      if (mine.length) return mine[0];
+    }
+    /* Nothing focused — which is the normal case for Edit, since reading a
+     * program focuses nothing. The half showing the SELECTED program is the
+     * one meant: state.selected follows the tab you last clicked, so it is
+     * what "this program" means everywhere else in the app. */
+    var sides = ['left', 'right'];
+    for (var i = 0; i < sides.length; i++) {
+      var id = state.active[sides[i]];
+      if (!docIsProg(id) || docProg(id) !== state.selected) continue;
+      var col = document.querySelector('.code-pane[data-side="' + sides[i] + '"]');
+      var sel = col ? find(col) : [];
+      if (sel.length) return sel[0];
     }
     var all = find(document);
     return all.length === 1 ? all[0] : null;
@@ -4184,7 +4195,7 @@
               ? h('button', { class: 'btn', text: 'Save + disk', title: 'Save to library and to ' + p.origin.path, onclick: function () { ed.save(true); } })
               : null,
             (state.server && state.robot.ip)
-              ? h('button', { class: 'btn', text: 'Save & Upload', title: 'Save and FTP to ' + state.robot.ip + ' with snapshot + verify + auto-restore', onclick: ed.saveAndSend })
+              ? h('button', { class: 'btn', text: 'Save & Upload', title: 'Save and FTP to ' + state.robot.ip + ' with snapshot + verify + auto-restore (Ctrl+Shift+F)', onclick: ed.saveAndSend })
               : null,
             h('button', {
               class: 'btn', text: 'Save as copy',
@@ -4269,7 +4280,7 @@
   function progActions(p, extra) {
     var name = p.parsed.name;
     return [
-      h('button', { class: 'btn', text: 'Edit', title: 'Edit ' + name + ' in place', onclick: function () { beginEdit(name); render(); } })
+      h('button', { class: 'btn', text: 'Edit', title: 'Edit ' + name + ' in place (Ctrl+Shift+S)', onclick: function () { beginEdit(name); render(); } })
     ].concat(extra || [], [
       (state.server && state.robot.ip) ? h('button', {
         class: 'btn', text: 'Send to robot',
@@ -5240,7 +5251,7 @@
         ? h('button', { class: 'btn', text: 'Save to library + disk', title: p.origin.path, onclick: function () { save(true); } })
         : null,
       (state.server && state.robot.ip)
-        ? h('button', { class: 'btn', text: 'Save & Upload', title: 'FTP to ' + state.robot.ip + ' with snapshot + verify + auto-restore', onclick: saveAndSend })
+        ? h('button', { class: 'btn', text: 'Save & Upload', title: 'FTP to ' + state.robot.ip + ' with snapshot + verify + auto-restore (Ctrl+Shift+F)', onclick: saveAndSend })
         : null,
       h('button', {
         class: 'btn', text: 'Save as copy',
@@ -9850,15 +9861,19 @@
         toggleDataSide();
         return;
       }
-      /* Ctrl+Shift+F: Save & Upload the program you are editing. It CLICKS
-       * the button rather than calling the upload itself, so the hotkey and
-       * the button are the same path — snapshot, baseline, STOR, verify,
-       * auto-restore — and nothing here can grow its own shortcut around
-       * them. With a split open it takes the button belonging to the editor
-       * that has focus, by walking up from the caret. */
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F')) {
-        var btn = saveSendButton();
-        if (btn) { e.preventDefault(); btn.click(); }
+      /* Ctrl+Shift+S starts the edit, Ctrl+Shift+F finishes it: the two ends
+       * of the same job, on the Code tab. Both CLICK the toolbar button
+       * rather than calling anything themselves, so a shortcut can never be
+       * a second route to the robot — Save & Upload keeps its snapshot,
+       * baseline, STOR, verify and auto-restore whichever way it is pressed. */
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey &&
+          (e.key === 's' || e.key === 'S' || e.key === 'f' || e.key === 'F') && state.tab === 'code') {
+        var btn = paneButton(/^[sS]$/.test(e.key) ? 'Edit' : 'Save & Upload');
+        // preventDefault either way: Ctrl+Shift+S is the browser's "save page
+        // as" on some builds, and that dialog over a half-typed program is
+        // worse than the shortcut quietly doing nothing
+        e.preventDefault();
+        if (btn) btn.click();
         return;
       }
       if (cfgKey(e)) { e.preventDefault(); return; }
