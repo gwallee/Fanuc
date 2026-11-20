@@ -49,6 +49,29 @@
     return text.replace(NAMED_RE, function (_, type, head) { return type + head + ']'; });
   }
 
+  /* /ATTR's CREATE and MODIFIED stamps are the CONTROLLER's, not the
+   * programmer's: it re-stamps a program every time one is loaded into it,
+   * whatever the bytes say. That includes this app's own auto-restore, which
+   * puts the byte-identical snapshot back after a failed upload — so the
+   * restore from a failed send made the NEXT send read as "changed on the
+   * robot", over a diff showing nothing but two clocks, at exactly the moment
+   * someone needs the retry to work. A plain reload of the same program from
+   * a USB stick does it too.
+   *
+   *   CREATE   = DATE 26-11-20  TIME 01:13:10;   the send that failed
+   *   CREATE   = DATE 26-11-20  TIME 01:13:42;   the restore, same bytes
+   *
+   * Only the two stamp VALUES go. Everything else in the header stays, so a
+   * COMMENT, PROTECT or OWNER changed on the pendant is still a change, and
+   * so are PROG_SIZE and MEMORY_SIZE — which is what catches a real edit that
+   * happens to leave the line count alone. */
+  var STAMP_RE = /^([ \t]*(?:CREATE|MODIFIED)[ \t]*=[ \t]*)DATE[ \t]+[-\d]+[ \t]+TIME[ \t]+[\d:]+[ \t]*;/gm;
+
+  function stripStamps(text) {
+    STAMP_RE.lastIndex = 0;
+    return String(text).replace(STAMP_RE, '$1DATE * TIME *;');
+  }
+
   /* Every /MN line is written "<pad><n>:  <instruction> ;", so inserting or
    * deleting one line renumbers every line after it. Those renumbered lines
    * are identical program content, but compared verbatim they all read as
@@ -219,7 +242,7 @@
   var api = {
     diffLines: diffLines, comparePrograms: comparePrograms, bodyOf: bodyOf,
     sideBySide: sideBySide, stripIoState: stripIoState,
-    stripLineNums: stripLineNums, stripNames: stripNames
+    stripLineNums: stripLineNums, stripNames: stripNames, stripStamps: stripStamps
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucDiff = api;

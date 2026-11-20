@@ -588,6 +588,34 @@ Object.keys(programs).forEach((n) => {
 });
 check(true, 'stripNames is idempotent over every testdata program');
 
+console.log('\n-- diff: ignore the controller\'s CREATE / MODIFIED stamps --');
+const hdr = (t) => ['/PROG  _SPRAY_P', '/ATTR', 'OWNER\t\t= MNEDITOR;', 'COMMENT\t\t= "";',
+  'PROG_SIZE\t= 2673;', 'CREATE\t\t= DATE 26-11-20  TIME ' + t + ';',
+  'MODIFIED\t= DATE 26-11-20  TIME ' + t + ';', 'PROTECT\t\t= READ_WRITE;',
+  '/MN', '   1:  R[1:Count]=0 ;', '/END'].join('\r\n');
+check(D.stripStamps(hdr('01:13:10')) === D.stripStamps(hdr('01:13:42')),
+  'a re-stamp alone normalizes away');
+check(/DATE \* TIME \*/.test(D.stripStamps(hdr('01:13:10'))), 'the stamp value is what goes');
+check(D.stripStamps(hdr('01:13:10')).indexOf('PROG_SIZE\t= 2673;') !== -1,
+  'PROG_SIZE is untouched — it is what catches a real edit');
+check(D.stripStamps(hdr('01:13:10')).indexOf('OWNER\t\t= MNEDITOR;') !== -1,
+  'the rest of the header is untouched');
+// the cases that must STILL read as changed
+check(D.stripStamps(hdr('01:13:10')) !== D.stripStamps(hdr('01:13:42').replace('R[1:Count]=0', 'R[1:Count]=1')),
+  'a real edit under a re-stamp is still a change');
+check(D.stripStamps(hdr('01:13:10')) !== D.stripStamps(hdr('01:13:42').replace('COMMENT\t\t= "";', 'COMMENT\t\t= "new";')),
+  'a program COMMENT changed on the pendant is still a change');
+check(D.stripStamps(hdr('01:13:10')) !== D.stripStamps(hdr('01:13:42').replace('PROG_SIZE\t= 2673;', 'PROG_SIZE\t= 2700;')),
+  'a PROG_SIZE change is still a change');
+check(D.stripStamps(D.stripStamps(hdr('01:13:10'))) === D.stripStamps(hdr('01:13:10')),
+  'stripStamps is idempotent');
+Object.keys(programs).forEach((n) => {
+  const once = D.stripStamps(programs[n].source);
+  if (D.stripStamps(once) !== once) check(false, n + ': stripStamps is not idempotent');
+});
+check(Object.keys(programs).some((n) => D.stripStamps(programs[n].source) !== programs[n].source),
+  'the stamp normalizer does fire on real listings');
+
 console.log('\n-- PRGSTATE.DG (program / task state) --');
 const psRaw = fs.readFileSync(path.join(__dirname, '..', 'testdata', 'prgstate.dg'), 'utf8');
 const psr = VA.parsePrgState(psRaw);

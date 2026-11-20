@@ -169,9 +169,15 @@ function robotGet(host, filePath, timeoutMs) {
  * which is why a verified send re-imports the robot's copy. Nothing else is
  * forgiven — a real edit in the same program is still caught, name and all.
  * PROG_SIZE / MEMORY_SIZE are TP-binary sizes, so a rename does not move them
- * either. */
+ * either.
+ *
+ * /ATTR's CREATE and MODIFIED stamps are forgiven for the same reason: the
+ * controller writes them on every load, so the auto-restore after a FAILED
+ * upload re-stamps the byte-identical copy and the retry would otherwise be
+ * refused over two clocks. See stripStamps in js/diff.js. */
 function sameListing(a, b) {
-  const norm = (s) => D.stripNames(String(s)).replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n+$/, '');
+  const norm = (s) => D.stripStamps(D.stripNames(String(s)))
+    .replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n+$/, '');
   return norm(a) === norm(b);
 }
 

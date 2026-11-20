@@ -174,6 +174,28 @@ async function post(route, body) {
     check(r.ok === false && r.changed === true, 'an edited LBL comment is a change, not a rename');
     delete files['NAMED.LS'];
 
+    console.log('\n-- change detection: the controller re-stamping is not a change --');
+    /* A failed upload auto-restores the byte-identical snapshot, and the
+     * controller stamps CREATE/MODIFIED on the way in. That made the RETRY
+     * read as "changed on the robot" over a diff of nothing but two clocks —
+     * at exactly the moment the retry has to work. */
+    const stamped = (t, line) => '/PROG STAMPED\n/ATTR\nCOMMENT\t\t= "";\nPROG_SIZE\t= 2673;\n' +
+      'CREATE\t\t= DATE 26-11-20  TIME ' + t + ';\nMODIFIED\t= DATE 26-11-20  TIME ' + t + ';\n' +
+      '/MN\n   1:  R[1:Count]=' + line + ' ;\n/END\n';
+    const beganAt = stamped('01:13:10', 0);
+    files['STAMPED.LS'] = stamped('01:13:42', 0);       // the restore, same bytes, new clock
+    const retry = stamped('01:13:10', 5);
+    r = await post('/api/robot/upload', { ip: ROBOT, name: 'STAMPED.LS', content: retry, baseline: { content: beganAt } });
+    check(r.ok === true && !r.changed, 'the retry after a failed send goes through: ' + (r.error || 'sent'));
+    check(files['STAMPED.LS'] === retry, 'and the retried draft landed');
+    // a real edit while the clock moved is still caught
+    files['STAMPED.LS'] = stamped('01:14:00', 9);
+    const heldStamp = files['STAMPED.LS'];
+    r = await post('/api/robot/upload', { ip: ROBOT, name: 'STAMPED.LS', content: retry, baseline: { content: beganAt } });
+    check(r.ok === false && r.changed === true, 'a real edit under a re-stamp is still caught: ' + r.error);
+    check(files['STAMPED.LS'] === heldStamp, 'and nothing was stored over it');
+    delete files['STAMPED.LS'];
+
     console.log('\n-- delete on robot: snapshot, DELE, verified gone --');
     const tempSrc = '/PROG TEMP\n/MN\n   1:  R[9]=9 ;\n/END\n';
     files['TEMP.LS'] = tempSrc;
