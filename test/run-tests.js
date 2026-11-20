@@ -547,6 +547,47 @@ const pureRenum = D.comparePrograms(
 check(pureRenum.headerOnly.includes('P') && !pureRenum.changed.length,
   'pure renumber classified as no code change');
 
+console.log('\n-- diff: ignore register / I-O names --');
+check(D.stripNames('   1:  R[1:part count]=0 ;') === '   1:  R[1]=0 ;', 'register name dropped');
+check(D.stripNames('R[1:part count]=0') === D.stripNames('R[1:Parts Made]=0'),
+  'a rename normalizes away');
+check(D.stripNames('PR[3,1:Pick Appr]=LPOS') === 'PR[3,1]=LPOS', 'PR[n,k:name] keeps both indices');
+check(D.stripNames('DI[3:ON :Run Task]') === 'DI[3]' && D.stripNames('DI[3:OFF:Start]') === 'DI[3]',
+  'inline I/O state goes with the name');
+check(D.stripNames('GI[2:65456:Tote ID]') === 'GI[2]', 'injected GI value goes too');
+check(D.stripNames('DO[65: * ]') === 'DO[65]', 'an unnamed DO normalizes to the same thing');
+check(D.stripNames('F[20:Box Pk Rdy]=(ON)') === 'F[20]=(ON)', 'flags covered');
+/* LBL and position comments are stored IN the program: editing one is a real
+ * edit, so they must survive. */
+check(D.stripNames('   4:  LBL[610:retry pick] ;') === '   4:  LBL[610:retry pick] ;',
+  'LBL comment untouched — it lives in the program');
+check(D.stripNames('J P[3:home] 100% FINE') === 'J P[3:home] 100% FINE',
+  'position comment untouched');
+check(D.stripNames('R[R[1]]=2') === 'R[R[1]]=2', 'indirect R[R[n]] untouched');
+// The case that bit us: one rename, 77 programs, every one "changed".
+const namedA = '/PROG P\n/MN\n   1:  R[1:part count]=0 ;\n   2:  IF DI[3:ON :Run Task], JMP LBL[1:go] ;\n/END\n';
+const namedB = '/PROG P\n/MN\n   1:  R[1:Parts Made]=0 ;\n   2:  IF DI[3:OFF:Cycle Start], JMP LBL[1:go] ;\n/END\n';
+const renamed = D.comparePrograms({ P: namedA }, { P: namedB }, { ignoreNames: true });
+check(renamed.headerOnly.includes('P') && !renamed.changed.length,
+  'a pure rename is no code change');
+check(D.comparePrograms({ P: namedA }, { P: namedB }).changed.length === 1,
+  'and without the option it still reads as a change');
+const namedC = namedB.replace('R[1:Parts Made]=0', 'R[1:Parts Made]=5');
+const realEdit = D.comparePrograms({ P: namedA }, { P: namedC }, { ignoreNames: true });
+check(realEdit.changed.length === 1 && realEdit.changed[0].adds === 1,
+  'a real edit alongside a rename is still caught');
+// Over every real program in testdata, renaming nothing must change nothing.
+let nameSafe = 0;
+Object.keys(programs).forEach((n) => {
+  if (D.stripNames(programs[n].source) === programs[n].source) nameSafe++;
+});
+check(nameSafe < Object.keys(programs).length, 'the normalizer does fire on real listings');
+Object.keys(programs).forEach((n) => {
+  const once = D.stripNames(programs[n].source);
+  if (D.stripNames(once) !== once) check(false, n + ': stripNames is not idempotent');
+});
+check(true, 'stripNames is idempotent over every testdata program');
+
 console.log('\n-- PRGSTATE.DG (program / task state) --');
 const psRaw = fs.readFileSync(path.join(__dirname, '..', 'testdata', 'prgstate.dg'), 'utf8');
 const psr = VA.parsePrgState(psRaw);

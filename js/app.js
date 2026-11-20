@@ -85,6 +85,7 @@
     live: null,            // Live tab: last PRGSTATE/ERRALL read + cached listings
     ignoreIoState: true,   // Compare: skip the controller's inline I/O state (persisted)
     ignoreLineNums: true,  // Compare: skip the leading /MN line number (persisted)
+    ignoreNames: true,     // Compare: skip register / I-O names (persisted)
     robotCheck: null,      // last "check robot for changes" run — manual, never polled
     /* Studio-5000-style document tabs in the Code view: each doc is a
      * program ('P:NAME'). Live registers and I/O are the data sidebar. */
@@ -99,6 +100,9 @@
     dataFilter: {},        // data-sidebar filter text — survives re-renders
     showData: true,        // Code tab: the registers/I/O sidebar on the right (persisted)
     dataSeg: 'used',       // its view: 'used' | 'r' | 'pr' | 'io' (persisted)
+    dataTab: 'r',          // Registers & I/O tab: 'r' | 'pr' | 'sr' | 'io' (persisted)
+    dataUsedOnly: false,   // that tab: list only what the programs touch (persisted)
+    dataOpen: {},          // that tab: keys whose full "used at" list is expanded
     theme: 'auto'          // 'auto' (follow the system) | 'light' | 'dark' (persisted)
   };
 
@@ -197,7 +201,10 @@
       if (typeof p.showAllProgs === 'boolean') state.showAllProgs = p.showAllProgs;
       if (typeof p.showData === 'boolean') state.showData = p.showData;
       if (['used', 'r', 'pr', 'io'].indexOf(p.dataSeg) !== -1) state.dataSeg = p.dataSeg;
+      if (['r', 'pr', 'sr', 'io'].indexOf(p.dataTab) !== -1) state.dataTab = p.dataTab;
+      if (typeof p.dataUsedOnly === 'boolean') state.dataUsedOnly = p.dataUsedOnly;
       if (typeof p.ignoreLineNums === 'boolean') state.ignoreLineNums = p.ignoreLineNums;
+      if (typeof p.ignoreNames === 'boolean') state.ignoreNames = p.ignoreNames;
       if (typeof p.syncSplit === 'boolean') state.syncSplit = p.syncSplit;
       if (p.flowLayout === 'column' || p.flowLayout === 'chart') state.flowLayout = p.flowLayout;
       if (CFG_GAPS[p.flowGaps]) state.flowGaps = p.flowGaps;
@@ -223,14 +230,15 @@
       localStorage.setItem(PREFS_KEY, JSON.stringify({
         flowIgnore: state.flowIgnore, hiddenRules: state.hiddenRules, codeSize: state.codeSize,
         ignoreIoState: state.ignoreIoState, ignoreLineNums: state.ignoreLineNums,
-        syncSplit: state.syncSplit,
+        ignoreNames: state.ignoreNames, syncSplit: state.syncSplit,
         flowLayout: state.flowLayout, flowGaps: state.flowGaps, flowDetail: state.flowDetail,
         flowShow: state.flowShow, flowStructure: state.flowStructure, flowExpand: state.flowExpand,
         flowMini: state.flowMini, flowHideNav: state.flowHideNav, hideNav: state.hideNav,
         xrefFolded: state.xrefFolded, xrefHideUnused: state.xrefHideUnused, liveEvery: state.liveEvery,
         lastRobot: state.lastRobot || null, backupPick: state.backupPick,
         theme: state.theme, splitPct: state.splitPct,
-        showAllProgs: state.showAllProgs, showData: state.showData, dataSeg: state.dataSeg
+        showAllProgs: state.showAllProgs, showData: state.showData, dataSeg: state.dataSeg,
+        dataTab: state.dataTab, dataUsedOnly: state.dataUsedOnly
       }));
     } catch (e) { /* session-only */ }
   }
@@ -3120,6 +3128,7 @@
     ['robot', 'Robot'],
     ['live', 'Live'],
     ['code', 'Code'],
+    ['data', 'Registers & I/O'],
     ['summary', 'Summary'],
     ['flow', 'Flow'],
     ['checks', 'Checks'],
@@ -3190,6 +3199,7 @@
     }
     switch (state.tab) {
       case 'code': renderCode(pane); break;
+      case 'data': renderData(pane); break;
       case 'summary': renderSummary(pane); break;
       case 'flow': renderFlow(pane); break;
       case 'checks': renderChecks(pane); break;
@@ -7824,7 +7834,10 @@
   }
 
   function diffOpts() {
-    return { ignoreIoState: state.ignoreIoState, ignoreLineNums: state.ignoreLineNums };
+    return {
+      ignoreIoState: state.ignoreIoState, ignoreLineNums: state.ignoreLineNums,
+      ignoreNames: state.ignoreNames
+    };
   }
 
   function setBaseline(label, programs) {
@@ -7864,7 +7877,9 @@
       ignoreToggle('ignoreLineNums', 'Ignore line numbers',
         'Every /MN line is written "12:  <instruction> ;", so inserting or deleting one line renumbers every line below it. Those lines are identical program content, so ignoring the number leaves just the real edit highlighted instead of the whole rest of the program.'),
       ignoreToggle('ignoreIoState', 'Ignore inline I/O state',
-        'With the controller\u2019s I/O-state display on, a listing reads DO[65:OFF:Vac-1 ON] instead of DO[65:Vac-1 ON]. That state is live machine data, not program content, so ignoring it stops every such line showing as a change against a backup taken with the display off.')
+        'With the controller\u2019s I/O-state display on, a listing reads DO[65:OFF:Vac-1 ON] instead of DO[65:Vac-1 ON]. That state is live machine data, not program content, so ignoring it stops every such line showing as a change against a backup taken with the display off.'),
+      ignoreToggle('ignoreNames', 'Ignore register / I-O names',
+        'R[1:part count] is R[1] plus a comment the controller keeps in its own table, not in the program. Renaming it rewrites that line in every program that uses it without one instruction changing, so ignoring the name leaves only real edits. LBL and position comments are stored in the program and are always compared.')
     ]));
 
     // -- two-program compare (Notepad++ Compare-plugin style) --
@@ -8004,6 +8019,7 @@
     var ignored = [];
     if (state.ignoreLineNums) ignored.push('line numbers');
     if (state.ignoreIoState) ignored.push('inline I/O state');
+    if (state.ignoreNames) ignored.push('register / I-O names');
     progList(ignored.length
       ? 'No code changes (header dates / sizes, or ' + ignored.join(' / ') + ' only)'
       : 'Header-only changes (dates / sizes \u2014 code identical)', r.headerOnly, 'header');
@@ -8944,6 +8960,283 @@
     return box;
   }
 
+  /* ================= Registers & I/O tab =================
+   * One place for the three questions always asked together about a register
+   * or an I/O point: what is it worth right now, where is it used, and what
+   * is it called. Those used to be three stops — the value in the Code
+   * sidebar, the usage in Cross-reference, the rename buried in a collapsed
+   * section of the Robot tab — so a rename meant crossing the app twice.
+   *
+   * Values and names come from the robot when one is connected and from the
+   * loaded backup otherwise, which is also the first time a backup's
+   * registers are readable outside the cross-reference. Renaming needs a live
+   * controller (commentCell asks canRename), so against a backup the names
+   * are plain text and say nothing about being editable. */
+
+  var DATA_SEGS = [['r', 'R', 'NUMREG.VA'], ['pr', 'PR', 'POSREG.VA'],
+                   ['sr', 'SR', 'STRREG.VA'], ['io', 'I/O', 'IOSTATE.DG']];
+  var DATA_CAP = 1000;
+
+  function dataSeg() {
+    var seg = state.dataTab;
+    return DATA_SEGS.some(function (s) { return s[0] === seg; }) ? seg : 'r';
+  }
+
+  /* Rows for one segment, robot first and backup second, each already in the
+   * shape the table draws: a key the xref is looked up by, the live column,
+   * the comment plus where to write a rename back to, and the haystack the
+   * filter matches. `live` is false for a backup, which is what greys the
+   * value column — a saved number is not a live one. */
+  function dataRows(seg) {
+    var r0 = state.robot, ex = state.extern || {};
+    // the tab is useful with a robot and no programs loaded at all, and the
+    // xref only exists once there are programs to build it from
+    var x = state.xref || { registers: {}, posRegs: {}, io: {} };
+    var fromRobot = function (v) { return v && !v.error ? v : null; };
+    var regs = fromRobot(r0.registers) || (ex.registers && ex.registers.length ? ex.registers : null);
+    var live = !!fromRobot(r0.registers) || !!r0.ioState;
+    var src = (fromRobot(r0.registers) || r0.ioState || fromRobot(r0.posregs))
+      ? 'robot ' + r0.ip : (ex.source || null);
+    var out = { rows: [], source: src, live: live, error: null, loading: false, file: null };
+    DATA_SEGS.forEach(function (s) { if (s[0] === seg) out.file = s[2]; });
+
+    if (seg === 'r') {
+      if (r0.ip && r0.registers && r0.registers.error) out.error = r0.registers.error;
+      else if (r0.ip && !r0.registers) out.loading = true;
+      (regs || []).forEach(function (r) {
+        out.rows.push({
+          key: 'R[' + r.index + ']', type: 'R', index: r.index, row: r,
+          value: String(r.value), vcls: 'tok-num',
+          comment: r.comment, apply: function (t) { r.comment = t; },
+          refs: (x.registers[r.index] || {}).refs || []
+        });
+      });
+    } else if (seg === 'pr') {
+      var prs = fromRobot(r0.posregs) || (ex.posregs && ex.posregs.length ? ex.posregs : null);
+      if (r0.ip && r0.posregs && r0.posregs.error) out.error = r0.posregs.error;
+      else if (r0.ip && !r0.posregs) out.loading = true;
+      (prs || []).forEach(function (r) {
+        // a controller holds hundreds of untaught PRs; an unnamed one is
+        // noise until someone claims it, and "Show empty" is how they do
+        if (!state.showEmptyPR && r.rep === 'uninitialized' && !r.comment) return;
+        out.rows.push({
+          key: 'PR[' + r.index + ']', type: 'PR', index: r.index, row: r,
+          label: 'PR[' + r.index + ']' + (r.group > 1 ? ' GP' + r.group : ''),
+          value: VA.posregValueStr(r), vcls: r.rep === 'uninitialized' ? 'muted' : 'tok-num',
+          note: r.rep === 'joint' ? 'joint' : r.rep === 'cartesian' ? 'xyzwpr' + (r.config ? ' · ' + r.config : '') : '—',
+          comment: r.comment,
+          // one comment per PR index — the per-group rows all share it
+          apply: function (t) { (prs || []).forEach(function (p) { if (p.index === r.index) p.comment = t; }); },
+          refs: r.group === 1 ? ((x.posRegs[r.index] || {}).refs || []) : []
+        });
+      });
+    } else if (seg === 'sr') {
+      var srs = fromRobot(r0.strregs);
+      if (r0.ip && r0.strregs && r0.strregs.error) out.error = r0.strregs.error;
+      (srs || []).forEach(function (r) {
+        out.rows.push({
+          key: 'SR[' + r.index + ']', type: 'SR', index: r.index, row: r,
+          value: r.value, vcls: '', comment: r.comment,
+          apply: function (t) { r.comment = t; }, refs: []
+        });
+      });
+    } else {
+      var io = r0.ioState || (ex.io && ex.io.length ? ex.io : null);
+      if (r0.ip && r0.rawIO && r0.rawIO.error) out.error = r0.rawIO.error;
+      else if (r0.ioLoading) out.loading = true;
+      (io || []).forEach(function (p) {
+        out.rows.push({
+          key: p.type + '[' + p.index + ']', type: p.type, index: p.index, row: p,
+          value: p.state || '', vcls: p.state === 'ON' ? 'tok-on' : p.state === 'OFF' ? 'tok-off' : 'muted',
+          comment: p.comment,
+          apply: function (t) {
+            p.comment = t;
+            // ioComments is the labeled-only view the checks read, so a point
+            // that just gained or lost a name has to move in or out of it
+            if (r0.ioState) r0.ioComments = r0.ioState.filter(function (pt) { return pt.comment; });
+          },
+          refs: (x.io[p.type + '[' + p.index + ']'] || {}).refs || []
+        });
+      });
+    }
+    out.rows.forEach(function (r) {
+      r.hay = ((r.label || r.key) + ' ' + r.value + ' ' + (r.comment || '') + ' ' + (r.note || '')).toLowerCase();
+    });
+    return out;
+  }
+
+  function dataRefresh(seg) {
+    if (seg === 'r') loadRobotRegisters();
+    else if (seg === 'pr') loadRobotPosregs();
+    else if (seg === 'sr') loadRobotStrregs();
+    else loadRobotIO();
+  }
+
+  function renderData(pane) {
+    var seg = dataSeg();
+    var d = dataRows(seg);
+    var r0 = state.robot;
+    /* Connecting reads registers and PRs but not I/O — that is the Robot
+     * tab's on-demand read. Opening this tab on I/O is the same demand, so
+     * make it once and let the reply repaint. */
+    if (seg === 'io' && state.server && r0.ip && !r0.ioState && !r0.rawIO && !r0.ioLoading) loadRobotIO();
+
+    pane.appendChild(h('div', { class: 'code-toolbar' }, [
+      h('span', { class: 'title', text: 'Registers & I/O' }),
+      h('span', { class: 'muted', text: d.source ? 'from ' + d.source : 'no controller data' }),
+      h('span', { style: 'flex:1' }),
+      state.server && r0.ip ? h('button', {
+        class: 'btn subtle', text: d.loading ? 'Reading…' : 'Refresh ' + d.file,
+        title: 'Re-read ' + d.file + ' from ' + r0.ip,
+        onclick: function () { dataRefresh(seg); render(); }
+      }) : null
+    ]));
+
+    var segBar = h('div', { class: 'ds-seg data-seg', role: 'tablist' });
+    DATA_SEGS.forEach(function (s) {
+      var n = s[0] === seg ? d.rows.length : dataRows(s[0]).rows.length;
+      segBar.appendChild(h('button', {
+        class: 'ds-segbtn' + (s[0] === seg ? ' on' : ''), role: 'tab',
+        text: s[1] + (n ? ' ' + n : ''), title: s[2],
+        'aria-selected': s[0] === seg ? 'true' : 'false',
+        onclick: function () { state.dataTab = s[0]; savePrefs(); render(); }
+      }));
+    });
+    pane.appendChild(segBar);
+
+    var bar = h('div', { class: 'search-bar' });
+    var fIn = h('input', {
+      type: 'search',
+      placeholder: 'Filter by number, name, value' + (seg === 'io' ? ' or state…' : '…')
+    });
+    fIn.value = state.dataFilter[seg] || '';
+    bar.appendChild(fIn);
+    var usedCb = h('input', { type: 'checkbox' });
+    usedCb.checked = !!state.dataUsedOnly;
+    usedCb.addEventListener('change', function () {
+      state.dataUsedOnly = usedCb.checked; savePrefs(); render();
+    });
+    bar.appendChild(h('label', { title: 'List only what the loaded programs actually read or write' },
+      [usedCb, document.createTextNode(' Used in programs only')]));
+    if (seg === 'pr') {
+      var emptyCb = h('input', { type: 'checkbox' });
+      emptyCb.checked = !!state.showEmptyPR;
+      emptyCb.addEventListener('change', function () { state.showEmptyPR = emptyCb.checked; render(); });
+      bar.appendChild(h('label', { title: 'List untaught PRs that have no name yet, so one can be claimed before it is taught' },
+        [emptyCb, document.createTextNode(' Show empty PRs')]));
+    }
+    pane.appendChild(bar);
+
+    if (d.error) {
+      pane.appendChild(h('p', { class: 'muted', text: 'Could not read ' + d.file + ': ' + d.error }));
+      return;
+    }
+    /* IOSTATE.DG the parser could not make rows of is still worth showing:
+     * the two-column FLG layout and other pendant variants turn up on real
+     * controllers, and the raw listing answers the question anyway. */
+    if (seg === 'io' && !r0.ioState && r0.rawIO && r0.rawIO.length) {
+      pane.appendChild(h('p', { class: 'muted', text: 'IOSTATE.DG did not parse into rows on this controller — here is the listing as the robot wrote it.' }));
+      var pre = h('div', { class: 'codebox io-raw' });
+      pane.appendChild(pre);
+      var drawRaw = function () {
+        var q = fIn.value.trim().toLowerCase();
+        pre.innerHTML = '';
+        var shown = 0;
+        r0.rawIO.forEach(function (l) {
+          if (q && l.toLowerCase().indexOf(q) === -1) return;
+          if (++shown > 400) return;
+          pre.appendChild(h('div', { class: 'cline' }, [h('span', { class: 'src', text: l })]));
+        });
+        if (!shown) pre.appendChild(h('div', { class: 'cline' }, [h('span', { class: 'src muted', text: 'no matching lines' })]));
+      };
+      fIn.addEventListener('input', drawRaw);
+      drawRaw();
+      return;
+    }
+    var wrap = h('div');
+    pane.appendChild(wrap);
+
+    function draw() {
+      state.dataFilter[seg] = fIn.value;
+      var q = fIn.value.trim().toLowerCase();
+      wrap.innerHTML = '';
+      var hits = d.rows.filter(function (r) {
+        if (state.dataUsedOnly && !r.refs.length) return false;
+        return !q || r.hay.indexOf(q) !== -1;
+      });
+      var tbl = h('table', { class: 'xref-table data-table' });
+      tbl.appendChild(h('tr', {}, [
+        h('th', { text: seg === 'io' ? 'Point' : seg === 'r' ? 'Register' : seg === 'pr' ? 'PR' : 'SR' }),
+        h('th', { text: seg === 'io' ? 'State' : d.live ? 'Live value' : 'Value' }),
+        seg === 'pr' ? h('th', { text: 'Type' }) : null,
+        h('th', { text: 'Name' }),
+        h('th', { text: 'Used at' })
+      ]));
+      hits.slice(0, DATA_CAP).forEach(function (r) {
+        var open = !!state.dataOpen[r.key];
+        var used = h('td');
+        /* Six chips is a glance; a register written from forty places is a
+         * question, and the row answers it in place rather than sending
+         * anyone to another tab. */
+        var shown = open ? r.refs : r.refs.slice(0, 6);
+        shown.forEach(function (ref) { used.appendChild(chip(ref, ref.write ? 'write' : 'read')); });
+        if (r.refs.length > 6) {
+          used.appendChild(h('button', {
+            class: 'chip more', text: open ? 'less' : '+' + (r.refs.length - 6),
+            title: open ? 'Show the first 6 only' : 'Show all ' + r.refs.length + ' places',
+            onclick: function () {
+              if (open) delete state.dataOpen[r.key]; else state.dataOpen[r.key] = true;
+              draw();
+            }
+          }));
+        }
+        if (!r.refs.length) used.appendChild(h('span', { class: 'muted', text: '—' }));
+        tbl.appendChild(h('tr', {}, [
+          h('td', { class: 'n' }, [h('button', {
+            class: 'xref-link mono', text: r.label || r.key,
+            title: 'Cross-reference ' + r.key,
+            onclick: function () { crossRefToken(r.key); }
+          })]),
+          seg === 'r' ? regValueCell(r.row)
+            : h('td', { class: 'n' }, [h('span', { class: r.vcls + ' mono', text: r.value })]),
+          seg === 'pr' ? h('td', { class: 'n', text: r.note }) : null,
+          commentCell(r.type, r.index, r.comment, r.apply),
+          used
+        ]));
+      });
+      var tw = h('div', { class: 'table-wrap' });
+      tw.appendChild(tbl);
+      wrap.appendChild(tw);
+      if (!hits.length) wrap.appendChild(h('p', { class: 'muted', text: dataEmptyText(seg, d) }));
+      else if (hits.length > DATA_CAP) {
+        wrap.appendChild(h('p', { class: 'muted', text: 'Showing first ' + DATA_CAP + ' of ' + hits.length + ' — use the filter to narrow.' }));
+      }
+      var foot = [];
+      if (!canRename(seg === 'io' ? 'DO' : seg.toUpperCase())) {
+        foot.push(state.server && r0.ip
+          ? 'Renaming needs the controller’s comment tool (/KAREL/COMMAIN) over HTTP.'
+          : 'Connect to the robot (Robot tab) to rename, or to set an R[n] value.');
+      } else {
+        foot.push('Type in Name to rename on the controller — it is written when you leave the field, then read back to prove it landed.');
+        if (seg === 'r') foot.push('Click a value to set R[n] on the controller; it asks first.');
+      }
+      foot.push('Renames do not change a program: the controller keeps the name in its own table and regenerates it into every listing.');
+      wrap.appendChild(h('p', { class: 'muted', text: foot.join(' ') }));
+    }
+    fIn.addEventListener('input', draw);
+    draw();
+  }
+
+  function dataEmptyText(seg, d) {
+    if (state.dataUsedOnly) return 'Nothing in this table is used by the loaded programs — untick "Used in programs only" to see all of it.';
+    if (d.loading) return 'Reading ' + d.file + ' from the robot…';
+    if (d.rows.length) return 'Nothing matches the filter.';
+    if (!state.server) return 'Register and I/O values come from a robot (needs the bridge) or from a backup folder with ' + d.file + ' in it.';
+    if (!state.robot.ip) return 'Connect to a robot on the Robot tab, or open a backup folder that has ' + d.file + ' in it.';
+    if (seg === 'sr') return 'This controller reports no string registers — without the string-register option there is no STRREG.VA.';
+    return 'The robot returned no rows from ' + d.file + '.';
+  }
+
   function renderRobot(pane) {
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Robot connection' }),
@@ -9321,288 +9614,16 @@
       }
     }
 
-    /* A controller's register and PR tables are sized at cold start, so how
-     * many rows there are is the controller's business, not ours — a table
-     * grown from 100 to 300 must list 300. The cap is only there to keep one
-     * repaint from building ten thousand rows, and when it bites it SAYS so:
-     * a list that silently stops at its cap reads as the app losing rows. */
-    var ROW_CAP = 1000;
-    function capNote(wrap, total) {
-      if (total <= ROW_CAP) return;
-      wrap.appendChild(h('p', { class: 'muted', text: 'Showing first ' + ROW_CAP + ' of ' + total + ' — use the filter to narrow.' }));
-    }
-
-    // registers
-    var regs = state.robot.registers;
-    var secRegs = secHead('Registers (NUMREG.VA)' + (regs && !regs.error ? ' — ' + regs.length : ''), 'robot-regs', false);
-    pane.appendChild(secRegs.el);
-    if (!secRegs.open) { /* collapsed */ } else {
-    pane.appendChild(h('p', {}, [h('button', { class: 'btn subtle', text: 'Refresh from robot', onclick: loadRobotRegisters })]));
-    if (!regs) {
-      pane.appendChild(h('p', { class: 'muted', text: 'Reading…' }));
-    } else if (regs.error) {
-      pane.appendChild(h('p', { class: 'muted', text: 'Could not read NUMREG.VA: ' + regs.error }));
-    } else {
-      var filterBar = h('div', { class: 'search-bar' });
-      var fIn = h('input', { type: 'search', placeholder: 'Filter registers by number, value, or comment…' });
-      filterBar.appendChild(fIn);
-      pane.appendChild(filterBar);
-      var regWrap = h('div', { class: 'table-wrap' });
-      pane.appendChild(regWrap);
-      function drawRegs() {
-        var q = fIn.value.trim().toLowerCase();
-        regWrap.innerHTML = '';
-        var tbl = h('table', { class: 'xref-table' });
-        tbl.appendChild(h('tr', {}, [h('th', { text: 'Register' }), h('th', { text: 'Live value' }), h('th', { text: 'Comment' }), h('th', { text: 'Used at' })]));
-        var hits = regs.filter(function (r) {
-          return !q || ('r[' + r.index + '] ' + r.value + ' ' + r.comment).toLowerCase().indexOf(q) !== -1;
-        });
-        hits.slice(0, ROW_CAP).forEach(function (r) {
-          var used = h('td');
-          var x = state.xref.registers[r.index];
-          if (x) x.refs.slice(0, 6).forEach(function (ref) { used.appendChild(chip(ref, ref.write ? 'write' : 'read')); });
-          tbl.appendChild(h('tr', {}, [
-            h('td', { class: 'n', text: 'R[' + r.index + ']' }),
-            regValueCell(r),
-            commentCell('R', r.index, r.comment, function (text) { r.comment = text; }),
-            used
-          ]));
-        });
-        regWrap.appendChild(tbl);
-        if (!hits.length) regWrap.appendChild(h('p', { class: 'muted', text: 'No registers match.' }));
-        else capNote(regWrap, hits.length);
-      }
-      fIn.addEventListener('input', drawRegs);
-      drawRegs();
-    }
-    } // end registers section
-
-    // position registers
-    var prs = state.robot.posregs;
-    // Empty PRs (uninitialized, no comment) are hidden by default — a
-    // controller has hundreds — but "show empty" lists them, because naming
-    // one is the first step in putting it to use.
-    var prsAll = prs && !prs.error ? prs : null;
-    var prsOk = prsAll ? prsAll.filter(function (r) { return state.showEmptyPR || r.rep !== 'uninitialized' || r.comment; }) : null;
-    var secPR = secHead('Position registers (POSREG.VA)' + (prsOk ? ' — ' + prsOk.length : ''), 'robot-posregs', false);
-    pane.appendChild(secPR.el);
-    if (secPR.open) {
-      var emptyCount = prsAll ? prsAll.filter(function (r) { return r.group === 1 && r.rep === 'uninitialized' && !r.comment; }).length : 0;
-      var emptyCb = h('input', { type: 'checkbox' });
-      emptyCb.checked = !!state.showEmptyPR;
-      emptyCb.addEventListener('change', function () { state.showEmptyPR = emptyCb.checked; render(); });
-      pane.appendChild(h('p', { class: 'robot-tools' }, [
-        h('button', { class: 'btn subtle', text: 'Refresh from robot', onclick: loadRobotPosregs }),
-        prsAll ? h('label', { title: 'List uninitialized PRs that have no comment yet, so one can be named before it is taught' }, [
-          emptyCb, document.createTextNode(' Show ' + emptyCount + ' empty PR' + (emptyCount === 1 ? '' : 's'))
-        ]) : null
-      ]));
-      if (!prs) pane.appendChild(h('p', { class: 'muted', text: 'Reading…' }));
-      else if (prs.error) pane.appendChild(h('p', { class: 'muted', text: 'Could not read POSREG.VA: ' + prs.error }));
-      else {
-        var prBar = h('div', { class: 'search-bar' });
-        var prIn = h('input', { type: 'search', placeholder: 'Filter position registers…' });
-        prBar.appendChild(prIn);
-        pane.appendChild(prBar);
-        var prWrap = h('div', { class: 'table-wrap' });
-        pane.appendChild(prWrap);
-        var drawPRs = function () {
-          var q = prIn.value.trim().toLowerCase();
-          prWrap.innerHTML = '';
-          var tbl = h('table', { class: 'xref-table' });
-          tbl.appendChild(h('tr', {}, [h('th', { text: 'PR' }), h('th', { text: 'Comment' }), h('th', { text: 'Type' }), h('th', { text: 'Values' }), h('th', { text: 'Used at' })]));
-          var hits = prsOk.filter(function (r) {
-            if (!q) return true;
-            var key = 'PR[' + r.index + ']' + (r.group > 1 ? ' GP' + r.group : '');
-            return (key + ' ' + r.comment + ' ' + VA.posregValueStr(r)).toLowerCase().indexOf(q) !== -1;
-          });
-          hits.slice(0, ROW_CAP).forEach(function (r) {
-            var key = 'PR[' + r.index + ']' + (r.group > 1 ? ' GP' + r.group : '');
-            var vals = VA.posregValueStr(r);
-            var used = h('td');
-            var xr = r.group === 1 ? state.xref.posRegs[r.index] : null;
-            if (xr) xr.refs.slice(0, 6).forEach(function (ref) { used.appendChild(chip(ref, ref.write ? 'write' : 'read')); });
-            tbl.appendChild(h('tr', {}, [
-              h('td', { class: 'n', text: key }),
-              commentCell('PR', r.index, r.comment, function (text) {
-                // one comment per PR index — the per-group rows all share it
-                prs.forEach(function (pr) { if (pr.index === r.index) pr.comment = text; });
-              }),
-              h('td', { class: 'n', text: r.rep === 'joint' ? 'joint' : r.rep === 'cartesian' ? 'xyzwpr' + (r.config ? ' · ' + r.config : '') : '—' }),
-              h('td', { class: 'n', text: vals }),
-              used
-            ]));
-          });
-          prWrap.appendChild(tbl);
-          if (!hits.length) prWrap.appendChild(h('p', { class: 'muted', text: 'No position registers match.' }));
-          else capNote(prWrap, hits.length);
-        };
-        prIn.addEventListener('input', drawPRs);
-        drawPRs();
-        pane.appendChild(h('p', { class: 'muted', text: (state.showEmptyPR
-          ? 'Empty PRs are listed — type a name in the Comment column to claim one; it is written to the controller when you leave the field. '
-          : 'Uninitialized, uncommented PRs are hidden — tick "Show empty PRs" to name one. ')
-          + 'Cartesian values are mm/deg; joint values are axis degrees.' }));
-      }
-    }
-
-    // string registers — SR[n] carries the text an alarm or a message is built
-    // from, and its comment is its name. Listed only when the controller
-    // actually has them: without the string-register option there is no
-    // STRREG.VA, and a missing option is not a fault worth a red section.
-    var srs = state.robot.strregs;
-    if (srs && !srs.error && srs.length) {
-      var secSR = secHead('String registers (STRREG.VA) — ' + srs.length, 'robot-strregs', false);
-      pane.appendChild(secSR.el);
-      if (secSR.open) {
-        pane.appendChild(h('p', {}, [h('button', { class: 'btn subtle', text: 'Refresh from robot', onclick: loadRobotStrregs })]));
-        var srBar = h('div', { class: 'search-bar' });
-        var srIn = h('input', { type: 'search', placeholder: 'Filter string registers by number, name, or text…' });
-        srBar.appendChild(srIn);
-        pane.appendChild(srBar);
-        var srWrap = h('div', { class: 'table-wrap' });
-        pane.appendChild(srWrap);
-        var drawSRs = function () {
-          var q = srIn.value.trim().toLowerCase();
-          srWrap.innerHTML = '';
-          var tbl = h('table', { class: 'xref-table' });
-          tbl.appendChild(h('tr', {}, [h('th', { text: 'SR' }), h('th', { text: 'Comment' }), h('th', { text: 'Value' })]));
-          var shown = 0;
-          srs.forEach(function (r) {
-            if (q && ('sr[' + r.index + '] ' + r.comment + ' ' + r.value).toLowerCase().indexOf(q) === -1) return;
-            shown++;
-            tbl.appendChild(h('tr', {}, [
-              h('td', { class: 'n', text: 'SR[' + r.index + ']' }),
-              commentCell('SR', r.index, r.comment, function (text) { r.comment = text; }),
-              h('td', { text: r.value })
-            ]));
-          });
-          srWrap.appendChild(tbl);
-          if (!shown) srWrap.appendChild(h('p', { class: 'muted', text: 'No string registers match.' }));
-        };
-        srIn.addEventListener('input', drawSRs);
-        drawSRs();
-      }
-    }
-
-    // I/O — live state from IOSTATE.DG, grouped by type
-    var secIO = secHead('Live I/O (IOSTATE.DG)' + (state.robot.ioState ? ' — ' + state.robot.ioState.length + ' points' : ''), 'robot-io', false);
-    pane.appendChild(secIO.el);
-    if (!secIO.open) return;
-    pane.appendChild(h('p', {}, [
-      h('button', { class: 'btn subtle', text: (state.robot.ioState || state.robot.rawIO) ? 'Refresh from robot' : 'Read from robot', onclick: loadRobotIO })
+    /* Registers, position registers, string registers and I/O used to be
+     * four more collapsed sections down here. They are the Registers & I/O
+     * tab now: the same tables, plus where each one is used, in the place
+     * you go to rename something rather than at the bottom of the page you
+     * connect from. */
+    pane.appendChild(h('p', { class: 'muted' }, [
+      document.createTextNode('Registers, PRs, string registers and I/O — values, usage and renaming — are on the '),
+      h('button', { class: 'btn subtle', text: 'Registers & I/O', onclick: function () { state.tab = 'data'; render(); } }),
+      document.createTextNode(' tab.')
     ]));
-    if (state.robot.ioState) {
-      var ioBar2 = h('div', { class: 'search-bar' });
-      var ioIn2 = h('input', { type: 'search', placeholder: 'Filter I/O… e.g. DI[1], DO, gripper, ON — or expand a type below' });
-      ioBar2.appendChild(ioIn2);
-      pane.appendChild(ioBar2);
-      var ioWrap = h('div');
-      pane.appendChild(ioWrap);
-
-      function ioRow(tbl, p) {
-        var key = p.type + '[' + p.index + ']';
-        var used = h('td');
-        var x = state.xref.io[key];
-        if (x) x.refs.slice(0, 6).forEach(function (ref) { used.appendChild(chip(ref, ref.write ? 'write' : 'read')); });
-        tbl.appendChild(h('tr', {}, [
-          h('td', { class: 'n', text: key }),
-          h('td', {}, [h('span', { class: p.state === 'ON' ? 'tok-on mono' : (p.state === 'OFF' ? 'tok-off mono' : 'mono'), text: p.state })]),
-          commentCell(p.type, p.index, p.comment, function (text) {
-            p.comment = text;
-            // ioComments is the labeled-only view the checks read, so a point
-            // that just gained or lost a name has to move in or out of it
-            state.robot.ioComments = state.robot.ioState.filter(function (pt) { return pt.comment; });
-          }),
-          used
-        ]));
-      }
-
-      function ioTable() {
-        var tbl = h('table', { class: 'xref-table' });
-        tbl.appendChild(h('tr', {}, [h('th', { text: 'Point' }), h('th', { text: 'Live state' }), h('th', { text: 'Comment' }), h('th', { text: 'Used at' })]));
-        return tbl;
-      }
-
-      var drawIOTable = function () {
-        var q = ioIn2.value.trim().toLowerCase();
-        ioWrap.innerHTML = '';
-        if (q) {
-          // filtering: one flat table of matches across every type
-          var tbl = ioTable();
-          var ioHits = state.robot.ioState.filter(function (p) {
-            var key = p.type + '[' + p.index + ']';
-            return (key + ' ' + p.state + ' ' + p.comment).toLowerCase().indexOf(q) !== -1;
-          });
-          ioHits.slice(0, ROW_CAP).forEach(function (p) { ioRow(tbl, p); });
-          var tw = h('div', { class: 'table-wrap' });
-          tw.appendChild(tbl);
-          ioWrap.appendChild(tw);
-          if (!ioHits.length) ioWrap.appendChild(h('p', { class: 'muted', text: 'No I/O points match.' }));
-          else capNote(ioWrap, ioHits.length);
-          return;
-        }
-        // no filter: collapsible group per I/O type
-        var groups = {}, order = [];
-        state.robot.ioState.forEach(function (p) {
-          if (!groups[p.type]) { groups[p.type] = []; order.push(p.type); }
-          groups[p.type].push(p);
-        });
-        order.forEach(function (type) {
-          var pts = groups[type];
-          var on = pts.filter(function (p) { return p.state === 'ON'; }).length;
-          var labeled = pts.filter(function (p) { return p.comment; }).length;
-          var open = !!(state.secOpen && state.secOpen['io-' + type]);
-          var item = h('div', { class: 'xref-item' + (open ? ' open' : '') });
-          var head = h('button', { class: 'xi-head' }, [
-            h('span', { class: 'xi-caret', text: open ? '▾' : '▸' }),
-            h('span', { class: 'xi-key mono', text: type }),
-            h('span', { class: 'xi-label', text: pts.length + ' points · ' + on + ' ON · ' + labeled + ' labeled' })
-          ]);
-          head.addEventListener('click', function () {
-            state.secOpen['io-' + type] = !open;
-            drawIOTable();
-          });
-          item.appendChild(head);
-          if (open) {
-            var body = h('div', { class: 'xi-body table-wrap' });
-            var tbl = ioTable();
-            pts.slice(0, 600).forEach(function (p) { ioRow(tbl, p); });
-            body.appendChild(tbl);
-            if (pts.length > 600) body.appendChild(h('p', { class: 'muted', text: 'Showing first 600 — use the filter to narrow.' }));
-            item.appendChild(body);
-          }
-          ioWrap.appendChild(item);
-        });
-      };
-      ioIn2.addEventListener('input', drawIOTable);
-      drawIOTable();
-      return;
-    }
-    var io = state.robot.rawIO;
-    if (io && io.error) {
-      pane.appendChild(h('p', { class: 'muted', text: 'Could not read the I/O state: ' + io.error }));
-    } else if (io) {
-      var ioBar = h('div', { class: 'search-bar' });
-      var ioIn = h('input', { type: 'search', placeholder: 'Filter I/O lines… e.g. DI[101], DO, RI' });
-      ioBar.appendChild(ioIn);
-      pane.appendChild(ioBar);
-      var pre = h('div', { class: 'codebox io-raw' });
-      pane.appendChild(pre);
-      function drawIO() {
-        var q = ioIn.value.trim().toLowerCase();
-        pre.innerHTML = '';
-        var shown = 0;
-        io.forEach(function (l) {
-          if (q && l.toLowerCase().indexOf(q) === -1) return;
-          if (++shown > 400) return;
-          pre.appendChild(h('div', { class: 'cline' }, [h('span', { class: 'src', text: l })]));
-        });
-        if (!shown) pre.appendChild(h('div', { class: 'cline' }, [h('span', { class: 'src muted', text: 'no matching lines' })]));
-      }
-      ioIn.addEventListener('input', drawIO);
-      drawIO();
-    }
   }
 
   /* ================= wiring ================= */

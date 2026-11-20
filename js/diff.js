@@ -24,6 +24,31 @@
     return out.replace(EMPTY_CMT_RE, '$1]');   // "DO[65:OFF:]" -> "DO[65]"
   }
 
+  /* A register's or I/O point's NAME is not program content. It lives in the
+   * controller's own comment table, and every listing the robot writes is
+   * generated from that table — so renaming R[1] rewrites that line in all 77
+   * programs, and the controller regenerates the names again on the next
+   * LS->TP load (which is why a send re-imports the robot's copy). Compared
+   * verbatim, one rename reads as a change in every program that touches the
+   * register, and the upload's baseline check reads it as "someone edited this
+   * on the robot".
+   *
+   *   R[1:part count]=0      vs   R[1:Part Count]=0      same instruction
+   *   DI[3:ON :Run Task]     vs   DI[3:OFF:Start Cyc]    same instruction
+   *
+   * This drops the whole text after the index for exactly the types whose
+   * comment is controller furniture. LBL[] and P[] are deliberately absent:
+   * their comments are stored IN the program, so editing one is a real edit.
+   * Indirect forms (R[R[1]]) never match — the index must be plain digits.
+   * Covers the inline I/O state and GI/GO value injection too, since those sit
+   * in the same field: GI[2:65456:Name] -> GI[2]. */
+  var NAMED_RE = /\b(R|PR|SR|DI|DO|GI|GO|AI|AO|RI|RO|UI|UO|SI|SO|WI|WO|F|TIMER|PAYLOAD)(\[\s*\d+(?:\s*,\s*\d+)?\s*):[^[\]]*\]/g;
+
+  function stripNames(text) {
+    NAMED_RE.lastIndex = 0;
+    return text.replace(NAMED_RE, function (_, type, head) { return type + head + ']'; });
+  }
+
   /* Every /MN line is written "<pad><n>:  <instruction> ;", so inserting or
    * deleting one line renumbers every line after it. Those renumbered lines
    * are identical program content, but compared verbatim they all read as
@@ -43,6 +68,9 @@
   function keyer(opts) {
     if (!opts) return null;
     var fns = [];
+    // stripNames subsumes stripIoState for the types it covers; both are kept
+    // because the two options are independent and either can be on alone.
+    if (opts.ignoreNames) fns.push(stripNames);
     if (opts.ignoreIoState) fns.push(stripIoState);
     if (opts.ignoreLineNums) fns.push(stripLineNums);
     if (!fns.length) return null;
@@ -191,7 +219,7 @@
   var api = {
     diffLines: diffLines, comparePrograms: comparePrograms, bodyOf: bodyOf,
     sideBySide: sideBySide, stripIoState: stripIoState,
-    stripLineNums: stripLineNums
+    stripLineNums: stripLineNums, stripNames: stripNames
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   global.FanucDiff = api;

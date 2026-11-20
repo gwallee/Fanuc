@@ -150,6 +150,30 @@ async function post(route, body) {
     r = await post('/api/robot/upload', { ip: ROBOT, name: 'MAIN.LS', content: edited });
     check(r.ok === true && files['MAIN.LS'] === edited, 'no baseline, no check — sends from outside the editor behave as before');
 
+    console.log('\n-- change detection: a register/I-O rename is not a program change --');
+    /* Renaming R[1] rewrites that line in every program that touches it, with
+     * no instruction changed. Left as a change it stopped the next send of
+     * each of them, showing a diff of nothing but the new name. */
+    files['NAMED.LS'] = '/PROG NAMED\n/MN\n   1:  R[1:part count]=0 ;\n   2:  IF DI[3:ON :Run Task],JMP LBL[1:go] ;\n/END\n';
+    const wasNamed = files['NAMED.LS'];
+    // the rename lands on the robot while the draft is open
+    files['NAMED.LS'] = '/PROG NAMED\n/MN\n   1:  R[1:Parts Made]=0 ;\n   2:  IF DI[3:OFF:Cycle Start],JMP LBL[1:go] ;\n/END\n';
+    const namedDraft = '/PROG NAMED\n/MN\n   1:  R[1:part count]=1 ;\n   2:  IF DI[3:ON :Run Task],JMP LBL[1:go] ;\n/END\n';
+    r = await post('/api/robot/upload', { ip: ROBOT, name: 'NAMED.LS', content: namedDraft, baseline: { content: wasNamed } });
+    check(r.ok === true && !r.changed, 'a rename alone does not stop the upload: ' + (r.error || 'sent'));
+    check(files['NAMED.LS'] === namedDraft, 'the draft landed on the robot');
+    // a real edit under the same rename still stops it
+    files['NAMED.LS'] = '/PROG NAMED\n/MN\n   1:  R[1:Parts Made]=9 ;\n   2:  IF DI[3:OFF:Cycle Start],JMP LBL[1:go] ;\n/END\n';
+    const heldNamed = files['NAMED.LS'];
+    r = await post('/api/robot/upload', { ip: ROBOT, name: 'NAMED.LS', content: namedDraft, baseline: { content: namedDraft } });
+    check(r.ok === false && r.changed === true, 'a real edit under a rename is still caught: ' + r.error);
+    check(files['NAMED.LS'] === heldNamed, 'and nothing was stored over it');
+    // an LBL comment lives in the program, so editing one IS a change
+    files['NAMED.LS'] = namedDraft.replace('LBL[1:go]', 'LBL[1:retry]');
+    r = await post('/api/robot/upload', { ip: ROBOT, name: 'NAMED.LS', content: namedDraft, baseline: { content: namedDraft } });
+    check(r.ok === false && r.changed === true, 'an edited LBL comment is a change, not a rename');
+    delete files['NAMED.LS'];
+
     console.log('\n-- delete on robot: snapshot, DELE, verified gone --');
     const tempSrc = '/PROG TEMP\n/MN\n   1:  R[9]=9 ;\n/END\n';
     files['TEMP.LS'] = tempSrc;

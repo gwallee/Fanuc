@@ -25,6 +25,7 @@ const net = require('net');
 const os = require('os');
 const { Ftp } = require('./lib/ftp.js');
 const { unwrapMd } = require('./js/parser.js');
+const D = require('./js/diff.js');
 const CS = require('./lib/comset.js');
 
 const ROOT = __dirname;
@@ -154,9 +155,23 @@ function robotGet(host, filePath, timeoutMs) {
 /* Two listings of the same program, allowing only for what a transfer can
  * change: line endings and trailing blanks. The controller rewrites the
  * header dates when a program is touched, so even an edit that changed no
- * instruction counts as a change — the pendant did write the program. */
+ * instruction counts as a change — the pendant did write the program.
+ *
+ * Register and I/O NAMES are the exception, and are normalized away. They are
+ * not in the program: the controller holds them in its comment table and
+ * generates them into every listing it writes, so renaming R[1] — from this
+ * app's own Registers view, from the pendant, from anywhere — rewrites that
+ * line in every program that touches it without a single instruction changing.
+ * Left in, one rename stops the next upload of each of those programs with
+ * "changed on the robot", and the diff shows nothing but the new name. The
+ * names this app would then send are stale, and that is harmless for the same
+ * reason: the controller regenerates them from its table on the LS->TP load,
+ * which is why a verified send re-imports the robot's copy. Nothing else is
+ * forgiven — a real edit in the same program is still caught, name and all.
+ * PROG_SIZE / MEMORY_SIZE are TP-binary sizes, so a rename does not move them
+ * either. */
 function sameListing(a, b) {
-  const norm = (s) => String(s).replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n+$/, '');
+  const norm = (s) => D.stripNames(String(s)).replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n+$/, '');
   return norm(a) === norm(b);
 }
 
