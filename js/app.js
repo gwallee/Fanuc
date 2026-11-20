@@ -9120,6 +9120,35 @@
   // enough that an ordinary register shows every place it is touched
   var DATA_REFS = 60;
 
+  /* A PR's value is six axis pairs — "X 10.0", "J2 20.8". Laid out as plain
+   * text they wrapped wherever the column happened to end, splitting a label
+   * from its number and leaving a ladder of orphaned axis names; worse, the
+   * column was sized by whatever rows were on screen, so ticking a filter
+   * reflowed every value. They go in a three-wide grid instead: X Y Z over
+   * W P R, J1 J2 J3 over J4 J5 J6, the way they read on the pendant. The
+   * grid is max-content, so the column is the same width whatever is
+   * filtered. r.value itself is left alone — it is what the filter matches. */
+  function valueSpan(r) {
+    var pr = r.type === 'PR' && !/^uninitialized$/.test(r.value);
+    var sp = h('span', { class: r.vcls + ' mono' + (pr ? ' axes' : '') });
+    if (!pr) { sp.textContent = r.value; return sp; }
+    String(r.value).split(/ {2,}/).forEach(function (pair) {
+      var cut = pair.lastIndexOf(' ');
+      var cell = h('span', { class: 'axis' });
+      if (cut < 0) { cell.textContent = pair; }
+      else {
+        // a REAL space between label and number, not a flex gap: the cell is
+        // selected and pasted into mail and pendant notes, and a gap would
+        // copy as "J10.0"
+        cell.appendChild(h('span', { class: 'ax', text: pair.slice(0, cut) }));
+        cell.appendChild(document.createTextNode(' '));
+        cell.appendChild(h('span', { class: 'axv', text: pair.slice(cut + 1) }));
+      }
+      sp.appendChild(cell);
+    });
+    return sp;
+  }
+
   function dataSeg() {
     var seg = state.dataTab;
     return DATA_SEGS.some(function (s) { return s[0] === seg; }) ? seg : 'r';
@@ -9307,10 +9336,10 @@
         if (state.dataUsedOnly && !r.refs.length) return false;
         return !q || r.hay.indexOf(q) !== -1;
       });
-      var tbl = h('table', { class: 'xref-table data-table' });
+      var tbl = h('table', { class: 'xref-table data-table seg-' + seg });
       tbl.appendChild(h('tr', {}, [
         h('th', { text: seg === 'io' ? 'Point' : seg === 'r' ? 'Register' : seg === 'pr' ? 'PR' : 'SR' }),
-        h('th', { text: seg === 'io' ? 'State' : d.live ? 'Live value' : 'Value' }),
+        h('th', { class: 'val', text: seg === 'io' ? 'State' : d.live ? 'Live value' : 'Value' }),
         seg === 'pr' ? h('th', { text: 'Type' }) : null,
         h('th', { text: 'Name' }),
         h('th', { text: 'Used at' })
@@ -9345,7 +9374,7 @@
             onclick: function () { crossRefToken(r.key); }
           })]),
           seg === 'r' ? regValueCell(r.row)
-            : h('td', { class: 'n' }, [h('span', { class: r.vcls + ' mono', text: r.value })]),
+            : h('td', { class: 'n val' }, [valueSpan(r)]),
           seg === 'pr' ? h('td', { class: 'n', text: r.note }) : null,
           commentCell(r.type, r.index, r.comment, r.apply),
           used
