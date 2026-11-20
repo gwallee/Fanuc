@@ -994,6 +994,27 @@ check(S.family('DO[n]=(F[n] OR F[n] OR F[n] OR F[n])') === S.family('GO[n]=(DI[n
     'family match reports ok with the representative example (' + famHit.example + ')');
   check(S.check('PAYLOAD[1] AND PR[1]', SH).level !== 'ok', 'a genuinely novel structure still reads as unknown');
 }
+/* Brackets and operator text are not novelty. The controller writes
+ * R[n]=R[n]*(-N) and R[n]=((N*R[n])*(-N)) for the one gesture, and a message
+ * says whatever the shop wants it to say — every one of these was reading as
+ * "a form no robot uses" against a dictionary that holds the plain form. */
+const fam = (t) => S.family(S.normalize(t));
+check(fam('R[1]=((90*R[2])*(-1))') === fam('R[1]=R[2]*(-1)') &&
+      fam('R[1]=(90*R[2])') === fam('R[1]=90*R[2]'),
+  'how arithmetic is parenthesized never makes a form novel');
+check(fam('PR[6,1]=(R[1])') === fam('PR[6,1]=R[1]'),
+  'spare brackets round a single value fall away');
+check(ok('R[38:Rotation Spec]=((90*R[39:Rot Curr])*(-1))') &&
+      ok('PR[61,6:Tool Offs]=(R[38:Rotation Spec])') &&
+      ok('CALL _SET_OFFS(R[34:Spray Offset-X],0,(-3),61)'),
+  'controller-written parenthesized arithmetic reads as known');
+check(S.normalize('MESSAGE[Pallet done]') === S.normalize('MESSAGE[WAIT FOR PART]'),
+  'what a MESSAGE says is not part of its shape');
+check(ok('MESSAGE[Pallet done]') && ok('MESSAGE[WAIT FOR PART]'),
+  'a message is never novel for its wording');
+// PR/SR/P stay distinct — the collapse must not erase what the dictionary is for
+check(fam('PR[1]=PR[2]') !== fam('R[1]=R[2]'),
+  'positions are still a different form from registers');
 check(ok('! a remark') && ok('//PAUSE') && ok(''), 'comments, disabled lines and blanks are never flagged');
 // row-level checks over a listing, plus renumber and formatRow
 const rowSrc = '/PROG RS\r\n/MN\r\n   1:  R[1]=0 ;\r\n   2:  R[2]=1\r\n   3:J P[1] 100% FINE ;\r\n  R[3]=2 ;\r\n   5:  CALL VERY_LONG(1,\r\n    :  2) ;\r\n/POS\r\n/END';

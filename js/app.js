@@ -2502,41 +2502,65 @@
       return '<span class="' + cls + ' tok-livename" title="Name from controller data">' + shown + '</span>';
     }
 
-    s = s.replace(/(MESSAGE\[)([^\]]*)(\])/g, '<span class="tok-kw">$1</span><span class="tok-str">$2</span><span class="tok-kw">$3</span>');
+    /* Every pass below rescans the WHOLE string, so a token that is already
+     * painted has to be put out of the next pass's reach — otherwise the
+     * TEXT people write inside brackets is read as code: R[34:Spray Offset-X]
+     * had Offset coloured as the motion option, MESSAGE[WAIT FOR PART] had
+     * WAIT coloured as the instruction, and a label or program name does the
+     * same. Park each finished token and put the lot back at the end. The
+     * placeholder is NUL-delimited digits — no pattern here can match one,
+     * and it never reaches the DOM. (This is the general form of the JMP
+     * rule noted below, which solved the same problem by hand.) */
+    var parked = [];
+    function park(html) { return '\u0000' + (parked.push(html) - 1) + '\u0000'; }
+
+    /* The one thing inside an I/O bracket that ISN'T a name: the pendant
+     * injects the live state into the same field (DI[1:ON :Auto Mode]), so
+     * that ON is state worth seeing, not the operator's text. Painted here,
+     * deliberately, instead of being left to the ON/OFF pass below. */
+    function ioState(tok) {
+      return tok.replace(/^([A-Z]+\[\s*\d+\s*:)(ON|OFF)\b/, function (_, head, st) {
+        return head + '<span class="tok-' + st.toLowerCase() + '">' + st + '</span>';
+      });
+    }
+
+    s = s.replace(/(MESSAGE\[)([^\]]*)(\])/g, function (_, open, body, close) {
+      return park('<span class="tok-kw">' + open + '</span><span class="tok-str">' + body + '</span><span class="tok-kw">' + close + '</span>');
+    });
     // JMP LBL[n] is ONE command — jump and target wear the label gold
     // together, tying every jump to its LBL[n] definition by color
-    s = s.replace(/\b(?:JMP\s+)?LBL\[[^\]]*\]/g, function (m0) { return '<span class="tok-lbl">' + m0 + '</span>'; });
+    s = s.replace(/\b(?:JMP\s+)?LBL\[[^\]]*\]/g, function (m0) { return park('<span class="tok-lbl">' + m0 + '</span>'); });
     s = s.replace(/\b(CALL|RUN)\s+([A-Z_][A-Z0-9_]*)/g, function (_, kw, name) {
-      return '<span class="tok-kw">' + kw + '</span> <span class="tok-call" data-call="' + name + '" title="Ctrl+click to open ' + name + '">' + name + '</span>';
+      return park('<span class="tok-kw">' + kw + '</span> <span class="tok-call" data-call="' + name + '" title="Ctrl+click to open ' + name + '">' + name + '</span>');
     });
     s = s.replace(/\b(PR|AR|SR|GP\d+)\[[^\]]*\]/g, function (m0, kind) {
       if (ln && kind === 'PR') {
         var pm = m0.match(/^PR\[\s*(\d+)((?:\s*,\s*\d+)?)\s*(?::([^\]]*))?\]$/);
         if (pm && ln.pr[pm[1]] !== undefined) {
-          return liveSpan('tok-reg', 'PR[' + pm[1] + pm[2] + ':' + esc(ln.pr[pm[1]]) + ']', pm[3]);
+          return park(liveSpan('tok-reg', 'PR[' + pm[1] + pm[2] + ':' + esc(ln.pr[pm[1]]) + ']', pm[3]));
         }
       }
-      return '<span class="tok-reg">' + m0 + '</span>';
+      return park('<span class="tok-reg">' + m0 + '</span>');
     });
     s = s.replace(/(^|[^A-Z>])(R\[[^\]]*\])/g, function (_, pre, r) {
       if (ln) {
         var rm = r.match(/^R\[\s*(\d+)\s*(?::([^\]]*))?\]$/);
         if (rm && ln.r[rm[1]] !== undefined) {
-          return pre + liveSpan('tok-reg', 'R[' + rm[1] + ':' + esc(ln.r[rm[1]]) + ']', rm[2]);
+          return pre + park(liveSpan('tok-reg', 'R[' + rm[1] + ':' + esc(ln.r[rm[1]]) + ']', rm[2]));
         }
       }
-      return pre + '<span class="tok-reg">' + r + '</span>';
+      return pre + park('<span class="tok-reg">' + r + '</span>');
     });
     s = s.replace(/\b(DI|DO|RI|RO|GI|GO|UI|UO|SI|SO|AI|AO|WI|WO|F|M|TIMER)\[[^\]]*\]/g, function (m0, type) {
       if (ln && type !== 'TIMER') {
         var im = m0.match(/^[A-Z]+\[\s*(\d+)\s*(?::([^\]]*))?\]$/);
         if (im && ln.io[type + '[' + im[1] + ']'] !== undefined) {
-          return liveSpan('tok-io', type + '[' + im[1] + ':' + esc(ln.io[type + '[' + im[1] + ']']) + ']', im[2]);
+          return park(liveSpan('tok-io', type + '[' + im[1] + ':' + esc(ln.io[type + '[' + im[1] + ']']) + ']', im[2]));
         }
       }
-      return '<span class="tok-io">' + m0 + '</span>';
+      return park('<span class="tok-io">' + ioState(m0) + '</span>');
     });
-    s = s.replace(/\bP\[[^\]]*\]/g, function (m0) { return '<span class="tok-num">' + m0 + '</span>'; });
+    s = s.replace(/\bP\[[^\]]*\]/g, function (m0) { return park('<span class="tok-num">' + m0 + '</span>'); });
     s = s.replace(/\bON\b/g, '<span class="tok-on">ON</span>');
     s = s.replace(/\bOFF\b/g, '<span class="tok-off">OFF</span>');
     // JMP is deliberately absent: it is painted with its LBL[n] above, and
@@ -2545,7 +2569,7 @@
     s = s.replace(/\b(IF|THEN|ELSE|ENDIF|SELECT|FOR|ENDFOR|TO|WAIT|TIMEOUT|SKIP|CONDITION|PULSE|END|ABORT|PAUSE|UALM|OVERRIDE|PAYLOAD|UFRAME_NUM|UTOOL_NUM|MOD|DIV|AND|OR|NOT|START|STOP|RESET|Offset|Tool_Offset)\b/g,
       '<span class="tok-kw">$1</span>');
     s = s.replace(/\b(FINE|CNT\d+|ACC\d+|max_speed|BREAK|RTCP|Wjnt|PTH)\b/g, '<span class="tok-num">$1</span>');
-    return s;
+    return s.replace(/\u0000(\d+)\u0000/g, function (_, i) { return parked[+i]; });
   }
 
   /* Highlight raw .LS text for the editor overlay. Unlike highlight(), which

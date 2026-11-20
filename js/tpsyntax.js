@@ -36,6 +36,10 @@
   function normalize(text) {
     var t = String(text == null ? '' : text).replace(/\s*;\s*$/, '').trim();
     t = t.replace(/'[^']*'/g, "'s'");                                     // string literals
+    // what a MESSAGE says is text for the operator, not code: without this
+    // every distinct wording is its own shape, so every message ever written
+    // reads as a form no robot has used
+    t = t.replace(/\bMESSAGE\[[^\]]*\]/g, 'MESSAGE[str]');
     t = t.replace(/\$[A-Za-z0-9_.\[\]]+/g, '$sysvar');                     // $MCR.$GENOVERRIDE
     t = t.replace(/\b(CALL|RUN)\s+[A-Za-z_][A-Za-z0-9_]*/g, '$1 PROG');    // program names
     t = t.replace(/\[\s*GP\d+\s*:\s*\d+(?:\s*,\s*\d+)?\s*(?::[^\]]*)?\]/g, '[GPn:n]');
@@ -361,6 +365,20 @@
     return /^!?V\[n\]$/.test(inner);   // a lone (or negated) point is a condition too
   }
 
+  /* Arithmetic is the grammar's business for the same reason: how a sum is
+   * parenthesized, and which scalars it adds, is not what makes a form novel.
+   * The controller writes R[n]=R[n]*(-N) and R[n]=((N*R[n])*(-N)) for the
+   * same gesture, and PR[n,n]=(R[n]) is PR[n,n]=R[n] with a spare pair of
+   * brackets. So a scalar arithmetic expression collapses to the one token E,
+   * and parentheses around a single value fall away. PR, SR, P and TIMER are
+   * NOT values here — keeping them out is what stops this from erasing the
+   * position/string distinctions the dictionary exists to track. */
+  var VALUE = '-?(?:N|V\\[n\\]|E)';
+  var VALUE_RE = new RegExp('^' + VALUE + '$');
+  var ARITH_RE = new RegExp('^' + VALUE + '(?:\\s*(?:[-+*/]|MOD|DIV)\\s*' + VALUE + ')+$');
+  // the same run, found anywhere in a shape rather than anchored to a group
+  var ARITH_RUN = new RegExp(VALUE + '(?:\\s*(?:[-+*/]|MOD|DIV)\\s*' + VALUE + ')+', 'g');
+
   function family(shape) {
     var s = String(shape).replace(SCALAR_RE, 'V[n]');
     var groups = [];
@@ -369,7 +387,12 @@
       prev = s;                    // identical groups share one token so the
       s = s.replace(/\(([^()]*)\)/g, function (_, inner) {   // outer chain
         var c = collapseChain(inner);                        // can collapse
-        if (isCondition(c)) c = 'C';
+        // spare brackets first: a lone point reads as a condition to
+        // isCondition, but in PR[n,n]=(R[n]) it is plainly a value, and
+        // unwrapping it decides the question the same way on both sides
+        if (VALUE_RE.test(c)) return c;
+        else if (isCondition(c)) c = 'C';
+        else if (ARITH_RE.test(c)) return 'E';
         var k = groups.indexOf(c);
         if (k === -1) { k = groups.length; groups.push(c); }
         return '§' + k + '§';
@@ -381,13 +404,18 @@
       prev = s;
       s = s.replace(/§(\d+)§/g, function (_, k) { return '(' + groups[+k] + ')'; });
     }
+    // and once the brackets are gone, the bare run collapses the same way, so
+    // R[n]=R[n]*(-N) and R[n]=((N*R[n])*(-N)) land on the one form
+    s = s.replace(ARITH_RUN, 'E');
     // a motion's termination is grammar's business too: FINE vs CNT50 vs
     // CNT100 never makes the FORM novel
     s = s.replace(/\b(?:FINE|CNTN|CNT V\[n\]|CDN|CR)\b/g, 'TERM');
     // plain-form IF conditions (no parentheses) are conditions all the same
     s = s.replace(/^IF [^,()]+,/, 'IF (C),');
-    // the spaced mixed-logic action (IF (…) JMP …) is the same family as ,action
-    s = s.replace(/^IF (\([^()]*\)) /, 'IF $1,');
+    // the spaced mixed-logic action (IF (…) JMP …) is the same family as
+    // ,action. Keyed on the ACTION, not on the brackets: a lone point loses
+    // its brackets above, so IF (DI[n]) CALL P has none left to match on.
+    s = s.replace(/^IF (?:\([^()]*\)|[^,()]+?) (JMP|CALL)\b/, 'IF (C),$1');
     return s;
   }
 
