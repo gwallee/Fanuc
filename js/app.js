@@ -102,6 +102,7 @@
     dataSeg: 'used',       // its view: 'used' | 'r' | 'pr' | 'io' (persisted)
     dataTab: 'r',          // Registers & I/O tab: 'r' | 'pr' | 'sr' | 'io' (persisted)
     dataUsedOnly: false,   // that tab: list only what the programs touch (persisted)
+    dataHideUsage: false,  // that tab: drop the "Used at" column for a compact list (persisted)
     dataOpen: {},          // that tab: keys whose full "used at" list is expanded
     theme: 'auto'          // 'auto' (follow the system) | 'light' | 'dark' (persisted)
   };
@@ -217,6 +218,7 @@
       if (['used', 'r', 'pr', 'io'].indexOf(p.dataSeg) !== -1) state.dataSeg = p.dataSeg;
       if (['r', 'pr', 'sr', 'io'].indexOf(p.dataTab) !== -1) state.dataTab = p.dataTab;
       if (typeof p.dataUsedOnly === 'boolean') state.dataUsedOnly = p.dataUsedOnly;
+      if (typeof p.dataHideUsage === 'boolean') state.dataHideUsage = p.dataHideUsage;
       if (typeof p.ignoreLineNums === 'boolean') state.ignoreLineNums = p.ignoreLineNums;
       if (typeof p.ignoreNames === 'boolean') state.ignoreNames = p.ignoreNames;
       if (typeof p.syncSplit === 'boolean') state.syncSplit = p.syncSplit;
@@ -252,7 +254,8 @@
         lastRobot: state.lastRobot || null, backupPick: state.backupPick,
         theme: state.theme, splitPct: state.splitPct,
         showAllProgs: state.showAllProgs, showData: state.showData, dataSeg: state.dataSeg,
-        dataTab: state.dataTab, dataUsedOnly: state.dataUsedOnly
+        dataTab: state.dataTab, dataUsedOnly: state.dataUsedOnly,
+        dataHideUsage: state.dataHideUsage
       }));
     } catch (e) { /* session-only */ }
   }
@@ -9314,6 +9317,13 @@
     });
     bar.appendChild(h('label', { title: 'List only what the loaded programs actually read or write' },
       [usedCb, document.createTextNode(' Used in programs only')]));
+    var hideUseCb = h('input', { type: 'checkbox' });
+    hideUseCb.checked = !!state.dataHideUsage;
+    hideUseCb.addEventListener('change', function () {
+      state.dataHideUsage = hideUseCb.checked; savePrefs(); render();
+    });
+    bar.appendChild(h('label', { title: 'Drop the "Used at" column — a compact list of number, value and name' },
+      [hideUseCb, document.createTextNode(' Hide usage')]));
     if (seg === 'pr') {
       var emptyCb = h('input', { type: 'checkbox' });
       emptyCb.checked = !!state.showEmptyPR;
@@ -9368,13 +9378,14 @@
         if (state.dataUsedOnly && !r.refs.length && !r.empty) return false;
         return !q || r.hay.indexOf(q) !== -1;
       });
-      var tbl = h('table', { class: 'xref-table data-table seg-' + seg });
+      var compact = !!state.dataHideUsage;
+      var tbl = h('table', { class: 'xref-table data-table seg-' + seg + (compact ? ' compact' : '') });
       tbl.appendChild(h('tr', {}, [
         h('th', { text: seg === 'io' ? 'Point' : seg === 'r' ? 'Register' : seg === 'pr' ? 'PR' : 'SR' }),
         h('th', { class: 'val', text: seg === 'io' ? 'State' : d.live ? 'Live value' : 'Value' }),
         seg === 'pr' ? h('th', { text: 'Type' }) : null,
         h('th', { text: 'Name' }),
-        h('th', { text: 'Used at' })
+        compact ? null : h('th', { text: 'Used at' })
       ]));
       hits.slice(0, DATA_CAP).forEach(function (r) {
         var used = h('td');
@@ -9409,7 +9420,7 @@
             : h('td', { class: 'n val' }, [valueSpan(r)]),
           seg === 'pr' ? h('td', { class: 'n', text: r.note }) : null,
           commentCell(r.type, r.index, r.comment, r.apply),
-          used
+          compact ? null : used
         ]));
       });
       var tw = h('div', { class: 'table-wrap' });

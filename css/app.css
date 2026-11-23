@@ -1776,6 +1776,9 @@ h3.sec-toggle:hover { color: var(--accent); }
 .data-table td.n .xref-link:hover { text-decoration: underline; }
 /* the usage column is the wide one — let the fixed columns stay narrow */
 .data-table td:last-child { width: 100%; }
+/* "Hide usage": no wide column to absorb the slack, so the table hugs its content */
+.data-table.compact { width: auto; }
+.data-table.compact td:last-child { width: auto; min-width: 220px; }
 /* A position reads as two rows of three — X Y Z over W P R, J1 J2 J3 over
  * J4 J5 J6 — not as text wrapping wherever the column ends. max-content
  * columns mean the width comes from the values, not from which rows a
