@@ -2569,7 +2569,15 @@
     s = s.replace(/\b(IF|THEN|ELSE|ENDIF|SELECT|FOR|ENDFOR|TO|WAIT|TIMEOUT|SKIP|CONDITION|PULSE|END|ABORT|PAUSE|UALM|OVERRIDE|PAYLOAD|UFRAME_NUM|UTOOL_NUM|MOD|DIV|AND|OR|NOT|START|STOP|RESET|Offset|Tool_Offset)\b/g,
       '<span class="tok-kw">$1</span>');
     s = s.replace(/\b(FINE|CNT\d+|ACC\d+|max_speed|BREAK|RTCP|Wjnt|PTH)\b/g, '<span class="tok-num">$1</span>');
-    return s.replace(/\u0000(\d+)\u0000/g, function (_, i) { return parked[+i]; });
+    /* A parked token can hold another one: in DO[R[99]] the R pass parks
+     * R[99] first, and the I/O pass then parks DO[<placeholder>] around it.
+     * One put-back pass left the inner placeholder in the page, which showed
+     * as DO[0] — so keep going until none is left. Each placeholder points
+     * only at tokens parked before it, so this always ends. */
+    while (s.indexOf('\u0000') !== -1) {
+      s = s.replace(/\u0000(\d+)\u0000/g, function (_, i) { return parked[+i]; });
+    }
+    return s;
   }
 
   /* Highlight raw .LS text for the editor overlay. Unlike highlight(), which
