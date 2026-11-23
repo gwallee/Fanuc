@@ -24,6 +24,7 @@ const { URL } = require('url');
 const net = require('net');
 const os = require('os');
 const { Ftp } = require('./lib/ftp.js');
+const tunnel = require('./lib/tunnel.js');
 const { unwrapMd } = require('./js/parser.js');
 const D = require('./js/diff.js');
 const CS = require('./lib/comset.js');
@@ -123,12 +124,17 @@ process.on('uncaughtException', (e) => console.error('[bridge] uncaught exceptio
 process.on('unhandledRejection', (e) => console.error('[bridge] unhandled rejection (recovered):', e && e.message || e));
 
 /* Fetch a file from the robot's MD: device over HTTP.
- * Deliberately plain http.request with no proxy: robots live on the LAN. */
+ * Deliberately plain http.request with no system proxy: robots live on the LAN.
+ * The one exception is the optional tunnel (lib/tunnel.js), for a robot this
+ * PC has no route to; it carries the same bytes over a different path. */
 function robotGet(host, filePath, timeoutMs) {
   const limit = timeoutMs || ROBOT_TIMEOUT_MS;
   return new Promise((resolve, reject) => {
+    const options = { host, port: 80, path: filePath, method: 'GET', timeout: limit };
+    // With createConnection and no agent named, http uses no agent at all (agent: false would ignore it).
+    if (tunnel.via(host)) { options.createConnection = () => tunnel.connect(host, 80); }
     const req = http.request(
-      { host, port: 80, path: filePath, method: 'GET', timeout: limit },
+      options,
       (r) => {
         if (r.statusCode !== 200) {
           r.resume();
@@ -312,6 +318,7 @@ async function handleApi(req, res, u) {
     if (localCaller(req)) {
       out.me = whoami();
       out.stateDir = STATE_DIR;
+      out.tunnel = tunnel.status();
       out.release = RELEASE ? { build: RELEASE.build, verified: !!RELEASE.verified, source: RELEASE.source, commit: RELEASE.commit || null,
         update: publishedBuild(), retired: RETIRED ? { message: RETIRED.message, inMs: Math.max(0, RETIRED.at - Date.now()) } : null } : null;
     }
@@ -1230,7 +1237,7 @@ async function robotName(host) {
 function probePort(host, port, timeoutMs) {
   return new Promise((resolve) => {
     const started = Date.now();
-    const sock = net.connect({ host: host, port: port });
+    const sock = tunnel.connect(host, port);
     let settled = false;
     const finish = (ok, error) => {
       if (settled) return;
@@ -1545,6 +1552,12 @@ httpServer.on('error', (e) => {
   console.error('[bridge] could not start: ' + e.message);
   process.exit(1);
 });
+
+/* Optional tunnel for robots this PC has no route to (lib/tunnel.js): a SOCKS5
+ * proxy on this PC, "host:port". Off unless set; with it set, a robot is still
+ * reached directly whenever the proxy is not listening or the robot is on one
+ * of this PC's own subnets. */
+tunnel.configure(process.env.FANUCSTUDIO_TUNNEL !== undefined ? process.env.FANUCSTUDIO_TUNNEL : readSettings().tunnel);
 
 httpServer.listen(PORT, () => {
   console.log('FANUC TP Program Studio bridge running:');

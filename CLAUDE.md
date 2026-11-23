@@ -12,8 +12,8 @@ TP; keep UI text terse, prefer code over prose, colors over bold.
   lib/ftp.js. Never add npm packages.
 - **Bump the build** in `js/version.js` on every pushed change; it shows in
   the header and is how stale caches are diagnosed.
-- **Run before pushing:** `node test/run-tests.js` and
-  `node test/server-tests.js`. Browser smoke tests (Playwright) are written
+- **Run before pushing:** `node test/run-tests.js`,
+  `node test/server-tests.js` and `node test/tunnel-tests.js`. Browser smoke tests (Playwright) are written
   per-change in the session scratchpad, not committed.
 - The controller **deletes a program when LS→TP translation fails** on
   upload. The snapshot → STOR → verify → auto-restore flow in server.js is
@@ -25,6 +25,12 @@ TP; keep UI text terse, prefer code over prose, colors over bold.
 
 - `server.js` — bridge: static files + /api/* (robot FTP/HTTP proxy, pooled
   FTP connections, safe upload, backups, subnet scan, robots.json).
+- `lib/tunnel.js` — optional SOCKS5 tunnel for robots this PC has no route to
+  (`"tunnel": "127.0.0.1:1080"` in settings.json, or env `FANUCSTUDIO_TUNNEL`).
+  Every robot connection (robotGet, FTP control + data, probePort) is opened
+  with `tunnel.connect()`; it is plain `net.createConnection` unless the proxy
+  is listening and the robot is on none of this PC's subnets. Never retries.
+  Through it `socket.remoteAddress` is the proxy's: use `socket.tunnelTarget`.
 - `lib/ftp.js` — FTP client (passive mode; FtpError.code 400–599 = protocol
   error, connection still good). `lib/comset.js` — register/IO renaming.
 - `js/app.js` — the whole UI (one IIFE; `state` at top; render() rebuilds).
