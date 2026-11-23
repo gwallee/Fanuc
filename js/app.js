@@ -135,7 +135,21 @@
         ? 'Theme follows Windows/browser dark mode — click for always dark'
         : 'Theme: always ' + state.theme + ' — click to switch';
     }
+    paintTitleBar();
   }
+  /* The installed app's window-controls block takes the theme-color; keep it
+   * equal to the header background so the title bar reads as one surface. */
+  function paintTitleBar() {
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) return;
+    var c = getComputedStyle(document.documentElement).getPropertyValue('--panel').trim();
+    if (c) meta.setAttribute('content', c);
+  }
+  try {
+    var darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    if (darkQuery.addEventListener) darkQuery.addEventListener('change', paintTitleBar);
+    else if (darkQuery.addListener) darkQuery.addListener(paintTitleBar);
+  } catch (e) { /* no matchMedia */ }
 
   function paintCodeSize() {
     var app = document.querySelector('.app');

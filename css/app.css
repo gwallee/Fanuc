@@ -1820,7 +1820,7 @@ h3.sec-toggle:hover { color: var(--accent); }
     app-region: drag;
     min-height: env(titlebar-area-height, 33px);
     padding-left: calc(18px + env(titlebar-area-x, 0px));
-    padding-right: calc(18px + (100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)));
+    padding-right: calc(32px + (100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)));
   }
   .header .btn,
   .header button,
