@@ -100,7 +100,7 @@
     dataFilter: {},        // data-sidebar filter text — survives re-renders
     showData: true,        // Code tab: the registers/I/O sidebar on the right (persisted)
     dataSeg: 'used',       // its view: 'used' | 'r' | 'pr' | 'io' (persisted)
-    dataTab: 'r',          // Registers & I/O tab: 'r' | 'pr' | 'sr' | 'io' (persisted)
+    dataTab: 'r',          // Registers & I/O tab: 'r' | 'pr' | 'sr' | 'f' | 'io' (persisted)
     dataUsedOnly: false,   // that tab: list only what the programs touch (persisted)
     dataHideUsage: false,  // that tab: drop the "Used at" column for a compact list (persisted)
     dataOpen: {},          // that tab: keys whose full "used at" list is expanded
@@ -216,7 +216,7 @@
       if (typeof p.showAllProgs === 'boolean') state.showAllProgs = p.showAllProgs;
       if (typeof p.showData === 'boolean') state.showData = p.showData;
       if (['used', 'r', 'pr', 'io'].indexOf(p.dataSeg) !== -1) state.dataSeg = p.dataSeg;
-      if (['r', 'pr', 'sr', 'io'].indexOf(p.dataTab) !== -1) state.dataTab = p.dataTab;
+      if (['r', 'pr', 'sr', 'f', 'io'].indexOf(p.dataTab) !== -1) state.dataTab = p.dataTab;
       if (typeof p.dataUsedOnly === 'boolean') state.dataUsedOnly = p.dataUsedOnly;
       if (typeof p.dataHideUsage === 'boolean') state.dataHideUsage = p.dataHideUsage;
       if (typeof p.ignoreLineNums === 'boolean') state.ignoreLineNums = p.ignoreLineNums;
@@ -9139,7 +9139,7 @@
    * are plain text and say nothing about being editable. */
 
   var DATA_SEGS = [['r', 'R', 'NUMREG.VA'], ['pr', 'PR', 'POSREG.VA'],
-                   ['sr', 'SR', 'STRREG.VA'], ['io', 'I/O', 'IOSTATE.DG']];
+                   ['sr', 'SR', 'STRREG.VA'], ['f', 'F', 'IOSTATE.DG'], ['io', 'I/O', 'IOSTATE.DG']];
   var DATA_CAP = 1000;
   // how many "used at" chips a row shows before it keeps an expander — high
   // enough that an ordinary register shows every place it is touched
@@ -9240,10 +9240,15 @@
         });
       });
     } else {
+      /* Flags come out of the same IOSTATE.DG as the I/O points, but a cell
+       * holds 1024 of them against a few dozen real points, so mixed in they
+       * buried the I/O and were themselves hard to find. Same read, split
+       * by type: F has its own segment, I/O is everything else. */
       var io = r0.ioState || (ex.io && ex.io.length ? ex.io : null);
       if (r0.ip && r0.rawIO && r0.rawIO.error) out.error = r0.rawIO.error;
       else if (r0.ioLoading) out.loading = true;
       (io || []).forEach(function (p) {
+        if ((p.type === 'F') !== (seg === 'f')) return;
         out.rows.push({
           key: p.type + '[' + p.index + ']', type: p.type, index: p.index, row: p,
           value: p.state || '', vcls: p.state === 'ON' ? 'tok-on' : p.state === 'OFF' ? 'tok-off' : 'muted',
@@ -9278,7 +9283,7 @@
     /* Connecting reads registers and PRs but not I/O — that is the Robot
      * tab's on-demand read. Opening this tab on I/O is the same demand, so
      * make it once and let the reply repaint. */
-    if (seg === 'io' && state.server && r0.ip && !r0.ioState && !r0.rawIO && !r0.ioLoading) loadRobotIO();
+    if ((seg === 'io' || seg === 'f') && state.server && r0.ip && !r0.ioState && !r0.rawIO && !r0.ioLoading) loadRobotIO();
 
     pane.appendChild(h('div', { class: 'code-toolbar' }, [
       h('span', { class: 'title', text: 'Registers & I/O' }),
@@ -9306,7 +9311,7 @@
     var bar = h('div', { class: 'search-bar' });
     var fIn = h('input', {
       type: 'search',
-      placeholder: 'Filter by number, name, value' + (seg === 'io' ? ' or state…' : '…')
+      placeholder: 'Filter by number, name, value' + (seg === 'io' || seg === 'f' ? ' or state…' : '…')
     });
     fIn.value = state.dataFilter[seg] || '';
     bar.appendChild(fIn);
@@ -9340,7 +9345,7 @@
     /* IOSTATE.DG the parser could not make rows of is still worth showing:
      * the two-column FLG layout and other pendant variants turn up on real
      * controllers, and the raw listing answers the question anyway. */
-    if (seg === 'io' && !r0.ioState && r0.rawIO && r0.rawIO.length) {
+    if ((seg === 'io' || seg === 'f') && !r0.ioState && r0.rawIO && r0.rawIO.length) {
       pane.appendChild(h('p', { class: 'muted', text: 'IOSTATE.DG did not parse into rows on this controller — here is the listing as the robot wrote it.' }));
       var pre = h('div', { class: 'codebox io-raw' });
       pane.appendChild(pre);
@@ -9381,8 +9386,8 @@
       var compact = !!state.dataHideUsage;
       var tbl = h('table', { class: 'xref-table data-table seg-' + seg + (compact ? ' compact' : '') });
       tbl.appendChild(h('tr', {}, [
-        h('th', { text: seg === 'io' ? 'Point' : seg === 'r' ? 'Register' : seg === 'pr' ? 'PR' : 'SR' }),
-        h('th', { class: 'val', text: seg === 'io' ? 'State' : d.live ? 'Live value' : 'Value' }),
+        h('th', { text: seg === 'io' ? 'Point' : seg === 'f' ? 'Flag' : seg === 'r' ? 'Register' : seg === 'pr' ? 'PR' : 'SR' }),
+        h('th', { class: 'val', text: seg === 'io' || seg === 'f' ? 'State' : d.live ? 'Live value' : 'Value' }),
         seg === 'pr' ? h('th', { text: 'Type' }) : null,
         h('th', { text: 'Name' }),
         compact ? null : h('th', { text: 'Used at' })
